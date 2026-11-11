@@ -18,7 +18,6 @@ export function createStudioRouter(
 
   router.get('/status', (_req: Request, res: Response) => {
     const visibleRoot = resolveVisibleProjectRoot();
-    const cliBin = path.join(visibleRoot, 'bin/mfhmfa');
     const stdioScript = path.join(visibleRoot, 'src/mcp-stdio.ts');
 
     res.json({
@@ -34,7 +33,6 @@ export function createStudioRouter(
         mcpLegacySse: `${service.baseUrl}/mcp/sse`,
         mcpStdioCommand: 'npx',
         mcpStdioArgs: ['tsx', stdioScript],
-        cliExecutable: cliBin,
         projectRoot: visibleRoot,
         toolSchemasUrl: `${service.baseUrl}/api/tools/schemas`,
         toolCallUrl: `${service.baseUrl}/api/tools/call`,

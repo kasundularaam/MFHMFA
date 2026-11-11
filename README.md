@@ -2,7 +2,7 @@
 
 **Mermaid For Humans, Mermaid For Agents**
 
-A calm, eye-comfortable **Mermaid Diagram Studio + Headless Validation & Rendering Engine + Dual-Transport MCP Server + CLI** built so both **humans and AI coding agents** can create, validate, refine, and **visually inspect** the charts they build.
+A calm, eye-comfortable **Mermaid Diagram Studio + Headless Validation & Rendering Engine + Dual-Transport MCP Server + REST Tool API** built so both **humans and AI coding agents** can create, validate, refine, and **visually inspect** the charts they build.
 
 ---
 
@@ -111,32 +111,7 @@ Or directly via local Node/tsx:
 }
 ```
 
-### 3. CLI for Bash Coding Agents (Pi, Claude Code, Codex, OpenHands)
-
-```bash
-# Validate syntax & get line-level fix suggestions
-./bin/mfhmfa validate --code 'flowchart TD\n  A["Start"] --> B["Process (v2)"]'
-
-# Render stateless preview to PNG + SVG
-./bin/mfhmfa render --code 'sequenceDiagram\n  Agent->>API: POST /charts' --out /tmp/preview.png
-
-# Create & persist chart in the live Studio workspace
-./bin/mfhmfa create --title "Auth Flow" --file auth.mmd
-
-# Update chart (creates new version snapshot)
-./bin/mfhmfa update <chart-id> --file auth-v2.mmd --note "Switch LR to TB"
-
-# Inspect chart metadata, history & rendered PNG path
-./bin/mfhmfa see <chart-id>
-
-# Export chart to .png, .svg, .mmd, or .md
-./bin/mfhmfa export <chart-id> --out ./docs/architecture.svg
-
-# Print Mermaid syntax & escaping guide
-./bin/mfhmfa guide pitfalls
-```
-
-### 4. Function-Calling HTTP API (OpenAI / Anthropic / Gemini)
+### 3. Function-Calling HTTP API (OpenAI / Anthropic / Gemini)
 
 - **Tool JSON Schemas**: `GET http://localhost:48333/api/tools/schemas`
 - **Dispatch Tool Call**: `POST http://localhost:48333/api/tools/call`
@@ -182,7 +157,7 @@ src/
 ├── domain/          # Diagnostics, templates/guides catalog, and port interfaces
 ├── application/     # StudioService business use-cases
 ├── infrastructure/  # Chromium renderer pool, SQLite WAL repository, WebSocket hub
-└── interfaces/      # Unified tool registry, Express routers, MCP servers, CLI
+└── interfaces/      # Unified tool registry, Express routers, and MCP servers
 web/
 ├── components/      # TopBar, Sidebar, PreviewCanvas, CodeEditorStage, SettingsView
 ├── hooks/           # Workspace state, live WebSocket sync & debounced renderer

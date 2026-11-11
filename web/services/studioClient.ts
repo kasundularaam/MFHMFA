@@ -26,7 +26,6 @@ export interface ServerStatus {
     mcpLegacySse: string;
     mcpStdioCommand: string;
     mcpStdioArgs: string[];
-    cliExecutable: string;
     projectRoot: string;
     toolSchemasUrl: string;
     toolCallUrl: string;

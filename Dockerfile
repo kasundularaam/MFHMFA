@@ -9,7 +9,6 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY tsconfig.json tsconfig.server.json vite.config.ts ./
 COPY src ./src
 COPY web ./web
-COPY bin ./bin
 
 RUN npm run build && npm prune --omit=dev
 
@@ -37,7 +36,6 @@ RUN mkdir -p /app/data/renders/previews && chown -R node:node /app
 COPY --chown=node:node package.json ./
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist ./dist
-COPY --chown=node:node bin ./bin
 
 USER node
 

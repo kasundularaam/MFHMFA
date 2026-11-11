@@ -98,7 +98,6 @@ export function SettingsView({
         null,
         2
       ),
-      cliSnippet: `${status?.connections.cliExecutable || './bin/mfhmfa'} create --title "Service Flow" --code 'flowchart LR\\n  A["Gateway"] --> B["Worker"]'`,
     };
   }, [status]);
 
@@ -262,19 +261,6 @@ export function SettingsView({
                 </div>
 
                 <div className="settings-block">
-                  <div className="settings-block-head">
-                    <div>
-                      <div className="setting-label">CLI Command</div>
-                      <div className="setting-desc">
-                        For bash coding agents such as Pi, Codex, and OpenHands.
-                      </div>
-                    </div>
-                    <CopyButton text={mcpSnippets.cliSnippet} />
-                  </div>
-                  <pre className="code-block">{mcpSnippets.cliSnippet}</pre>
-                </div>
-
-                <div className="settings-block">
                   <div>
                     <div className="setting-label">Tool Playground</div>
                     <div className="setting-desc">
@@ -370,7 +356,7 @@ export function SettingsView({
             <div className="settings-container">
               <div className="settings-header">
                 <h2>AI Activity</h2>
-                <p>Recent MCP, CLI, and API tool invocations ({events.length}).</p>
+                <p>Recent MCP and API tool invocations ({events.length}).</p>
               </div>
 
               <div className="settings-list">

@@ -1,6 +1,6 @@
 export type MermaidTheme = 'default' | 'neutral' | 'dark' | 'forest' | 'base';
 export type MermaidLook = 'classic' | 'handDrawn';
-export type CallerSource = 'mcp-stdio' | 'mcp-http' | 'rest-tool' | 'cli' | 'web';
+export type CallerSource = 'mcp-stdio' | 'mcp-http' | 'rest-tool' | 'web';
 
 export interface ParseErrorDetail {
   message: string;

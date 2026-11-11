@@ -194,7 +194,7 @@ describe('Mermaid Agent Studio — Integration (Engine, REST, WS & Dual MCP)', (
       body: JSON.stringify({
         name: 'mermaid_export_chart',
         arguments: {
-          code: 'mindmap\n  root((Studio))\n    MCP\n    CLI\n    Web',
+          code: 'mindmap\n  root((Studio))\n    MCP\n    REST\n    Web',
           outputPath: outSvg,
         },
       }),

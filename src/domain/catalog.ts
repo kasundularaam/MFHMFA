@@ -13,7 +13,7 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     subgraph Agents["AI Coding Agents"]
         A1["Claude / Pi Agent"]
         A2["Cursor / Antigravity"]
-        A3["Custom REST / CLI Agent"]
+        A3["Custom REST Tool Agent"]
     end
 
     subgraph Studio["Mermaid Agent Studio"]
@@ -200,7 +200,7 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
         Stdio Transport
         Streamable HTTP
         ImageContent Vision
-      CLI Tooling
+      REST Tool Schemas
       OpenAI Tool Schema
     Web Workspace
       CodeMirror 6 Editor
@@ -228,7 +228,7 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     section Agent Ecosystem
     MCP Stdio + HTTP Server     :crit,    mcp1, 2026-05-08, 6d
     Vision Loop Prompt Pack     :         mcp2, after mcp1, 3d
-    CLI & REST Schemas          :         mcp3, after mcp1, 4d
+    REST Tool Schemas           :         mcp3, after mcp1, 4d
 
     section Web Studio
     Eye-Comfort Studio Canvas   :         ui1,  2026-05-10, 6d
@@ -292,7 +292,7 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     theme: 'default',
     code: `xychart-beta
     title "Warm Browser Pool: Throughput vs P95 Render Time (ms)"
-    x-axis ["v0 Cold CLI", "v1 Single Tab", "v2 Warm Pool", "v3 Cached SVG", "v4 Batch"]
+    x-axis ["v0 Cold Spawn", "v1 Single Tab", "v2 Warm Pool", "v3 Cached SVG", "v4 Batch"]
     y-axis "Latency (ms) / RPS" 0 --> 1800
     bar [1650, 95, 48, 18, 35]
     line [12, 140, 310, 680, 520]`,

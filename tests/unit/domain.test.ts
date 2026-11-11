@@ -6,7 +6,6 @@ import {
   inferSuggestion,
   parseMermaidError,
 } from '../../src/domain/diagnostics.js';
-import { parseCliArgs } from '../../src/interfaces/cli/runCli.js';
 import {
   extractSvgDimensions,
   normalizeSvgIntrinsicDimensions,
@@ -75,15 +74,5 @@ describe('Domain Diagnostics & Pure Helpers', () => {
     expect(normalized).not.toContain('width="100%"');
 
     expect(slugify('  My Cool Chart! (v2)  ')).toBe('my-cool-chart-v2');
-  });
-
-  it('parses CLI positional args and flags cleanly', () => {
-    const parsed = parseCliArgs(['create', '--title=Auth Flow', '-f', 'auth.mmd', '--json']);
-    expect(parsed.positional).toEqual(['create']);
-    expect(parsed.flags).toEqual({
-      title: 'Auth Flow',
-      file: 'auth.mmd',
-      json: true,
-    });
   });
 });

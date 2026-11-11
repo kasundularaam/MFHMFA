@@ -1,7 +1,7 @@
 {
   "name": "mfhmfa",
   "version": "1.0.0",
-  "description": "MFHMFA (Mermaid For Humans, Mermaid For Agents) — Eye-comfortable Mermaid chart studio, headless validation/rendering engine, CLI tools, and MCP server.",
+  "description": "MFHMFA (Mermaid For Humans, Mermaid For Agents) — Eye-comfortable Mermaid chart studio, headless validation/rendering engine, REST tool API, and MCP server.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -22,17 +22,12 @@
     "node": ">=24.0.0"
   },
   "type": "module",
-  "bin": {
-    "mfhmfa": "./bin/mfhmfa",
-    "mermaid-studio": "./bin/mermaid-studio"
-  },
   "scripts": {
     "dev": "tsx src/dev.ts",
     "build:web": "vite build",
     "build": "vite build && tsc -p tsconfig.server.json",
     "start": "tsx src/server.ts",
     "mcp": "tsx src/mcp-stdio.ts",
-    "tool": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",
     "docker:up": "mkdir -p data && docker compose up -d --build",
