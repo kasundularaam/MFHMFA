@@ -17,6 +17,7 @@ import type {
   ViewMode,
 } from '../hooks/useStudioController';
 import type { AppearanceMode } from '../theme/comfortTheme';
+import { BrandLogo } from './BrandLogo';
 
 const DEFAULT_GITHUB_URL = 'https://github.com/kasundularaam/MFHMFA';
 
@@ -77,53 +78,14 @@ export function TopBar({
           onClick={onBrandClick}
           style={{ cursor: brandInteractive ? 'pointer' : 'default' }}
           title={
-            viewMode !== 'scratchpad'
-              ? 'Return to local workspace'
-              : 'MFHMFA — Mermaid For Humans, Mermaid For Agents'
+            page === 'docs'
+              ? 'Back to Studio'
+              : viewMode !== 'scratchpad'
+                ? 'Return to local workspace'
+                : 'MFHMFA — Mermaid For Humans, Mermaid For Agents'
           }
         >
-          <svg
-            className="brand-logo"
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <rect
-              x="2.5"
-              y="3"
-              width="7"
-              height="5.5"
-              rx="1.5"
-              stroke="currentColor"
-              strokeWidth="1.7"
-            />
-            <rect
-              x="14.5"
-              y="3"
-              width="7"
-              height="5.5"
-              rx="1.5"
-              stroke="currentColor"
-              strokeWidth="1.7"
-            />
-            <rect
-              x="8.5"
-              y="15.5"
-              width="7"
-              height="5.5"
-              rx="1.5"
-              fill="currentColor"
-            />
-            <path
-              d="M6 8.5V12C6 12.8284 6.67157 13.5 7.5 13.5H16.5C17.3284 13.5 18 12.8284 18 12V8.5M12 13.5V15.5"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          </svg>
-          <span className="brand-name">MFHMFA</span>
+          <BrandLogo height={19} className="brand-logo" />
         </button>
 
         {page === 'docs' ? (
