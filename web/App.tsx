@@ -14,13 +14,6 @@ export function App() {
       <TopBar
         page={ctrl.page}
         onChangePage={ctrl.setPage}
-        sidebarOpen={ctrl.sidebarOpen}
-        onToggleSidebar={() => ctrl.setSidebarOpen((v) => !v)}
-        title={ctrl.title}
-        onChangeTitle={(next) => {
-          ctrl.setTitle(next);
-          ctrl.setIsDirty(true);
-        }}
         isDirty={ctrl.isDirty}
         stageMode={ctrl.stageMode}
         onChangeStageMode={ctrl.setStageMode}
@@ -39,6 +32,8 @@ export function App() {
         <div className="workspace-body">
           <Sidebar
             open={ctrl.sidebarOpen}
+            onToggleOpen={() => ctrl.setSidebarOpen((v) => !v)}
+            onExpandOpen={() => ctrl.setSidebarOpen(true)}
             tab={ctrl.sidebarTab}
             onChangeTab={ctrl.setSidebarTab}
             search={ctrl.search}
@@ -50,6 +45,7 @@ export function App() {
               ctrl.loadChartIntoWorkspace(id);
               ctrl.setStageMode(ctrl.defaultOpenMode);
             }}
+            onRenameChart={ctrl.handleRenameChart}
             onDeleteChart={ctrl.handleDeleteChart}
             onSelectTemplate={ctrl.handleSelectTemplate}
             onNewChart={ctrl.handleNewChart}

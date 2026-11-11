@@ -44,7 +44,7 @@ export function useStudioController() {
   const [activeChartId, setActiveChartId] = useState<string | null>(null);
   const [diagramIdentity, setDiagramIdentity] = useState<string>('initial');
   const [title, setTitle] = useState('Untitled Diagram');
-  const [code, setCode] = useState(INITIAL_CODE);
+  const [code, setCode] = useState('');
   const [version, setVersion] = useState(1);
   const [versions, setVersions] = useState<ChartVersionSummary[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -63,6 +63,7 @@ export function useStudioController() {
   const [toastVisible, setToastVisible] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const bootstrappedRef = useRef(false);
   const renderCounterRef = useRef(0);
   const loadSeqRef = useRef(0);
   const skipNextCodeEffectRef = useRef(false);
@@ -136,6 +137,7 @@ export function useStudioController() {
         const outcome = cached ?? (await renderMermaidClient(detail.code, mode));
         if (seq !== loadSeqRef.current) return;
 
+        ++renderCounterRef.current;
         skipNextCodeEffectRef.current = true;
 
         setActiveChartId(detail.chart.id);
@@ -184,39 +186,58 @@ export function useStudioController() {
     async (tpl: MermaidTemplate) => {
       const seq = ++loadSeqRef.current;
       const mode = appearanceRef.current;
-      const cached = getCachedClientRender(tpl.code, mode);
-      const outcome = cached ?? (await renderMermaidClient(tpl.code, mode));
-      if (seq !== loadSeqRef.current) return;
+      const serverTheme = mode === 'dark' ? 'dark' : 'neutral';
+      const serverBg = mode === 'dark' ? '#191918' : '#f5f3ee';
 
-      skipNextCodeEffectRef.current = true;
-      setActiveChartId(null);
-      setDiagramIdentity(`tpl:${tpl.id}`);
-      setTitle(tpl.name);
-      setCode(tpl.code);
-      setVersion(1);
-      setVersions([]);
-      setIsDirty(true);
-      setStageMode('preview');
+      try {
+        const [outcome, created] = await Promise.all([
+          renderMermaidClient(tpl.code, mode),
+          studioApi.createChart({
+            title: tpl.name,
+            code: tpl.code,
+            theme: serverTheme,
+            look: 'classic',
+            background: serverBg,
+          }),
+        ]);
+        if (seq !== loadSeqRef.current) return;
 
-      if (outcome.ok) {
-        setRenderedSvg(outcome.svg);
-        setDiagramType(outcome.diagramType);
-        setParseError(null);
-        setDimensions(outcome.dimensions);
+        ++renderCounterRef.current;
+        skipNextCodeEffectRef.current = true;
+        setActiveChartId(created.chart.id);
+        setDiagramIdentity(`${created.chart.id}:v1`);
+        setTitle(created.chart.title);
+        setCode(tpl.code);
+        setVersion(1);
+        setVersions([]);
+        setIsDirty(false);
+        setSidebarTab('charts');
+        setStageMode('preview');
+        setCharts((prev) => [created.chart, ...prev.filter((c) => c.id !== created.chart.id)]);
 
-        if (outcome.dimensions) {
-          const fit = computeViewportFitZoom(outcome.dimensions.width, outcome.dimensions.height);
-          if (fit !== null) {
-            setZoom(fit);
-            setPan({ x: 0, y: 0 });
-            needsFitOnPreviewRef.current = false;
-          } else {
-            needsFitOnPreviewRef.current = true;
+        if (outcome.ok) {
+          setRenderedSvg(outcome.svg);
+          setDiagramType(outcome.diagramType);
+          setParseError(null);
+          setDimensions(outcome.dimensions);
+
+          if (outcome.dimensions) {
+            const fit = computeViewportFitZoom(outcome.dimensions.width, outcome.dimensions.height);
+            if (fit !== null) {
+              setZoom(fit);
+              setPan({ x: 0, y: 0 });
+              needsFitOnPreviewRef.current = false;
+            } else {
+              needsFitOnPreviewRef.current = true;
+            }
           }
         }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        notifyToast(`Could not create from template: ${message}`);
       }
     },
-    [computeViewportFitZoom]
+    [computeViewportFitZoom, notifyToast]
   );
 
   // Initial bootstrap
@@ -242,11 +263,15 @@ export function useStudioController() {
           await loadChartIntoWorkspace(target.id);
         } else {
           const initial = await renderMermaidClient(INITIAL_CODE, appearanceRef.current);
+          ++renderCounterRef.current;
+          skipNextCodeEffectRef.current = true;
+          setCode(INITIAL_CODE);
           if (initial.ok) {
             setRenderedSvg(initial.svg);
             setDimensions(initial.dimensions);
           }
         }
+        bootstrappedRef.current = true;
       })
       .catch((err: unknown) => console.error('Bootstrap error:', err));
   }, [loadChartIntoWorkspace]);
@@ -289,9 +314,11 @@ export function useStudioController() {
 
   // Background render on code edits or Dark/Light theme switch
   useEffect(() => {
+    if (!bootstrappedRef.current) return undefined;
+
     if (skipNextCodeEffectRef.current) {
       skipNextCodeEffectRef.current = false;
-      return;
+      return undefined;
     }
 
     const cached = getCachedClientRender(code, appearanceMode);
@@ -300,11 +327,12 @@ export function useStudioController() {
       setDiagramType(cached.diagramType);
       setParseError(null);
       setDimensions(cached.dimensions);
-      return;
+      return undefined;
     }
 
+    const seq = ++renderCounterRef.current;
     const timer = setTimeout(async () => {
-      const seq = ++renderCounterRef.current;
+      if (seq !== renderCounterRef.current) return;
 
       if (!code.trim()) {
         setRenderedSvg('');
@@ -425,26 +453,69 @@ export function useStudioController() {
 
   const handleNewChart = useCallback(async () => {
     const draftCode = `flowchart TD\n  Start(["Start"]) --> Step["Design Flow"]\n  Step --> Done(["Complete"])`;
-    const outcome = await renderMermaidClient(draftCode, appearanceRef.current);
+    const mode = appearanceRef.current;
+    const serverTheme = mode === 'dark' ? 'dark' : 'neutral';
+    const serverBg = mode === 'dark' ? '#191918' : '#f5f3ee';
 
-    skipNextCodeEffectRef.current = true;
-    setActiveChartId(null);
-    setDiagramIdentity(`draft:${Date.now()}`);
-    setTitle('Untitled Diagram');
-    setCode(draftCode);
-    setVersion(1);
-    setVersions([]);
-    setIsDirty(true);
-    if (outcome.ok) {
-      setRenderedSvg(outcome.svg);
-      setDiagramType(outcome.diagramType);
-      setDimensions(outcome.dimensions);
-      setParseError(null);
-      needsFitOnPreviewRef.current = true;
+    try {
+      const [outcome, created] = await Promise.all([
+        renderMermaidClient(draftCode, mode),
+        studioApi.createChart({
+          title: 'Untitled Diagram',
+          code: draftCode,
+          theme: serverTheme,
+          look: 'classic',
+          background: serverBg,
+        }),
+      ]);
+
+      ++renderCounterRef.current;
+      skipNextCodeEffectRef.current = true;
+      setActiveChartId(created.chart.id);
+      setDiagramIdentity(`${created.chart.id}:v1`);
+      setTitle(created.chart.title);
+      setCode(draftCode);
+      setVersion(1);
+      setVersions([]);
+      setIsDirty(false);
+      setSidebarTab('charts');
+      setCharts((prev) => [created.chart, ...prev.filter((c) => c.id !== created.chart.id)]);
+
+      if (outcome.ok) {
+        setRenderedSvg(outcome.svg);
+        setDiagramType(outcome.diagramType);
+        setDimensions(outcome.dimensions);
+        setParseError(null);
+        needsFitOnPreviewRef.current = true;
+      }
+      setPage('studio');
+      setStageMode('code');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      notifyToast(`Could not create chart: ${message}`);
     }
-    setPage('studio');
-    setStageMode('code');
-  }, []);
+  }, [notifyToast]);
+
+  const handleRenameChart = useCallback(
+    async (id: string, nextTitle: string) => {
+      const trimmed = nextTitle.trim();
+      if (!trimmed) return;
+      try {
+        const res = await studioApi.updateChart(id, { title: trimmed });
+        setCharts((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, title: res.chart.title } : c))
+        );
+        if (activeChartId === id) {
+          setTitle(res.chart.title);
+        }
+        notifyToast('Renamed');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        notifyToast(`Rename failed: ${message}`);
+      }
+    },
+    [activeChartId, notifyToast]
+  );
 
   const handleDeleteChart = useCallback(
     async (id: string) => {
@@ -570,6 +641,7 @@ export function useStudioController() {
     handleSelectTemplate,
     handleSave,
     handleNewChart,
+    handleRenameChart,
     handleDeleteChart,
     handleFitCanvas,
     handleExportPng,
