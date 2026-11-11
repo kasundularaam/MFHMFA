@@ -17,7 +17,7 @@ export function createMermaidMcpServer(
     },
     {
       instructions: [
-        'Mermaid Agent Studio lets you create, validate, render, export, and visually inspect (via PNG images) Mermaid diagrams.',
+        'MFHMFA (Mermaid For Humans, Mermaid For Agents) lets you create, validate, render, export, and visually inspect (via PNG images) Mermaid diagrams.',
         'Workflow tip: Use `mermaid_create_chart` (or `mermaid_render_preview` for drafts). Both validate syntax AND return the rendered PNG image so you can visually inspect your diagram.',
         'If validation fails, check `error.line`, `error.snippet`, and `error.suggestion` (wrap labels containing (), [], or {} in double quotes ["..."], and avoid lowercase `end` as a node ID).',
       ].join(' '),

@@ -1,10 +1,10 @@
 services:
-  mermaid-studio:
+  mfhmfa:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mermaid-agent-studio:latest
-    container_name: mermaid-agent-studio
+    image: mfhmfa:latest
+    container_name: mfhmfa
     restart: unless-stopped
     init: true
     shm_size: "512mb"

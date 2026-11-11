@@ -1,9 +1,15 @@
 {
-  "name": "mermaid-agent-studio",
+  "name": "mfhmfa",
   "version": "1.0.0",
-  "description": "Eye-comfortable Mermaid chart studio, headless validation/rendering engine, CLI tools, and MCP server for AI agents and humans.",
+  "description": "MFHMFA (Mermaid For Humans, Mermaid For Agents) — Eye-comfortable Mermaid chart studio, headless validation/rendering engine, CLI tools, and MCP server.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kasundularaam/MFHMFA.git"
+  },
+  "homepage": "https://github.com/kasundularaam/MFHMFA#readme",
   "keywords": [
+    "mfhmfa",
     "mermaid",
     "mcp",
     "model-context-protocol",
@@ -17,6 +23,7 @@
   },
   "type": "module",
   "bin": {
+    "mfhmfa": "./bin/mfhmfa",
     "mermaid-studio": "./bin/mermaid-studio"
   },
   "scripts": {

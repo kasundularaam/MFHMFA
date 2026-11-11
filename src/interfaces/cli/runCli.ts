@@ -63,10 +63,10 @@ async function readCodeInput(flags: Record<string, string | boolean>): Promise<s
 }
 
 function printHelp(): void {
-  console.log(`Mermaid Agent Studio CLI
+  console.log(`MFHMFA — Mermaid For Humans, Mermaid For Agents (CLI)
 
 Usage:
-  mermaid-studio <command> [options]
+  mfhmfa <command> [options]
 
 Commands:
   serve [--port 48333]                       Start Web Studio + REST API + HTTP MCP server
@@ -104,7 +104,7 @@ export async function runCli(argv: string[]): Promise<void> {
     const { startStudioServer } = await import('../../server.js');
     const port = typeof flags.port === 'string' ? Number(flags.port) : undefined;
     const started = await startStudioServer({ port });
-    console.log(`Mermaid Agent Studio listening at ${started.baseUrl}`);
+    console.log(`MFHMFA listening at ${started.baseUrl}`);
     console.log(`MCP Streamable HTTP: ${started.baseUrl}/mcp`);
 
     const shutdown = async () => {

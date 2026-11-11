@@ -77,7 +77,7 @@ export function SettingsView({
       httpSnippet: JSON.stringify(
         {
           mcpServers: {
-            'mermaid-studio': {
+            mfhmfa: {
               type: 'streamable-http',
               url: httpUrl,
             },
@@ -89,7 +89,7 @@ export function SettingsView({
       stdioSnippet: JSON.stringify(
         {
           mcpServers: {
-            'mermaid-studio': {
+            mfhmfa: {
               command: status?.connections.mcpStdioCommand || 'npx',
               args: stdioArgs,
             },
@@ -98,7 +98,7 @@ export function SettingsView({
         null,
         2
       ),
-      cliSnippet: `${status?.connections.cliExecutable || './bin/mermaid-studio'} create --title "Service Flow" --code 'flowchart LR\\n  A["Gateway"] --> B["Worker"]'`,
+      cliSnippet: `${status?.connections.cliExecutable || './bin/mfhmfa'} create --title "Service Flow" --code 'flowchart LR\\n  A["Gateway"] --> B["Worker"]'`,
     };
   }, [status]);
 

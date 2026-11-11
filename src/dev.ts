@@ -1,5 +1,5 @@
 import { createServer as createViteServer } from 'vite';
-import { DEFAULT_PORT } from './config/env.js';
+import { APP_TITLE, DEFAULT_PORT } from './config/env.js';
 import { startStudioServer } from './server.js';
 
 async function runDev(): Promise<void> {
@@ -9,7 +9,7 @@ async function runDev(): Promise<void> {
   });
   await vite.listen();
 
-  console.log(`\nMermaid Agent Studio (Dev Mode)`);
+  console.log(`\n${APP_TITLE} (Dev Mode)`);
   console.log(`  Live Hot-Reload UI : http://localhost:5173`);
   console.log(`  API & MCP Server   : ${api.baseUrl}`);
   console.log(`  MCP Streamable HTTP: ${api.baseUrl}/mcp\n`);

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StudioService } from './application/studioService.js';
 import {
+  APP_TITLE,
   DEFAULT_HOST,
   DEFAULT_PORT,
   resolveConfiguredPort,
@@ -83,7 +84,7 @@ const isMain =
 if (isMain) {
   startStudioServer()
     .then((started) => {
-      console.log(`\nMermaid Agent Studio running`);
+      console.log(`\n${APP_TITLE}`);
       console.log(`  Web Studio UI      : ${started.baseUrl}`);
       console.log(`  MCP Streamable HTTP: ${started.baseUrl}/mcp`);
       console.log(`  MCP Legacy SSE     : ${started.baseUrl}/mcp/sse`);
@@ -98,7 +99,7 @@ if (isMain) {
       process.on('SIGTERM', shutdown);
     })
     .catch((err: unknown) => {
-      console.error('Failed to start Mermaid Agent Studio:', err);
+      console.error('Failed to start MFHMFA:', err);
       process.exit(1);
     });
 }

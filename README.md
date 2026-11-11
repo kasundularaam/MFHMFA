@@ -1,18 +1,20 @@
-# Mermaid Agent Studio
+# MFHMFA
+
+**Mermaid For Humans, Mermaid For Agents**
 
 A calm, eye-comfortable **Mermaid Diagram Studio + Headless Validation & Rendering Engine + Dual-Transport MCP Server + CLI** built so both **humans and AI coding agents** can create, validate, refine, and **visually inspect** the charts they build.
 
 ---
 
-## Why Mermaid Agent Studio?
+## Why MFHMFA?
 
 Most AI agents generate Mermaid diagrams blind — emitting raw text without knowing whether it parses or renders as an unreadable spaghetti layout.
 
-**Mermaid Agent Studio** closes that loop:
+**MFHMFA** closes that loop:
 
 1. **Agents *See* What They Build**: `mermaid_render_preview`, `mermaid_create_chart`, `mermaid_update_chart`, and `mermaid_see_chart` return **2x Retina PNG images** (`MCP ImageContent` + local file paths) alongside structural layout diagnostics (dimensions, aspect-ratio warnings, node/edge counts, contrast checks).
 2. **Actionable Parse Diagnostics**: Syntax errors return 1-indexed line/column pointers, source snippets, and targeted fix hints (unquoted `()`/`[]`/`{}` inside labels, reserved lowercase `end` node IDs, unmatched `subgraph` blocks).
-3. **Calm, Eye-Comfortable Web Workspace**:
+3. **Calm, Eye-Comfortable Human Workspace**:
    - Unified low-glare **Warm Graphite (Dark)** and **Warm Paper (Light)** modes across interface, CodeMirror 6 editor, and rendered diagrams.
    - Distraction-free single-stage **`Preview ↔ Code`** flip view with a collapsible sidebar.
    - Real-time WebSocket sync (`/ws`) that automatically displays charts as AI agents create or update them.
@@ -74,7 +76,7 @@ npm test
 ```json
 {
   "mcpServers": {
-    "mermaid-studio": {
+    "mfhmfa": {
       "type": "streamable-http",
       "url": "http://localhost:48333/mcp"
     }
@@ -89,9 +91,9 @@ Using the running Docker container:
 ```json
 {
   "mcpServers": {
-    "mermaid-studio": {
+    "mfhmfa": {
       "command": "docker",
-      "args": ["exec", "-i", "mermaid-agent-studio", "node", "dist/server/mcp-stdio.js"]
+      "args": ["exec", "-i", "mfhmfa", "node", "dist/server/mcp-stdio.js"]
     }
   }
 }
@@ -101,9 +103,9 @@ Or directly via local Node/tsx:
 ```json
 {
   "mcpServers": {
-    "mermaid-studio": {
+    "mfhmfa": {
       "command": "npx",
-      "args": ["tsx", "/path/to/mermaid-agent-studio/src/mcp-stdio.ts"]
+      "args": ["tsx", "/path/to/MFHMFA/src/mcp-stdio.ts"]
     }
   }
 }
@@ -113,25 +115,25 @@ Or directly via local Node/tsx:
 
 ```bash
 # Validate syntax & get line-level fix suggestions
-./bin/mermaid-studio validate --code 'flowchart TD\n  A["Start"] --> B["Process (v2)"]'
+./bin/mfhmfa validate --code 'flowchart TD\n  A["Start"] --> B["Process (v2)"]'
 
 # Render stateless preview to PNG + SVG
-./bin/mermaid-studio render --code 'sequenceDiagram\n  Agent->>API: POST /charts' --out /tmp/preview.png
+./bin/mfhmfa render --code 'sequenceDiagram\n  Agent->>API: POST /charts' --out /tmp/preview.png
 
 # Create & persist chart in the live Studio workspace
-./bin/mermaid-studio create --title "Auth Flow" --file auth.mmd
+./bin/mfhmfa create --title "Auth Flow" --file auth.mmd
 
 # Update chart (creates new version snapshot)
-./bin/mermaid-studio update <chart-id> --file auth-v2.mmd --note "Switch LR to TB"
+./bin/mfhmfa update <chart-id> --file auth-v2.mmd --note "Switch LR to TB"
 
 # Inspect chart metadata, history & rendered PNG path
-./bin/mermaid-studio see <chart-id>
+./bin/mfhmfa see <chart-id>
 
 # Export chart to .png, .svg, .mmd, or .md
-./bin/mermaid-studio export <chart-id> --out ./docs/architecture.svg
+./bin/mfhmfa export <chart-id> --out ./docs/architecture.svg
 
 # Print Mermaid syntax & escaping guide
-./bin/mermaid-studio guide pitfalls
+./bin/mfhmfa guide pitfalls
 ```
 
 ### 4. Function-Calling HTTP API (OpenAI / Anthropic / Gemini)

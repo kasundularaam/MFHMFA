@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORT = 48333;
 export const DEFAULT_HOST = '0.0.0.0';
-export const APP_NAME = 'mermaid-agent-studio';
+export const APP_NAME = 'mfhmfa';
+export const APP_TITLE = 'MFHMFA — Mermaid For Humans, Mermaid For Agents';
 export const APP_VERSION = '1.0.0';
 
 export function resolveProjectRoot(metaUrl: string = import.meta.url): string {
