@@ -5,7 +5,7 @@ import express, { type Express } from 'express';
 import type { StudioService } from '../../application/studioService.js';
 import { PROJECT_ROOT } from '../../config/env.js';
 import { mountMcpHttpEndpoints, type MountedMcpEndpoints } from '../mcp/mountMcpHttp.js';
-import { createChartRouter } from './chartRouter.js';
+import { createRenderRouter } from './renderRouter.js';
 import { createStudioRouter } from './studioRouter.js';
 
 export function createStudioExpressApp(service: StudioService): {
@@ -19,17 +19,13 @@ export function createStudioExpressApp(service: StudioService): {
   const mcp = mountMcpHttpEndpoints(app, service);
 
   app.use('/api', createStudioRouter(service, mcp.getSessionCount));
-  app.use('/api', createChartRouter(service));
+  app.use('/api', createRenderRouter(service));
 
   const webDistDir = path.join(PROJECT_ROOT, 'dist/web');
   if (fs.existsSync(webDistDir)) {
     app.use(express.static(webDistDir));
     app.get('*', (req, res, next) => {
-      if (
-        req.path.startsWith('/api') ||
-        req.path.startsWith('/mcp') ||
-        req.path.startsWith('/ws')
-      ) {
+      if (req.path.startsWith('/api') || req.path.startsWith('/mcp')) {
         next();
         return;
       }
@@ -45,7 +41,7 @@ export function createStudioExpressApp(service: StudioService): {
       res
         .status(200)
         .send(
-          'Mermaid Agent Studio API & MCP Server is running. Run `npm run build:web` to build the Web UI.'
+          'MFHMFA Stateless API & MCP Server is running. Run `npm run build:web` to build the Web UI.'
         );
     });
   }

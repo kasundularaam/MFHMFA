@@ -89,7 +89,7 @@ export function PreviewCanvas({
         e.preventDefault();
         if (cameraGlide) setCameraGlide(false);
         const delta = e.deltaY < 0 ? 1.08 : 0.92;
-        onChangeZoom((z) => Number(Math.min(4, Math.max(0.15, z * delta)).toFixed(2)));
+        onChangeZoom((z) => Number(Math.min(6, Math.max(0.15, z * delta)).toFixed(2)));
       }}
       onMouseDown={(e) => {
         if (cameraGlide) setCameraGlide(false);
@@ -132,8 +132,9 @@ export function PreviewCanvas({
           className={`canvas-stage ${cameraGlide ? 'smooth-camera' : ''} ${
             outgoingLayer ? 'canvas-layer-in' : ''
           }`}
+          onTransitionEnd={() => setCameraGlide(false)}
           style={{
-            transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
+            transform: `translate(calc(-50% + ${Math.round(pan.x)}px), calc(-50% + ${Math.round(pan.y)}px)) scale(${zoom})`,
           }}
           dangerouslySetInnerHTML={{ __html: renderedSvg }}
         />
@@ -190,7 +191,7 @@ export function PreviewCanvas({
           className="btn ghost sm"
           onClick={() => {
             setCameraGlide(true);
-            onChangeZoom((z) => Number(Math.min(4, z + 0.14).toFixed(2)));
+            onChangeZoom((z) => Number(Math.min(6, z + 0.14).toFixed(2)));
           }}
           title="Zoom in"
         >

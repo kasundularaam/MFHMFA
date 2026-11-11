@@ -9,8 +9,6 @@ import {
   resolveConfiguredPort,
 } from './config/env.js';
 import type { RenderEnginePort } from './domain/ports.js';
-import { SqliteChartRepository } from './infrastructure/persistence/sqliteRepository.js';
-import { WsLiveHub } from './infrastructure/realtime/wsLiveHub.js';
 import { getSharedRenderEngine } from './infrastructure/renderer/chromiumEngine.js';
 import { createStudioExpressApp } from './interfaces/http/createApp.js';
 
@@ -25,27 +23,20 @@ export interface StartedStudioServer {
 export async function startStudioServer(opts?: {
   port?: number;
   host?: string;
-  dataDir?: string;
-  seedDefaults?: boolean;
   engine?: RenderEnginePort;
 }): Promise<StartedStudioServer> {
   const host = opts?.host ?? process.env.HOST ?? DEFAULT_HOST;
   const requestedPort = resolveConfiguredPort(opts?.port);
 
-  const repo = new SqliteChartRepository(opts?.dataDir);
   const engine = opts?.engine ?? getSharedRenderEngine();
-  const liveHub = new WsLiveHub();
 
   const service = new StudioService({
-    repo,
     engine,
-    liveHub,
     baseUrl: `http://localhost:${requestedPort || DEFAULT_PORT}`,
   });
 
   const { app, mcp } = createStudioExpressApp(service);
   const httpServer = http.createServer(app);
-  liveHub.attach(httpServer);
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject);
@@ -56,10 +47,6 @@ export async function startStudioServer(opts?: {
   const actualPort = typeof addr === 'object' && addr ? addr.port : requestedPort;
   service.baseUrl = `http://localhost:${actualPort}`;
 
-  if (opts?.seedDefaults !== false) {
-    await service.seedStarterChartsIfEmpty();
-  }
-
   return {
     httpServer,
     port: actualPort,
@@ -67,9 +54,7 @@ export async function startStudioServer(opts?: {
     service,
     close: async () => {
       await mcp.closeAll();
-      liveHub.close();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-      repo.close();
       if (!opts?.engine) {
         await engine.dispose();
       }
@@ -84,12 +69,11 @@ const isMain =
 if (isMain) {
   startStudioServer()
     .then((started) => {
-      console.log(`\n${APP_TITLE}`);
+      console.log(`\n${APP_TITLE} [Stateless Mode]`);
       console.log(`  Web Studio UI      : ${started.baseUrl}`);
       console.log(`  MCP Streamable HTTP: ${started.baseUrl}/mcp`);
       console.log(`  MCP Legacy SSE     : ${started.baseUrl}/mcp/sse`);
-      console.log(`  Tool JSON Schemas  : ${started.baseUrl}/api/tools/schemas`);
-      console.log(`  Live WebSocket     : ws://localhost:${started.port}/ws\n`);
+      console.log(`  Tool JSON Schemas  : ${started.baseUrl}/api/tools/schemas\n`);
 
       const shutdown = async () => {
         await started.close();
@@ -99,7 +83,7 @@ if (isMain) {
       process.on('SIGTERM', shutdown);
     })
     .catch((err: unknown) => {
-      console.error('Failed to start MFHMFA:', err);
+      console.error('Fatal server startup error:', err);
       process.exit(1);
     });
 }

@@ -13,7 +13,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=48333
+      - MERMAID_RENDER_CONCURRENCY=${MERMAID_RENDER_CONCURRENCY:-4}
       - MERMAID_STUDIO_URL=http://localhost:${MERMAID_STUDIO_PORT:-48333}
       - HOST_PROJECT_ROOT=${HOST_PROJECT_ROOT:-${PWD}}
-    volumes:
-      - ./data:/app/data

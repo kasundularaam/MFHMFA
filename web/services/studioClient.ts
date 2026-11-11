@@ -1,26 +1,23 @@
 import type {
-  AgentEventRecord,
-  ChartRecord,
-  ChartVersionSummary,
   DiagramDimensions,
   DiagramMetrics,
   LintWarning,
-  LiveEventPayload,
   MermaidLook,
-  MermaidTemplate,
   MermaidTheme,
   ParseErrorDetail,
+  RenderEngineStats,
   ValidationResult,
 } from '../../src/shared/types';
 
 export interface ServerStatus {
   ok: boolean;
+  stateless: boolean;
   name: string;
   version: string;
+  repoUrl: string;
   baseUrl: string;
-  chartCount: number;
-  wsClients: number;
   mcpHttpSessions: number;
+  engine: RenderEngineStats | null;
   connections: {
     mcpStreamableHttp: string;
     mcpLegacySse: string;
@@ -32,18 +29,9 @@ export interface ServerStatus {
   };
 }
 
-export interface ChartDetailResponse {
-  chart: ChartRecord;
-  selectedVersion: number;
-  code: string;
-  svg: string | null;
-  versions: ChartVersionSummary[];
-  studioUrl: string;
-  pngUrl: string;
-  svgUrl: string;
-}
-
 export interface StatelessRenderResponse {
+  renderId: string;
+  title: string;
   valid: boolean;
   diagramType: string | null;
   theme: MermaidTheme;
@@ -77,65 +65,6 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 export const studioApi = {
   getStatus: () => requestJson<ServerStatus>('/api/status'),
 
-  listCharts: (search?: string) =>
-    requestJson<{ charts: ChartRecord[] }>(
-      `/api/charts${search ? `?search=${encodeURIComponent(search)}` : ''}`
-    ),
-
-  getChart: (id: string, version?: number) =>
-    requestJson<ChartDetailResponse>(
-      `/api/charts/${encodeURIComponent(id)}${version ? `?version=${version}` : ''}`
-    ),
-
-  createChart: (payload: {
-    title: string;
-    code: string;
-    description?: string;
-    theme?: MermaidTheme;
-    look?: MermaidLook;
-    background?: string;
-    tags?: string[];
-  }) =>
-    requestJson<{
-      chart: ChartRecord;
-      svg: string | null;
-      studioUrl: string;
-      pngUrl: string;
-      svgUrl: string;
-    }>('/api/charts', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-
-  updateChart: (
-    id: string,
-    payload: {
-      title?: string;
-      code?: string;
-      description?: string;
-      theme?: MermaidTheme;
-      look?: MermaidLook;
-      background?: string;
-      tags?: string[];
-      changeNote?: string;
-    }
-  ) =>
-    requestJson<{
-      chart: ChartRecord;
-      svg: string | null;
-      studioUrl: string;
-      pngUrl: string;
-      svgUrl: string;
-    }>(`/api/charts/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    }),
-
-  deleteChart: (id: string) =>
-    requestJson<{ deleted: boolean; id: string }>(`/api/charts/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    }),
-
   validate: (code: string) =>
     requestJson<ValidationResult>('/api/validate', {
       method: 'POST',
@@ -144,6 +73,7 @@ export const studioApi = {
 
   renderServer: (payload: {
     code: string;
+    title?: string;
     theme: MermaidTheme;
     look: MermaidLook;
     background: string;
@@ -153,65 +83,4 @@ export const studioApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-
-  listTemplates: () => requestJson<{ templates: MermaidTemplate[] }>('/api/templates'),
-
-  getGuide: (topic = 'all') =>
-    requestJson<{ topic: string; guide: string }>(
-      `/api/guides?topic=${encodeURIComponent(topic)}`
-    ),
-
-  listEvents: () => requestJson<{ events: AgentEventRecord[] }>('/api/events?limit=80'),
-
-  callAgentTool: (name: string, args: Record<string, unknown>) =>
-    requestJson<{
-      ok: boolean;
-      result: unknown;
-      image?: { mimeType: string; base64: string } | null;
-    }>('/api/tools/call', {
-      method: 'POST',
-      body: JSON.stringify({ name, arguments: args }),
-    }),
 };
-
-export function connectLiveSocket(
-  onMessage: (msg: LiveEventPayload) => void,
-  onStateChange: (connected: boolean) => void
-): () => void {
-  let ws: WebSocket | null = null;
-  let closedByApp = false;
-  let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const open = () => {
-    if (closedByApp) return;
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${proto}//${window.location.host}/ws`);
-
-    ws.onopen = () => onStateChange(true);
-    ws.onmessage = (ev) => {
-      try {
-        const parsed = JSON.parse(String(ev.data)) as LiveEventPayload;
-        onMessage(parsed);
-      } catch {
-        // Ignore malformed frame
-      }
-    };
-    ws.onclose = () => {
-      onStateChange(false);
-      if (!closedByApp) {
-        retryTimer = setTimeout(open, 1800);
-      }
-    };
-    ws.onerror = () => {
-      ws?.close();
-    };
-  };
-
-  open();
-
-  return () => {
-    closedByApp = true;
-    if (retryTimer) clearTimeout(retryTimer);
-    ws?.close();
-  };
-}

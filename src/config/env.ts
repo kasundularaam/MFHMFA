@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_PORT = 48333;
 export const DEFAULT_HOST = '0.0.0.0';
+export const DEFAULT_RENDER_CONCURRENCY = 4;
 export const APP_NAME = 'mfhmfa';
 export const APP_TITLE = 'MFHMFA — Mermaid For Humans, Mermaid For Agents';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '2.0.0';
+export const GITHUB_REPO_URL = 'https://github.com/kasundularaam/MFHMFA';
 
 export function resolveProjectRoot(metaUrl: string = import.meta.url): string {
   let dir = path.dirname(fileURLToPath(metaUrl));
@@ -23,19 +25,22 @@ export function resolveProjectRoot(metaUrl: string = import.meta.url): string {
 
 export const PROJECT_ROOT = resolveProjectRoot(import.meta.url);
 
-export function resolveDataDir(overrideDir?: string): string {
-  const dir =
-    overrideDir ||
-    process.env.MERMAID_STUDIO_DATA_DIR ||
-    path.join(PROJECT_ROOT, 'data');
-  fs.mkdirSync(path.join(dir, 'renders', 'previews'), { recursive: true });
-  return dir;
-}
-
 export function resolveConfiguredPort(overridePort?: number): number {
   if (overridePort !== undefined) return overridePort;
   const parsed = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : DEFAULT_PORT;
+}
+
+export function resolveRenderConcurrency(overrideConcurrency?: number): number {
+  if (overrideConcurrency !== undefined) {
+    return Math.min(16, Math.max(1, Math.floor(overrideConcurrency)));
+  }
+  const raw = process.env.MERMAID_RENDER_CONCURRENCY;
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed >= 1) {
+    return Math.min(16, parsed);
+  }
+  return DEFAULT_RENDER_CONCURRENCY;
 }
 
 export function resolveBaseUrl(overrideUrl?: string, port?: number): string {
@@ -46,25 +51,4 @@ export function resolveBaseUrl(overrideUrl?: string, port?: number): string {
 
 export function resolveVisibleProjectRoot(): string {
   return process.env.HOST_PROJECT_ROOT || PROJECT_ROOT;
-}
-
-export function toHostVisiblePath(filePath: string | null): string | null {
-  if (!filePath) return null;
-  const hostRoot = process.env.HOST_PROJECT_ROOT;
-  if (hostRoot && filePath.startsWith('/app/data/')) {
-    return path.join(hostRoot, 'data', filePath.slice('/app/data/'.length));
-  }
-  return filePath;
-}
-
-export function isLocalOrBridgeAddress(rawIp: string): boolean {
-  const ip = rawIp.replace('::ffff:', '');
-  return (
-    ip === '127.0.0.1' ||
-    ip === '::1' ||
-    ip.startsWith('127.') ||
-    ip.startsWith('172.') ||
-    ip.startsWith('10.') ||
-    ip.startsWith('192.168.')
-  );
 }

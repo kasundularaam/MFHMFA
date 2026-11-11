@@ -1,10 +1,8 @@
 import { CodeEditorStage } from './components/CodeEditorStage';
+import { DocsView } from './components/DocsView';
 import { PreviewCanvas } from './components/PreviewCanvas';
-import { SettingsView } from './components/SettingsView';
-import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { useStudioController } from './hooks/useStudioController';
-import { studioApi } from './services/studioClient';
 
 export function App() {
   const ctrl = useStudioController();
@@ -14,12 +12,12 @@ export function App() {
       <TopBar
         page={ctrl.page}
         onChangePage={ctrl.setPage}
-        isDirty={ctrl.isDirty}
         stageMode={ctrl.stageMode}
         onChangeStageMode={ctrl.setStageMode}
+        appearanceMode={ctrl.appearanceMode}
+        onToggleAppearance={ctrl.toggleAppearanceMode}
+        repoUrl={ctrl.status?.repoUrl}
         hasError={Boolean(ctrl.parseError)}
-        saving={ctrl.saving}
-        onSave={ctrl.handleSave}
         onExportPng={ctrl.handleExportPng}
         onExportSvg={ctrl.handleExportSvg}
         onCopyCode={() => {
@@ -30,32 +28,11 @@ export function App() {
 
       {ctrl.page === 'studio' ? (
         <div className="workspace-body">
-          <Sidebar
-            open={ctrl.sidebarOpen}
-            onToggleOpen={() => ctrl.setSidebarOpen((v) => !v)}
-            onExpandOpen={() => ctrl.setSidebarOpen(true)}
-            tab={ctrl.sidebarTab}
-            onChangeTab={ctrl.setSidebarTab}
-            search={ctrl.search}
-            onChangeSearch={ctrl.setSearch}
-            charts={ctrl.filteredCharts}
-            templates={ctrl.templates}
-            activeChartId={ctrl.activeChartId}
-            onSelectChart={(id) => {
-              ctrl.loadChartIntoWorkspace(id);
-              ctrl.setStageMode(ctrl.defaultOpenMode);
-            }}
-            onRenameChart={ctrl.handleRenameChart}
-            onDeleteChart={ctrl.handleDeleteChart}
-            onSelectTemplate={ctrl.handleSelectTemplate}
-            onNewChart={ctrl.handleNewChart}
-          />
-
           <main className="single-stage">
             {ctrl.stageMode === 'preview' ? (
               <PreviewCanvas
                 viewportRef={ctrl.viewportRef}
-                chartKey={ctrl.diagramIdentity}
+                chartKey="scratchpad"
                 renderedSvg={ctrl.renderedSvg}
                 parseError={ctrl.parseError}
                 zoom={ctrl.zoom}
@@ -75,47 +52,13 @@ export function App() {
                 appearanceMode={ctrl.appearanceMode}
                 diagramType={ctrl.diagramType}
                 parseError={ctrl.parseError}
-                onChangeCode={(next) => {
-                  ctrl.setCode(next);
-                  ctrl.setIsDirty(true);
-                }}
+                onChangeCode={ctrl.setCode}
               />
             )}
           </main>
         </div>
       ) : (
-        <SettingsView
-          section={ctrl.settingsSection}
-          onChangeSection={ctrl.setSettingsSection}
-          appearanceMode={ctrl.appearanceMode}
-          onChangeAppearanceMode={ctrl.setAppearanceMode}
-          followAgentLive={ctrl.followAgentLive}
-          onToggleFollowAgentLive={() => ctrl.setFollowAgentLive((v) => !v)}
-          defaultOpenMode={ctrl.defaultOpenMode}
-          onChangeDefaultOpenMode={ctrl.setDefaultOpenMode}
-          wsConnected={ctrl.wsConnected}
-          status={ctrl.status}
-          events={ctrl.events}
-          activeChartId={ctrl.activeChartId}
-          title={ctrl.title}
-          version={ctrl.version}
-          versions={ctrl.versions}
-          guideText={ctrl.guideText}
-          onOpenChartInStudio={(chartId, ver) => {
-            ctrl.loadChartIntoWorkspace(chartId, ver);
-            ctrl.setPage('studio');
-          }}
-          onRestoreVersion={async (ver) => {
-            if (!ctrl.activeChartId) return;
-            await studioApi.updateChart(ctrl.activeChartId, {
-              code: ver.code,
-              changeNote: `Restored from v${ver.version}`,
-            });
-            await ctrl.loadChartIntoWorkspace(ctrl.activeChartId);
-            ctrl.setPage('studio');
-            ctrl.notifyToast(`Restored v${ver.version}`);
-          }}
-        />
+        <DocsView />
       )}
 
       {ctrl.toast && (

@@ -17,8 +17,9 @@ export function createMermaidMcpServer(
     },
     {
       instructions: [
-        'MFHMFA (Mermaid For Humans, Mermaid For Agents) lets you create, validate, render, export, and visually inspect (via PNG images) Mermaid diagrams.',
-        'Workflow tip: Use `mermaid_create_chart` (or `mermaid_render_preview` for drafts). Both validate syntax AND return the rendered PNG image so you can visually inspect your diagram.',
+        'MFHMFA (Mermaid For Humans, Mermaid For Agents) is a stateless Mermaid validation, rendering, and visual inspection engine.',
+        'Workflow tip: Call `mermaid_render` to validate syntax AND receive a 2x Retina PNG image (`image/png`) + layout diagnostics so you can visually inspect and refine your diagram.',
+        'All tools are stateless and safe to invoke in parallel.',
         'If validation fails, check `error.line`, `error.snippet`, and `error.suggestion` (wrap labels containing (), [], or {} in double quotes ["..."], and avoid lowercase `end` as a node ID).',
       ].join(' '),
     }
@@ -66,26 +67,7 @@ export function createMermaidMcpServer(
     );
   }
 
-  // Resources
-  server.registerResource(
-    'charts-catalog',
-    'mermaid://charts',
-    {
-      title: 'Mermaid Studio Charts Catalog',
-      description: 'JSON list of all Mermaid charts saved in the workspace.',
-      mimeType: 'application/json',
-    },
-    async (uri) => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: 'application/json',
-          text: JSON.stringify(service.listCharts({ limit: 200 }), null, 2),
-        },
-      ],
-    })
-  );
-
+  // Stateless Resources
   server.registerResource(
     'syntax-pitfalls-guide',
     'mermaid://guides/pitfalls',
@@ -106,56 +88,53 @@ export function createMermaidMcpServer(
   );
 
   server.registerResource(
-    'chart-source',
-    new ResourceTemplate('mermaid://charts/{id}', {
+    'templates-catalog',
+    'mermaid://templates',
+    {
+      title: 'Starter Mermaid Templates Catalog',
+      description: 'JSON catalog of curated starter Mermaid templates across diagram types.',
+      mimeType: 'application/json',
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'application/json',
+          text: JSON.stringify(service.listTemplates(), null, 2),
+        },
+      ],
+    })
+  );
+
+  server.registerResource(
+    'template-source',
+    new ResourceTemplate('mermaid://templates/{id}', {
       list: async () => ({
-        resources: service.listCharts({ limit: 100 }).map((c) => ({
-          uri: `mermaid://charts/${c.id}`,
-          name: c.title,
-          description: `${c.diagramType ?? 'mermaid'} (v${c.version})`,
+        resources: service.listTemplates().map((tpl) => ({
+          uri: `mermaid://templates/${tpl.id}`,
+          name: tpl.name,
+          description: `${tpl.category} (${tpl.diagramType})`,
           mimeType: 'text/plain',
         })),
       }),
     }),
     {
-      title: 'Mermaid Chart Source (.mmd)',
-      description: 'Raw Mermaid diagram source code for a specific chart ID.',
+      title: 'Starter Mermaid Template Source (.mmd)',
+      description: 'Raw Mermaid source code for a starter template ID.',
       mimeType: 'text/plain',
     },
     async (uri, variables) => {
-      const res = await service.getChartWithVisuals(String(variables.id));
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: 'text/plain',
-            text: res.code,
-          },
-        ],
-      };
-    }
-  );
-
-  server.registerResource(
-    'chart-png',
-    new ResourceTemplate('mermaid://charts/{id}/png', { list: undefined }),
-    {
-      title: 'Mermaid Chart Rendered PNG',
-      description: 'Rendered Retina PNG image for a chart ID.',
-      mimeType: 'image/png',
-    },
-    async (uri, variables) => {
       const id = String(variables.id);
-      const res = await service.getChartWithVisuals(id);
-      if (!res.pngBytes) {
-        throw new Error(`No valid PNG available for chart ${id}`);
+      const tpl = service.getTemplate(id);
+      if (!tpl) {
+        throw new Error(`Template not found: ${id}`);
       }
       return {
         contents: [
           {
             uri: uri.href,
-            mimeType: 'image/png',
-            blob: Buffer.from(res.pngBytes).toString('base64'),
+            mimeType: 'text/plain',
+            text: tpl.code,
           },
         ],
       };
@@ -168,7 +147,7 @@ export function createMermaidMcpServer(
     {
       title: 'Design, Validate & Visually Verify a Mermaid Diagram',
       description:
-        'Structured workflow for crafting a clean Mermaid chart, rendering it, inspecting the PNG visually, and refining layout.',
+        'Structured stateless workflow for crafting a clean Mermaid chart, rendering it, inspecting the PNG visually, and refining layout.',
       argsSchema: {
         goal: z.string().describe('What system, workflow, or concept to diagram.'),
         diagramType: z.string().optional().describe('Preferred diagram type.'),
@@ -184,11 +163,11 @@ export function createMermaidMcpServer(
               `Create a clear, publication-grade Mermaid diagram${diagramType ? ` (${diagramType})` : ''} for:`,
               goal,
               '',
-              'Follow this workflow:',
+              'Follow this stateless workflow:',
               '1. Call `mermaid_syntax_guide` if unsure about syntax rules.',
-              '2. Call `mermaid_create_chart` with double-quoted node labels (`Node["Label (detail)"]`).',
-              '3. Visually inspect the returned PNG image and `layoutDiagnostics`.',
-              '4. Refine via `mermaid_update_chart` if layout or legibility can be improved.',
+              '2. Call `mermaid_render` with double-quoted node labels (`Node["Label (detail)"]`).',
+              '3. Visually inspect the returned 2x Retina PNG image and `layoutDiagnostics`.',
+              '4. Re-run `mermaid_render` with refined layout if aspect ratio or legibility can be improved, and optionally export with `mermaid_export`.',
             ].join('\n'),
           },
         },

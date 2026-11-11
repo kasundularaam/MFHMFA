@@ -4,10 +4,9 @@ import type { StudioService } from '../../application/studioService.js';
 import {
   APP_NAME,
   APP_VERSION,
-  isLocalOrBridgeAddress,
+  GITHUB_REPO_URL,
   resolveVisibleProjectRoot,
 } from '../../config/env.js';
-import type { LiveEventType } from '../../shared/types.js';
 import { dispatchNamedTool, getOpenAiToolSchemas } from '../tools/toolRegistry.js';
 
 export function createStudioRouter(
@@ -22,12 +21,13 @@ export function createStudioRouter(
 
     res.json({
       ok: true,
+      stateless: true,
       name: APP_NAME,
       version: APP_VERSION,
+      repoUrl: GITHUB_REPO_URL,
       baseUrl: service.baseUrl,
-      chartCount: service.repo.countCharts(),
-      wsClients: service.liveHub?.clientCount() ?? 0,
       mcpHttpSessions: getMcpSessionCount(),
+      engine: service.getEngineStats(),
       connections: {
         mcpStreamableHttp: `${service.baseUrl}/mcp`,
         mcpLegacySse: `${service.baseUrl}/mcp/sse`,
@@ -40,24 +40,6 @@ export function createStudioRouter(
     });
   });
 
-  router.post('/internal/broadcast', (req: Request, res: Response) => {
-    const rawIp = req.ip || req.socket.remoteAddress || '';
-    if (!isLocalOrBridgeAddress(rawIp)) {
-      res.status(403).json({ error: 'Local network only' });
-      return;
-    }
-
-    const { type, data, focusInUi } = (req.body ?? {}) as {
-      type?: LiveEventType;
-      data?: unknown;
-      focusInUi?: boolean;
-    };
-    if (type && service.liveHub) {
-      service.liveHub.broadcast(type, data, Boolean(focusInUi));
-    }
-    res.json({ ok: true });
-  });
-
   router.get('/templates', (_req: Request, res: Response) => {
     res.json({ templates: service.listTemplates() });
   });
@@ -65,11 +47,6 @@ export function createStudioRouter(
   router.get('/guides', (req: Request, res: Response) => {
     const topic = req.query.topic ? String(req.query.topic) : undefined;
     res.json({ topic: topic || 'all', guide: service.syntaxGuide(topic) });
-  });
-
-  router.get('/events', (req: Request, res: Response) => {
-    const limit = req.query.limit ? Number(req.query.limit) : 50;
-    res.json({ events: service.repo.listAgentEvents(limit) });
   });
 
   router.get('/tools/schemas', (_req: Request, res: Response) => {

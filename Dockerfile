@@ -12,7 +12,7 @@ COPY web ./web
 
 RUN npm run build && npm prune --omit=dev
 
-# Stage 2: Lean production runtime with Chromium + clean typography
+# Stage 2: Lean stateless production runtime with Chromium + clean typography
 FROM node:24-bookworm-slim AS runner
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -29,9 +29,9 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=48333 \
     CHROME_PATH=/usr/bin/chromium \
-    MERMAID_STUDIO_DATA_DIR=/app/data
+    MERMAID_RENDER_CONCURRENCY=4
 
-RUN mkdir -p /app/data/renders/previews && chown -R node:node /app
+RUN chown -R node:node /app
 
 COPY --chown=node:node package.json ./
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules

@@ -2,25 +2,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StudioService } from './application/studioService.js';
-import { SqliteChartRepository } from './infrastructure/persistence/sqliteRepository.js';
 import { getSharedRenderEngine } from './infrastructure/renderer/chromiumEngine.js';
 import { createMermaidMcpServer } from './interfaces/mcp/createMcpServer.js';
 
-export async function runStdioMcpServer(dataDir?: string): Promise<void> {
+export async function runStdioMcpServer(): Promise<void> {
   // Guard stdout strictly for MCP JSON-RPC frames
   console.log = (...args: unknown[]) => {
     console.error(...args);
   };
 
-  const repo = new SqliteChartRepository(dataDir);
   const engine = getSharedRenderEngine();
-  const service = new StudioService({ repo, engine });
+  const service = new StudioService({ engine });
   const mcpServer = createMermaidMcpServer(service, 'mcp-stdio');
   const transport = new StdioServerTransport();
 
   const cleanup = async () => {
     await mcpServer.close().catch(() => {});
-    repo.close();
     await engine.dispose().catch(() => {});
   };
 

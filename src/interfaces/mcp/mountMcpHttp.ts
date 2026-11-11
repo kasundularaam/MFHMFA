@@ -5,12 +5,15 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { StudioService } from '../../application/studioService.js';
-import { APP_NAME } from '../../config/env.js';
+import { APP_NAME, APP_VERSION } from '../../config/env.js';
 import { createMermaidMcpServer } from './createMcpServer.js';
+
+const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
 
 interface ActiveHttpSession {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
+  lastActiveAt: number;
 }
 
 interface ActiveSseSession {
@@ -30,22 +33,54 @@ export function mountMcpHttpEndpoints(
   const httpSessions = new Map<string, ActiveHttpSession>();
   const sseSessions = new Map<string, ActiveSseSession>();
 
+  const sweepTimer = setInterval(() => {
+    const cutoff = Date.now() - SESSION_IDLE_TTL_MS;
+    for (const [sid, session] of httpSessions.entries()) {
+      if (session.lastActiveAt < cutoff) {
+        httpSessions.delete(sid);
+        session.transport.close().catch(() => {});
+        session.server.close().catch(() => {});
+      }
+    }
+  }, 60_000);
+  sweepTimer.unref?.();
+
   app.all('/mcp', async (req: Request, res: Response) => {
     try {
       const headerVal = req.headers['mcp-session-id'];
       const sessionId = Array.isArray(headerVal) ? headerVal[0] : headerVal;
 
-      if (sessionId && httpSessions.has(sessionId)) {
-        await httpSessions.get(sessionId)!.transport.handleRequest(req, res, req.body);
+      if (sessionId) {
+        const active = httpSessions.get(sessionId);
+        if (!active) {
+          // Per MCP Streamable HTTP spec, unknown/expired session IDs MUST return 404
+          // so clients automatically re-initialize a fresh session.
+          res.status(404).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message: 'Session not found',
+            },
+            id: null,
+          });
+          return;
+        }
+        active.lastActiveAt = Date.now();
+        await active.transport.handleRequest(req, res, req.body);
         return;
       }
 
-      if (!sessionId && req.method === 'POST' && isInitializeRequest(req.body)) {
+      if (req.method === 'POST' && isInitializeRequest(req.body)) {
         const mcpServer = createMermaidMcpServer(service, 'mcp-http');
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => crypto.randomUUID(),
+          enableJsonResponse: true,
           onsessioninitialized: (sid) => {
-            httpSessions.set(sid, { server: mcpServer, transport });
+            httpSessions.set(sid, {
+              server: mcpServer,
+              transport,
+              lastActiveAt: Date.now(),
+            });
           },
           onsessionclosed: (sid) => {
             httpSessions.delete(sid);
@@ -63,7 +98,7 @@ export function mountMcpHttpEndpoints(
         return;
       }
 
-      if (!sessionId && req.method === 'POST') {
+      if (req.method === 'POST') {
         const statelessServer = createMermaidMcpServer(service, 'mcp-http');
         const statelessTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
@@ -80,11 +115,12 @@ export function mountMcpHttpEndpoints(
 
       if (
         req.method === 'GET' &&
-        !sessionId &&
         !(req.headers.accept || '').includes('text/event-stream')
       ) {
         res.status(200).json({
           name: APP_NAME,
+          version: APP_VERSION,
+          stateless: true,
           protocol: 'Model Context Protocol (Streamable HTTP & SSE)',
           endpoints: {
             streamableHttp: `${service.baseUrl}/mcp`,
@@ -101,7 +137,7 @@ export function mountMcpHttpEndpoints(
         jsonrpc: '2.0',
         error: {
           code: -32000,
-          message: 'Bad Request: Missing or unknown mcp-session-id header.',
+          message: 'Bad Request: Missing Mcp-Session-Id header.',
         },
         id: null,
       });
@@ -143,6 +179,7 @@ export function mountMcpHttpEndpoints(
   return {
     getSessionCount: () => httpSessions.size + sseSessions.size,
     closeAll: async () => {
+      clearInterval(sweepTimer);
       for (const s of httpSessions.values()) {
         await s.transport.close().catch(() => {});
         await s.server.close().catch(() => {});

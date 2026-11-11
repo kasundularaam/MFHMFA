@@ -1,4 +1,5 @@
-import puppeteer, { type Browser, type Page } from 'puppeteer-core';
+import puppeteer, { type Browser, type BrowserContext, type Page } from 'puppeteer-core';
+import { resolveRenderConcurrency } from '../../config/env.js';
 import {
   analyzeStaticWarnings,
   computeLayoutDiagnostics,
@@ -9,6 +10,7 @@ import type {
   DiagramDimensions,
   MermaidLook,
   MermaidTheme,
+  RenderEngineStats,
   RenderOptions,
   RenderedDiagram,
   ValidationResult,
@@ -36,11 +38,32 @@ interface MermaidWindow extends Window {
   mermaid: BrowserMermaidApi;
 }
 
+interface ViewportState {
+  width: number;
+  height: number;
+  scale: number;
+}
+
 interface PageSlot {
+  context: BrowserContext;
   page: Page;
   busy: boolean;
+  broken: boolean;
   renderSeq: number;
+  viewport: ViewportState;
 }
+
+interface SlotWaiter {
+  resolve: (slot: PageSlot) => void;
+  reject: (err: Error) => void;
+}
+
+const DEFAULT_VIEWPORT_W = 2400;
+const DEFAULT_VIEWPORT_H = 1800;
+const DEFAULT_SCALE = 2;
+const MAX_OPS_PER_SLOT = 150;
+const SLOT_OP_TIMEOUT_MS = 12_000;
+const PROTOCOL_TIMEOUT_MS = 15_000;
 
 const CHROMIUM_ARGS = [
   '--no-sandbox',
@@ -49,21 +72,68 @@ const CHROMIUM_ARGS = [
   '--disable-gpu',
   '--no-first-run',
   '--no-zygote',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding',
   '--font-render-hinting=none',
 ];
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    timer.unref?.();
+
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
 
 export class ChromiumRenderEngine implements RenderEnginePort {
   private browser: Browser | null = null;
   private browserPromise: Promise<Browser> | null = null;
   private slots: PageSlot[] = [];
-  private waitQueue: Array<(slot: PageSlot) => void> = [];
+  private creatingSlots = 0;
+  private waitQueue: SlotWaiter[] = [];
+  private disposed = false;
+  private totalRenders = 0;
+  private totalValidations = 0;
   private readonly maxConcurrency: number;
 
-  constructor(maxConcurrency = 2) {
-    this.maxConcurrency = maxConcurrency;
+  constructor(maxConcurrency?: number) {
+    this.maxConcurrency = resolveRenderConcurrency(maxConcurrency);
+  }
+
+  getStats(): RenderEngineStats {
+    this.pruneClosedSlots();
+    return {
+      maxConcurrency: this.maxConcurrency,
+      activeSlots: this.slots.length,
+      busySlots: this.slots.filter((s) => s.busy).length,
+      creatingSlots: this.creatingSlots,
+      queuedRequests: this.waitQueue.length,
+      totalRenders: this.totalRenders,
+      totalValidations: this.totalValidations,
+    };
+  }
+
+  private pruneClosedSlots(): void {
+    this.slots = this.slots.filter((s) => !s.broken && !s.page.isClosed());
   }
 
   private async ensureBrowser(): Promise<Browser> {
+    if (this.disposed) {
+      throw new Error('Render engine has been disposed');
+    }
     if (this.browser?.connected) {
       return this.browser;
     }
@@ -72,18 +142,26 @@ export class ChromiumRenderEngine implements RenderEnginePort {
     }
 
     this.browserPromise = (async () => {
-      const browser = await puppeteer.launch({
-        executablePath: resolveChromePath(),
-        headless: true,
-        args: CHROMIUM_ARGS,
-      });
-      browser.on('disconnected', () => {
-        this.browser = null;
+      try {
+        const browser = await puppeteer.launch({
+          executablePath: resolveChromePath(),
+          headless: true,
+          protocolTimeout: PROTOCOL_TIMEOUT_MS,
+          args: CHROMIUM_ARGS,
+        });
+        browser.on('disconnected', () => {
+          if (this.browser === browser) {
+            this.browser = null;
+            this.browserPromise = null;
+            this.slots = [];
+          }
+        });
+        this.browser = browser;
+        return browser;
+      } catch (err) {
         this.browserPromise = null;
-        this.slots = [];
-      });
-      this.browser = browser;
-      return browser;
+        throw err;
+      }
     })();
 
     return this.browserPromise;
@@ -91,15 +169,44 @@ export class ChromiumRenderEngine implements RenderEnginePort {
 
   private async createSlot(): Promise<PageSlot> {
     const browser = await this.ensureBrowser();
-    const page = await browser.newPage();
-    await page.setViewport({ width: 2000, height: 1500, deviceScaleFactor: 2 });
-    await page.setContent(RENDER_HARNESS_HTML, { waitUntil: 'domcontentloaded' });
-    await page.addScriptTag({ path: resolveMermaidBundlePath() });
-    return { page, busy: false, renderSeq: 0 };
+    // Each slot gets its own isolated BrowserContext (and top-level window) so
+    // `document.visibilityState` stays "visible" across all concurrent slots —
+    // preventing Chromium `--headless=new` from freezing screenshots on background tabs.
+    const context = await browser.createBrowserContext();
+    try {
+      const page = await context.newPage();
+      const viewport: ViewportState = {
+        width: DEFAULT_VIEWPORT_W,
+        height: DEFAULT_VIEWPORT_H,
+        scale: DEFAULT_SCALE,
+      };
+      await page.setViewport({
+        width: viewport.width,
+        height: viewport.height,
+        deviceScaleFactor: viewport.scale,
+      });
+      await page.setContent(RENDER_HARNESS_HTML, { waitUntil: 'domcontentloaded' });
+      await page.addScriptTag({ path: resolveMermaidBundlePath() });
+      return {
+        context,
+        page,
+        busy: false,
+        broken: false,
+        renderSeq: 0,
+        viewport,
+      };
+    } catch (err) {
+      await context.close().catch(() => {});
+      throw err;
+    }
   }
 
   private async acquireSlot(): Promise<PageSlot> {
-    this.slots = this.slots.filter((s) => !s.page.isClosed());
+    if (this.disposed) {
+      throw new Error('Render engine has been disposed');
+    }
+
+    this.pruneClosedSlots();
 
     const free = this.slots.find((s) => !s.busy);
     if (free) {
@@ -107,40 +214,135 @@ export class ChromiumRenderEngine implements RenderEnginePort {
       return free;
     }
 
-    if (this.slots.length < this.maxConcurrency) {
-      const slot = await this.createSlot();
-      slot.busy = true;
-      this.slots.push(slot);
-      return slot;
+    if (this.slots.length + this.creatingSlots < this.maxConcurrency) {
+      this.creatingSlots += 1;
+      try {
+        const slot = await withTimeout(this.createSlot(), SLOT_OP_TIMEOUT_MS, 'Chromium slot init');
+        slot.busy = true;
+        this.slots.push(slot);
+        return slot;
+      } finally {
+        this.creatingSlots -= 1;
+        this.pumpQueue();
+      }
     }
 
-    return new Promise<PageSlot>((resolve) => {
-      this.waitQueue.push(resolve);
+    return new Promise<PageSlot>((resolve, reject) => {
+      this.waitQueue.push({ resolve, reject });
     });
   }
 
-  private releaseSlot(slot: PageSlot): void {
-    if (slot.page.isClosed()) {
-      this.slots = this.slots.filter((s) => s !== slot);
-      if (this.waitQueue.length > 0) {
-        const next = this.waitQueue.shift()!;
-        this.createSlot()
+  private pumpQueue(): void {
+    if (this.disposed) return;
+    this.pruneClosedSlots();
+
+    while (this.waitQueue.length > 0) {
+      const free = this.slots.find((s) => !s.busy);
+      if (free) {
+        free.busy = true;
+        const waiter = this.waitQueue.shift()!;
+        waiter.resolve(free);
+        continue;
+      }
+
+      if (this.slots.length + this.creatingSlots < this.maxConcurrency) {
+        const waiter = this.waitQueue.shift()!;
+        this.creatingSlots += 1;
+        withTimeout(this.createSlot(), SLOT_OP_TIMEOUT_MS, 'Chromium slot init')
           .then((fresh) => {
+            if (this.disposed) {
+              fresh.context.close().catch(() => {});
+              waiter.reject(new Error('Render engine disposed'));
+              return;
+            }
             fresh.busy = true;
             this.slots.push(fresh);
-            next(fresh);
+            waiter.resolve(fresh);
           })
-          .catch(() => {});
+          .catch((err: unknown) => {
+            waiter.reject(err instanceof Error ? err : new Error(String(err)));
+          })
+          .finally(() => {
+            this.creatingSlots -= 1;
+            this.pumpQueue();
+          });
+        continue;
       }
+
+      break;
+    }
+  }
+
+  private releaseSlot(slot: PageSlot, forceEvict = false): void {
+    const shouldEvict =
+      forceEvict ||
+      slot.broken ||
+      slot.page.isClosed() ||
+      slot.renderSeq >= MAX_OPS_PER_SLOT;
+
+    if (shouldEvict) {
+      slot.broken = true;
+      slot.busy = false;
+      this.slots = this.slots.filter((s) => s !== slot);
+      slot.context.close().catch(() => {});
+      this.pumpQueue();
       return;
     }
 
-    const next = this.waitQueue.shift();
-    if (next) {
-      next(slot);
+    const waiter = this.waitQueue.shift();
+    if (waiter) {
+      waiter.resolve(slot);
     } else {
       slot.busy = false;
     }
+  }
+
+  private async ensureViewport(
+    slot: PageSlot,
+    width: number,
+    height: number,
+    scale: number
+  ): Promise<void> {
+    if (
+      slot.viewport.width === width &&
+      slot.viewport.height === height &&
+      slot.viewport.scale === scale
+    ) {
+      return;
+    }
+    await slot.page.setViewport({ width, height, deviceScaleFactor: scale });
+    slot.viewport = { width, height, scale };
+  }
+
+  private async runOnSlot<T>(
+    label: string,
+    fn: (slot: PageSlot) => Promise<{ value: T; recycle?: boolean }>
+  ): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const slot = await this.acquireSlot();
+      let failed = false;
+      let recycle = false;
+
+      try {
+        slot.renderSeq += 1;
+        const out = await withTimeout(fn(slot), SLOT_OP_TIMEOUT_MS, label);
+        recycle = Boolean(out.recycle);
+        return out.value;
+      } catch (err: unknown) {
+        failed = true;
+        slot.broken = true;
+        lastError = err;
+        if (attempt === 1) {
+          throw err;
+        }
+      } finally {
+        this.releaseSlot(slot, failed || recycle);
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
   async validate(code: string): Promise<ValidationResult> {
@@ -157,11 +359,12 @@ export class ChromiumRenderEngine implements RenderEnginePort {
       };
     }
 
-    const slot = await this.acquireSlot();
-    try {
+    this.totalValidations += 1;
+
+    return this.runOnSlot<ValidationResult>('Mermaid validate', async (slot) => {
       const evalRes = await slot.page.evaluate(async (diagramCode: string) => {
         const m = (window as unknown as MermaidWindow).mermaid;
-        m.initialize({ startOnLoad: false, securityLevel: 'antiscript' });
+        m.initialize({ startOnLoad: false, theme: 'default', look: 'classic', securityLevel: 'antiscript' });
         try {
           const parsed = await m.parse(diagramCode);
           return { ok: true as const, diagramType: parsed?.diagramType ?? null };
@@ -181,24 +384,26 @@ export class ChromiumRenderEngine implements RenderEnginePort {
       const durationMs = Math.round(performance.now() - started);
       if (!evalRes.ok) {
         return {
-          valid: false,
-          diagramType: null,
-          error: parseMermaidError(code, evalRes.err),
-          warnings,
-          durationMs,
+          value: {
+            valid: false,
+            diagramType: null,
+            error: parseMermaidError(code, evalRes.err),
+            warnings,
+            durationMs,
+          },
         };
       }
 
       return {
-        valid: true,
-        diagramType: evalRes.diagramType,
-        error: null,
-        warnings,
-        durationMs,
+        value: {
+          valid: true,
+          diagramType: evalRes.diagramType,
+          error: null,
+          warnings,
+          durationMs,
+        },
       };
-    } finally {
-      this.releaseSlot(slot);
-    }
+    });
   }
 
   async render(code: string, options: RenderOptions = {}): Promise<RenderedDiagram> {
@@ -207,7 +412,7 @@ export class ChromiumRenderEngine implements RenderEnginePort {
     const look: MermaidLook = options.look ?? 'classic';
     const defaultBg = theme === 'dark' ? '#191918' : '#ffffff';
     const background = options.background ?? defaultBg;
-    const scale = Math.min(4, Math.max(1, options.scale ?? 2));
+    const scale = Math.min(4, Math.max(1, options.scale ?? DEFAULT_SCALE));
     const padding = Math.min(80, Math.max(0, options.padding ?? 24));
     const warnings = analyzeStaticWarnings(code);
 
@@ -229,12 +434,12 @@ export class ChromiumRenderEngine implements RenderEnginePort {
       };
     }
 
-    const slot = await this.acquireSlot();
-    try {
-      slot.renderSeq += 1;
+    this.totalRenders += 1;
+
+    return this.runOnSlot<RenderedDiagram>('Mermaid render', async (slot) => {
       const renderId = `mmd_render_${slot.renderSeq}_${Date.now()}`;
 
-      await slot.page.setViewport({ width: 2400, height: 1800, deviceScaleFactor: scale });
+      await this.ensureViewport(slot, DEFAULT_VIEWPORT_W, DEFAULT_VIEWPORT_H, scale);
 
       const pageRes = await slot.page.evaluate(
         async (params: {
@@ -369,30 +574,28 @@ export class ChromiumRenderEngine implements RenderEnginePort {
 
       if (!pageRes.ok) {
         return {
-          valid: false,
-          diagramType: null,
-          error: parseMermaidError(code, pageRes.err),
-          warnings,
-          durationMs: Math.round(performance.now() - started),
-          svg: null,
-          pngBytes: null,
-          dimensions: null,
-          metrics: null,
-          layoutDiagnostics: [],
-          theme,
-          look,
-          background,
+          value: {
+            valid: false,
+            diagramType: null,
+            error: parseMermaidError(code, pageRes.err),
+            warnings,
+            durationMs: Math.round(performance.now() - started),
+            svg: null,
+            pngBytes: null,
+            dimensions: null,
+            metrics: null,
+            layoutDiagnostics: [],
+            theme,
+            look,
+            background,
+          },
         };
       }
 
       const targetW = Math.min(7200, Math.max(800, pageRes.stageWidth + 64));
       const targetH = Math.min(7200, Math.max(600, pageRes.stageHeight + 64));
-      if (targetW > 2400 || targetH > 1800) {
-        await slot.page.setViewport({
-          width: targetW,
-          height: targetH,
-          deviceScaleFactor: scale,
-        });
+      if (targetW > DEFAULT_VIEWPORT_W || targetH > DEFAULT_VIEWPORT_H) {
+        await this.ensureViewport(slot, targetW, targetH, scale);
       }
 
       const stageHandle = await slot.page.$('#capture-stage');
@@ -400,11 +603,16 @@ export class ChromiumRenderEngine implements RenderEnginePort {
         throw new Error('Missing #capture-stage handle during screenshot');
       }
 
-      const rawScreenshot = await stageHandle.screenshot({
-        type: 'png',
-        omitBackground: background === 'transparent',
-      });
-      const pngBytes = new Uint8Array(rawScreenshot);
+      let pngBytes: Uint8Array;
+      try {
+        const rawScreenshot = await stageHandle.screenshot({
+          type: 'png',
+          omitBackground: background === 'transparent',
+        });
+        pngBytes = new Uint8Array(rawScreenshot);
+      } finally {
+        await stageHandle.dispose().catch(() => {});
+      }
 
       const width = Math.max(1, pageRes.stageWidth);
       const height = Math.max(1, pageRes.stageHeight);
@@ -423,31 +631,39 @@ export class ChromiumRenderEngine implements RenderEnginePort {
       );
 
       return {
-        valid: true,
-        diagramType: pageRes.diagramType,
-        error: null,
-        warnings,
-        durationMs: Math.round(performance.now() - started),
-        svg: pageRes.svg,
-        pngBytes,
-        dimensions,
-        metrics: pageRes.metrics,
-        layoutDiagnostics,
-        theme,
-        look,
-        background,
+        value: {
+          valid: true,
+          diagramType: pageRes.diagramType,
+          error: null,
+          warnings,
+          durationMs: Math.round(performance.now() - started),
+          svg: pageRes.svg,
+          pngBytes,
+          dimensions,
+          metrics: pageRes.metrics,
+          layoutDiagnostics,
+          theme,
+          look,
+          background,
+        },
       };
-    } finally {
-      this.releaseSlot(slot);
-    }
+    });
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
+    while (this.waitQueue.length > 0) {
+      const waiter = this.waitQueue.shift()!;
+      waiter.reject(new Error('Render engine disposed'));
+    }
+    const activeSlots = [...this.slots];
+    this.slots = [];
+    await Promise.all(activeSlots.map((s) => s.context.close().catch(() => {})));
+
     if (this.browser) {
       const activeBrowser = this.browser;
       this.browser = null;
       this.browserPromise = null;
-      this.slots = [];
       await activeBrowser.close().catch(() => {});
     }
   }
@@ -457,7 +673,7 @@ let sharedEngine: ChromiumRenderEngine | null = null;
 
 export function getSharedRenderEngine(): ChromiumRenderEngine {
   if (!sharedEngine) {
-    sharedEngine = new ChromiumRenderEngine(2);
+    sharedEngine = new ChromiumRenderEngine();
   }
   return sharedEngine;
 }

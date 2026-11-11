@@ -61,54 +61,14 @@ export interface RenderedDiagram extends ValidationResult {
   background: string;
 }
 
-export interface ChartVersionSummary {
-  version: number;
-  code: string;
-  theme: MermaidTheme;
-  look: MermaidLook;
-  background: string;
-  valid: boolean;
-  width: number | null;
-  height: number | null;
-  author: string;
-  changeNote: string | null;
-  createdAt: string;
-}
-
-export interface ChartRecord {
-  id: string;
-  title: string;
-  description: string;
-  code: string;
-  diagramType: string | null;
-  theme: MermaidTheme;
-  look: MermaidLook;
-  background: string;
-  tags: string[];
-  valid: boolean;
-  error: ParseErrorDetail | null;
-  warnings: LintWarning[];
-  metrics: DiagramMetrics | null;
-  layoutDiagnostics: string[];
-  width: number | null;
-  height: number | null;
-  svgPath: string | null;
-  pngPath: string | null;
-  author: string;
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface AgentEventRecord {
-  id: number;
-  toolName: string;
-  source: CallerSource;
-  chartId: string | null;
-  status: 'ok' | 'invalid' | 'error';
-  durationMs: number;
-  summary: string;
-  createdAt: string;
+export interface RenderEngineStats {
+  maxConcurrency: number;
+  activeSlots: number;
+  busySlots: number;
+  creatingSlots: number;
+  queuedRequests: number;
+  totalRenders: number;
+  totalValidations: number;
 }
 
 export interface MermaidTemplate {
@@ -120,19 +80,4 @@ export interface MermaidTemplate {
   theme?: MermaidTheme;
   look?: MermaidLook;
   code: string;
-}
-
-export type LiveEventType =
-  | 'chart:created'
-  | 'chart:updated'
-  | 'chart:deleted'
-  | 'agent:event'
-  | 'preview:rendered'
-  | 'hello';
-
-export interface LiveEventPayload {
-  type: LiveEventType;
-  data: unknown;
-  focusInUi?: boolean;
-  timestamp: string;
 }

@@ -1,24 +1,31 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { slugify } from '../../src/shared/svg';
-import type {
-  AgentEventRecord,
-  ChartRecord,
-  ChartVersionSummary,
-  MermaidTemplate,
-  ParseErrorDetail,
-} from '../../src/shared/types';
+import type { ParseErrorDetail } from '../../src/shared/types';
 import {
   getCachedClientRender,
   renderMermaidClient,
 } from '../services/mermaidRenderer';
-import { connectLiveSocket, studioApi, type ServerStatus } from '../services/studioClient';
+import { studioApi, type ServerStatus } from '../services/studioClient';
 import type { AppearanceMode } from '../theme/comfortTheme';
 
-export type StudioPage = 'studio' | 'settings';
+export type StudioPage = 'studio' | 'docs';
 export type StageMode = 'preview' | 'code';
-export type SettingsSection = 'general' | 'mcp' | 'activity' | 'history';
 
-const INITIAL_CODE = `flowchart TB\n  User(["Developer / Agent"]) --> Studio["Mermaid Studio"]\n  Studio --> Validate["Validate Syntax"]\n  Studio --> Render["Render Preview"]`;
+const DRAFT_CODE_KEY = 'mfhmfa-stateless-draft';
+
+const INITIAL_CODE = `flowchart TB
+  subgraph Agents["AI Coding Agents"]
+    A1["Pi / Claude Code"]
+    A2["Cursor / Antigravity"]
+  end
+
+  subgraph Engine["MFHMFA Stateless MCP"]
+    MCP["Streamable HTTP (/mcp) & Stdio"]
+    POOL["Parallel Chromium Pool (2x Retina PNG)"]
+  end
+
+  A1 & A2 <-->|"mermaid_render (PNG Vision)"| MCP
+  MCP --> POOL`;
 
 export function useStudioController() {
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() => {
@@ -27,45 +34,24 @@ export function useStudioController() {
   });
 
   const [status, setStatus] = useState<ServerStatus | null>(null);
-  const [wsConnected, setWsConnected] = useState(false);
-
   const [page, setPage] = useState<StudioPage>('studio');
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [stageMode, setStageMode] = useState<StageMode>('preview');
-  const [defaultOpenMode, setDefaultOpenMode] = useState<StageMode>('preview');
 
-  const [sidebarTab, setSidebarTab] = useState<'charts' | 'templates'>('charts');
-  const [charts, setCharts] = useState<ChartRecord[]>([]);
-  const [templates, setTemplates] = useState<MermaidTemplate[]>([]);
-  const [events, setEvents] = useState<AgentEventRecord[]>([]);
-  const [search, setSearch] = useState('');
-
-  const [activeChartId, setActiveChartId] = useState<string | null>(null);
-  const [diagramIdentity, setDiagramIdentity] = useState<string>('initial');
-  const [title, setTitle] = useState('Untitled Diagram');
-  const [code, setCode] = useState('');
-  const [version, setVersion] = useState(1);
-  const [versions, setVersions] = useState<ChartVersionSummary[]>([]);
-  const [isDirty, setIsDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [code, setCode] = useState(() => localStorage.getItem(DRAFT_CODE_KEY) || INITIAL_CODE);
 
   const [renderedSvg, setRenderedSvg] = useState<string>('');
   const [diagramType, setDiagramType] = useState<string | null>('flowchart-v2');
   const [parseError, setParseError] = useState<ParseErrorDetail | null>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
 
-  const [followAgentLive, setFollowAgentLive] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [guideText, setGuideText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const bootstrappedRef = useRef(false);
   const renderCounterRef = useRef(0);
-  const loadSeqRef = useRef(0);
   const skipNextCodeEffectRef = useRef(false);
   const needsFitOnPreviewRef = useRef(true);
 
@@ -74,17 +60,19 @@ export function useStudioController() {
 
   const appearanceRef = useRef(appearanceMode);
   appearanceRef.current = appearanceMode;
-  const followRef = useRef(followAgentLive);
-  followRef.current = followAgentLive;
-  const activeIdRef = useRef(activeChartId);
-  activeIdRef.current = activeChartId;
-  const defaultOpenModeRef = useRef(defaultOpenMode);
-  defaultOpenModeRef.current = defaultOpenMode;
 
   useEffect(() => {
     document.documentElement.dataset.mode = appearanceMode;
     localStorage.setItem('mermaid-studio-mode', appearanceMode);
   }, [appearanceMode]);
+
+  useEffect(() => {
+    localStorage.setItem(DRAFT_CODE_KEY, code);
+  }, [code]);
+
+  const toggleAppearanceMode = useCallback(() => {
+    setAppearanceMode((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
 
   const notifyToast = useCallback((msg: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -112,7 +100,6 @@ export function useStudioController() {
     return Number(fit.toFixed(2));
   }, []);
 
-  // Pre-paint fit when entering Preview mode (zero visual jump!)
   useLayoutEffect(() => {
     if (page === 'studio' && stageMode === 'preview' && needsFitOnPreviewRef.current && dimensions) {
       const fit = computeViewportFitZoom(dimensions.width, dimensions.height);
@@ -124,195 +111,31 @@ export function useStudioController() {
     }
   }, [page, stageMode, dimensions, computeViewportFitZoom]);
 
-  // Atomic chart loader: renders new SVG offscreen FIRST, then commits all state in one paint frame
-  const loadChartIntoWorkspace = useCallback(
-    async (id: string, ver?: number) => {
-      const seq = ++loadSeqRef.current;
-      try {
-        const detail = await studioApi.getChart(id, ver);
-        if (seq !== loadSeqRef.current) return;
-
-        const mode = appearanceRef.current;
-        const cached = getCachedClientRender(detail.code, mode);
-        const outcome = cached ?? (await renderMermaidClient(detail.code, mode));
-        if (seq !== loadSeqRef.current) return;
-
-        ++renderCounterRef.current;
-        skipNextCodeEffectRef.current = true;
-
-        setActiveChartId(detail.chart.id);
-        setDiagramIdentity(`${detail.chart.id}:v${detail.selectedVersion}`);
-        setTitle(detail.chart.title);
-        setCode(detail.code);
-        setVersion(detail.selectedVersion);
-        setVersions(detail.versions);
-        setIsDirty(false);
-
-        if (outcome.ok) {
-          setRenderedSvg(outcome.svg);
-          setDiagramType(outcome.diagramType);
-          setParseError(null);
-          setDimensions(outcome.dimensions);
-
-          if (outcome.dimensions) {
-            const fit = computeViewportFitZoom(
-              outcome.dimensions.width,
-              outcome.dimensions.height
-            );
-            if (fit !== null) {
-              setZoom(fit);
-              setPan({ x: 0, y: 0 });
-              needsFitOnPreviewRef.current = false;
-            } else {
-              needsFitOnPreviewRef.current = true;
-            }
-          }
-        } else {
-          setParseError(detail.chart.error);
-        }
-
-        const url = new URL(window.location.href);
-        url.searchParams.set('chart', detail.chart.id);
-        window.history.replaceState({}, '', url.toString());
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        notifyToast(`Could not load chart: ${message}`);
-      }
-    },
-    [computeViewportFitZoom, notifyToast]
-  );
-
-  const handleSelectTemplate = useCallback(
-    async (tpl: MermaidTemplate) => {
-      const seq = ++loadSeqRef.current;
-      const mode = appearanceRef.current;
-      const serverTheme = mode === 'dark' ? 'dark' : 'neutral';
-      const serverBg = mode === 'dark' ? '#191918' : '#f5f3ee';
-
-      try {
-        const [outcome, created] = await Promise.all([
-          renderMermaidClient(tpl.code, mode),
-          studioApi.createChart({
-            title: tpl.name,
-            code: tpl.code,
-            theme: serverTheme,
-            look: 'classic',
-            background: serverBg,
-          }),
-        ]);
-        if (seq !== loadSeqRef.current) return;
-
-        ++renderCounterRef.current;
-        skipNextCodeEffectRef.current = true;
-        setActiveChartId(created.chart.id);
-        setDiagramIdentity(`${created.chart.id}:v1`);
-        setTitle(created.chart.title);
-        setCode(tpl.code);
-        setVersion(1);
-        setVersions([]);
-        setIsDirty(false);
-        setSidebarTab('charts');
-        setStageMode('preview');
-        setCharts((prev) => [created.chart, ...prev.filter((c) => c.id !== created.chart.id)]);
-
-        if (outcome.ok) {
-          setRenderedSvg(outcome.svg);
-          setDiagramType(outcome.diagramType);
-          setParseError(null);
-          setDimensions(outcome.dimensions);
-
-          if (outcome.dimensions) {
-            const fit = computeViewportFitZoom(outcome.dimensions.width, outcome.dimensions.height);
-            if (fit !== null) {
-              setZoom(fit);
-              setPan({ x: 0, y: 0 });
-              needsFitOnPreviewRef.current = false;
-            } else {
-              needsFitOnPreviewRef.current = true;
-            }
-          }
-        }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        notifyToast(`Could not create from template: ${message}`);
-      }
-    },
-    [computeViewportFitZoom, notifyToast]
-  );
-
   // Initial bootstrap
   useEffect(() => {
-    Promise.all([
-      studioApi.getStatus(),
-      studioApi.listCharts(),
-      studioApi.listTemplates(),
-      studioApi.listEvents(),
-      studioApi.getGuide('all'),
-    ])
-      .then(async ([st, ch, tpl, ev, gd]) => {
-        setStatus(st);
-        setCharts(ch.charts);
-        setTemplates(tpl.templates);
-        setEvents(ev.events);
-        setGuideText(gd.guide);
+    studioApi
+      .getStatus()
+      .then((st) => setStatus(st))
+      .catch(() => {});
 
-        const urlChart = new URLSearchParams(window.location.search).get('chart');
-        const target =
-          (urlChart && ch.charts.find((c) => c.id === urlChart)) || ch.charts[0];
-        if (target) {
-          await loadChartIntoWorkspace(target.id);
-        } else {
-          const initial = await renderMermaidClient(INITIAL_CODE, appearanceRef.current);
-          ++renderCounterRef.current;
-          skipNextCodeEffectRef.current = true;
-          setCode(INITIAL_CODE);
-          if (initial.ok) {
-            setRenderedSvg(initial.svg);
-            setDimensions(initial.dimensions);
-          }
+    renderMermaidClient(code, appearanceRef.current)
+      .then((initial) => {
+        ++renderCounterRef.current;
+        skipNextCodeEffectRef.current = true;
+        if (initial.ok) {
+          setRenderedSvg(initial.svg);
+          setDiagramType(initial.diagramType);
+          setDimensions(initial.dimensions);
         }
         bootstrappedRef.current = true;
       })
-      .catch((err: unknown) => console.error('Bootstrap error:', err));
-  }, [loadChartIntoWorkspace]);
+      .catch(() => {
+        bootstrappedRef.current = true;
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Live WebSocket sync
-  useEffect(() => {
-    return connectLiveSocket(
-      (msg) => {
-        if (msg.type === 'chart:created') {
-          const created = msg.data as ChartRecord;
-          setCharts((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
-          if (msg.focusInUi && followRef.current && created.author !== 'web') {
-            setStageMode(defaultOpenModeRef.current);
-            loadChartIntoWorkspace(created.id);
-            notifyToast(`Agent created "${created.title}"`);
-          }
-        } else if (msg.type === 'chart:updated') {
-          const updated = msg.data as ChartRecord;
-          setCharts((prev) => [updated, ...prev.filter((c) => c.id !== updated.id)]);
-          if (
-            (msg.focusInUi && followRef.current && updated.author !== 'web') ||
-            (activeIdRef.current === updated.id && updated.author !== 'web')
-          ) {
-            loadChartIntoWorkspace(updated.id);
-            notifyToast(`Agent updated "${updated.title}"`);
-          }
-        } else if (msg.type === 'chart:deleted') {
-          const deletedId = (msg.data as { id?: string } | undefined)?.id;
-          if (deletedId) {
-            setCharts((prev) => prev.filter((c) => c.id !== deletedId));
-          }
-        } else if (msg.type === 'agent:event') {
-          const ev = msg.data as AgentEventRecord;
-          setEvents((prev) => [ev, ...prev].slice(0, 100));
-        }
-      },
-      (connected) => setWsConnected(connected)
-    );
-  }, [loadChartIntoWorkspace, notifyToast]);
-
-  // Background render on code edits or Dark/Light theme switch
+  // Background client render on code edits or Dark/Light theme switch
   useEffect(() => {
     if (!bootstrappedRef.current) return undefined;
 
@@ -343,7 +166,7 @@ export function useStudioController() {
           column: 1,
           snippet: null,
           expected: null,
-          suggestion: 'Start with `flowchart TD`, `sequenceDiagram`, `erDiagram`, or choose a template.',
+          suggestion: 'Start with `flowchart TD`, `sequenceDiagram`, or `erDiagram`.',
         });
         return;
       }
@@ -386,153 +209,18 @@ export function useStudioController() {
     return () => clearTimeout(timer);
   }, [code, appearanceMode, stageMode]);
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    const serverTheme = appearanceMode === 'dark' ? 'dark' : 'neutral';
-    const serverBg = appearanceMode === 'dark' ? '#191918' : '#f5f3ee';
-
-    try {
-      if (activeChartId) {
-        const res = await studioApi.updateChart(activeChartId, {
-          title,
-          code,
-          theme: serverTheme,
-          look: 'classic',
-          background: serverBg,
-          changeNote: 'Saved in Studio',
-        });
-        setVersion(res.chart.version);
-        setParseError(res.chart.error);
-        setIsDirty(false);
-        setCharts((prev) => [res.chart, ...prev.filter((c) => c.id !== res.chart.id)]);
-        const full = await studioApi.getChart(res.chart.id);
-        setVersions(full.versions);
-        notifyToast('Saved');
-      } else {
-        const res = await studioApi.createChart({
-          title,
-          code,
-          theme: serverTheme,
-          look: 'classic',
-          background: serverBg,
-        });
-        setActiveChartId(res.chart.id);
-        setDiagramIdentity(`${res.chart.id}:v${res.chart.version}`);
-        setVersion(res.chart.version);
-        setIsDirty(false);
-        setCharts((prev) => [res.chart, ...prev.filter((c) => c.id !== res.chart.id)]);
-        notifyToast('Created');
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      notifyToast(`Save error: ${message}`);
-    } finally {
-      setSaving(false);
-    }
-  }, [activeChartId, appearanceMode, title, code, notifyToast]);
-
-  // Global keyboard shortcuts
+  // Keyboard shortcut: Ctrl/Cmd + E flips Preview <-> Code
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
-      const k = e.key.toLowerCase();
-      if (k === 's') {
-        e.preventDefault();
-        handleSave();
-      } else if (k === 'b' && page === 'studio') {
-        e.preventDefault();
-        setSidebarOpen((v) => !v);
-      } else if (k === 'e' && page === 'studio') {
+      if (e.key.toLowerCase() === 'e' && page === 'studio') {
         e.preventDefault();
         setStageMode((m) => (m === 'preview' ? 'code' : 'preview'));
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleSave, page]);
-
-  const handleNewChart = useCallback(async () => {
-    const draftCode = `flowchart TD\n  Start(["Start"]) --> Step["Design Flow"]\n  Step --> Done(["Complete"])`;
-    const mode = appearanceRef.current;
-    const serverTheme = mode === 'dark' ? 'dark' : 'neutral';
-    const serverBg = mode === 'dark' ? '#191918' : '#f5f3ee';
-
-    try {
-      const [outcome, created] = await Promise.all([
-        renderMermaidClient(draftCode, mode),
-        studioApi.createChart({
-          title: 'Untitled Diagram',
-          code: draftCode,
-          theme: serverTheme,
-          look: 'classic',
-          background: serverBg,
-        }),
-      ]);
-
-      ++renderCounterRef.current;
-      skipNextCodeEffectRef.current = true;
-      setActiveChartId(created.chart.id);
-      setDiagramIdentity(`${created.chart.id}:v1`);
-      setTitle(created.chart.title);
-      setCode(draftCode);
-      setVersion(1);
-      setVersions([]);
-      setIsDirty(false);
-      setSidebarTab('charts');
-      setCharts((prev) => [created.chart, ...prev.filter((c) => c.id !== created.chart.id)]);
-
-      if (outcome.ok) {
-        setRenderedSvg(outcome.svg);
-        setDiagramType(outcome.diagramType);
-        setDimensions(outcome.dimensions);
-        setParseError(null);
-        needsFitOnPreviewRef.current = true;
-      }
-      setPage('studio');
-      setStageMode('code');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      notifyToast(`Could not create chart: ${message}`);
-    }
-  }, [notifyToast]);
-
-  const handleRenameChart = useCallback(
-    async (id: string, nextTitle: string) => {
-      const trimmed = nextTitle.trim();
-      if (!trimmed) return;
-      try {
-        const res = await studioApi.updateChart(id, { title: trimmed });
-        setCharts((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, title: res.chart.title } : c))
-        );
-        if (activeChartId === id) {
-          setTitle(res.chart.title);
-        }
-        notifyToast('Renamed');
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        notifyToast(`Rename failed: ${message}`);
-      }
-    },
-    [activeChartId, notifyToast]
-  );
-
-  const handleDeleteChart = useCallback(
-    async (id: string) => {
-      await studioApi.deleteChart(id);
-      const remaining = charts.filter((c) => c.id !== id);
-      setCharts(remaining);
-      if (activeChartId === id) {
-        if (remaining[0]) {
-          await loadChartIntoWorkspace(remaining[0].id);
-        } else {
-          await handleNewChart();
-        }
-      }
-      notifyToast('Deleted');
-    },
-    [activeChartId, charts, handleNewChart, loadChartIntoWorkspace, notifyToast]
-  );
+  }, [page]);
 
   const handleFitCanvas = useCallback(() => {
     if (!dimensions) {
@@ -559,14 +247,14 @@ export function useStudioController() {
       if (res.pngDataUrl) {
         const a = document.createElement('a');
         a.href = res.pngDataUrl;
-        a.download = `${slugify(title)}.png`;
+        a.download = `${slugify(res.title || 'diagram')}.png`;
         a.click();
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       notifyToast(`Export failed: ${message}`);
     }
-  }, [appearanceMode, code, notifyToast, title]);
+  }, [appearanceMode, code, notifyToast]);
 
   const handleExportSvg = useCallback(() => {
     if (!renderedSvg) return;
@@ -574,75 +262,32 @@ export function useStudioController() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${slugify(title)}.svg`;
+    a.download = 'diagram.svg';
     a.click();
     URL.revokeObjectURL(url);
-  }, [renderedSvg, title]);
-
-  const filteredCharts = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return charts;
-    return charts.filter(
-      (c) =>
-        c.title.toLowerCase().includes(q) ||
-        c.id.toLowerCase().includes(q) ||
-        (c.diagramType || '').toLowerCase().includes(q)
-    );
-  }, [charts, search]);
+  }, [renderedSvg]);
 
   return {
     appearanceMode,
-    setAppearanceMode,
+    toggleAppearanceMode,
     status,
-    wsConnected,
     page,
     setPage,
-    settingsSection,
-    setSettingsSection,
-    sidebarOpen,
-    setSidebarOpen,
     stageMode,
     setStageMode,
-    defaultOpenMode,
-    setDefaultOpenMode,
-    sidebarTab,
-    setSidebarTab,
-    filteredCharts,
-    templates,
-    events,
-    search,
-    setSearch,
-    activeChartId,
-    diagramIdentity,
-    title,
-    setTitle,
     code,
     setCode,
-    version,
-    versions,
-    isDirty,
-    setIsDirty,
-    saving,
     renderedSvg,
     diagramType,
     parseError,
-    followAgentLive,
-    setFollowAgentLive,
     zoom,
     setZoom,
     pan,
     setPan,
-    guideText,
     toast,
     toastVisible,
     viewportRef,
     notifyToast,
-    loadChartIntoWorkspace,
-    handleSelectTemplate,
-    handleSave,
-    handleNewChart,
-    handleRenameChart,
-    handleDeleteChart,
     handleFitCanvas,
     handleExportPng,
     handleExportSvg,
