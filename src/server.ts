@@ -53,12 +53,14 @@ export async function startStudioServer(opts?: {
     baseUrl: service.baseUrl,
     service,
     close: async () => {
+      service.previewHub.dispose();
       await mcp.closeAll();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
       if (!opts?.engine) {
         await engine.dispose();
       }
     },
+
   };
 }
 

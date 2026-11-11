@@ -4,12 +4,15 @@ import { z } from 'zod';
 import type { StudioService } from '../../application/studioService.js';
 import { APP_NAME, APP_VERSION } from '../../config/env.js';
 import type { CallerSource } from '../../shared/types.js';
-import { AGENT_TOOLS } from '../tools/toolRegistry.js';
+import { AGENT_TOOLS, type ToolCallContext } from '../tools/toolRegistry.js';
 
 export function createMermaidMcpServer(
   service: StudioService,
-  source: CallerSource = 'mcp-stdio'
+  sourceOrCtx: CallerSource | ToolCallContext = 'mcp-stdio'
 ): McpServer {
+  const ctx: ToolCallContext =
+    typeof sourceOrCtx === 'string' ? { source: sourceOrCtx } : sourceOrCtx;
+
   const server = new McpServer(
     {
       name: APP_NAME,
@@ -18,12 +21,16 @@ export function createMermaidMcpServer(
     {
       instructions: [
         'MFHMFA (Mermaid For Humans, Mermaid For Agents) is a stateless Mermaid validation, rendering, and visual inspection engine.',
-        'Workflow tip: Call `mermaid_render` to validate syntax AND receive a 2x Retina PNG image (`image/png`) + layout diagnostics so you can visually inspect and refine your diagram.',
+        'Workflow tip: Call `mermaid_render` to validate syntax AND receive a 2x Retina PNG image (`image/png`), layout diagnostics, and interactive browser links (`studioUrl` and `liveUrl`).',
+        'Multi-graph best practice: Prefer multiple clean, focused diagrams over one overcrowded chart. Give each distinct diagram a clear `title` (e.g. "System Overview", "Auth Sequence", "ER Schema") — each distinct `title` opens as its own VS Code tab in the user\'s browser automatically, while re-rendering the same `title` updates that tab in place!',
+        'Share `liveUrl` (or `studioUrl`) so users who do not already have the Studio open can open all tabs from this session in one click.',
         'All tools are stateless and safe to invoke in parallel.',
         'If validation fails, check `error.line`, `error.snippet`, and `error.suggestion` (wrap labels containing (), [], or {} in double quotes ["..."], and avoid lowercase `end` as a node ID).',
       ].join(' '),
+
     }
   );
+
 
   for (const tool of AGENT_TOOLS) {
     server.registerTool(
@@ -36,7 +43,8 @@ export function createMermaidMcpServer(
       },
       async (args: Record<string, unknown>): Promise<CallToolResult> => {
         try {
-          const out = await tool.execute(args, service, source);
+          const out = await tool.execute(args, service, ctx);
+
           const content: CallToolResult['content'] = [
             {
               type: 'text',
@@ -167,7 +175,8 @@ export function createMermaidMcpServer(
               '1. Call `mermaid_syntax_guide` if unsure about syntax rules.',
               '2. Call `mermaid_render` with double-quoted node labels (`Node["Label (detail)"]`).',
               '3. Visually inspect the returned 2x Retina PNG image and `layoutDiagnostics`.',
-              '4. Re-run `mermaid_render` with refined layout if aspect ratio or legibility can be improved, and optionally export with `mermaid_export`.',
+              '4. Re-run `mermaid_render` with refined layout if aspect ratio or legibility can be improved, and share the returned `studioUrl` (and `liveUrl` if iterating) with the user.',
+
             ].join('\n'),
           },
         },

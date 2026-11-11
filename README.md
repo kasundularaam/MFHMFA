@@ -13,11 +13,17 @@ Most AI agents generate Mermaid diagrams blind — emitting raw text without kno
 **MFHMFA** closes that loop statelessly:
 
 1. **Agents *See* What They Build**: `mermaid_render` validates syntax and returns **2x Retina PNG images** (`MCP ImageContent`) alongside structural layout diagnostics (dimensions, aspect-ratio warnings, node/edge counts, contrast checks).
-2. **100% Stateless & Parallel-Safe**: Zero database, zero disk state, and an isolated multi-slot headless Chromium pool (`MERMAID_RENDER_CONCURRENCY=4` by default) with automatic slot health recovery so parallel agent runs never block or corrupt state.
-3. **Actionable Parse Diagnostics**: Syntax errors return 1-indexed line/column pointers, source snippets, and targeted fix hints (unquoted `()`/`[]`/`{}` inside labels, reserved lowercase `end` node IDs, unmatched `subgraph` blocks).
-4. **Calm, Eye-Comfortable Human Workspace**:
+2. **Zero-Link VS Code Multi-Tabs & Agent ↔ Browser Bridge (Zero Database)**:
+   - **Auto-Synced VS Code Tabs (`?workspace=ws_...`)**: Copy your personal paired MCP URL once from the Studio's **Docs** tab (or zero-config on `localhost:48333`). Whenever an agent renders multiple diagrams, each distinct `title` automatically opens as its own **VS Code editor tab** in your browser (while retries of the same `title` update that tab in place) — **no links needed in chat**.
+   - **1-Link Session Bundles (`liveUrl` & `studioUrl`)**: `/live/:token` and `/p/:id` open **all diagrams from that agent session** together as tabs in one click.
+   - **Multi-Tab Stateless Permalinks (`/#z=...`)**: Client-side `deflate-raw` hash permalinks bundle all open tabs into a single URL that never expires and never touches server logs.
+
+3. **100% Stateless & Parallel-Safe**: Zero database, zero disk state, and an isolated multi-slot headless Chromium pool (`MERMAID_RENDER_CONCURRENCY=4` by default) with automatic slot health recovery so parallel agent runs never block or corrupt state.
+4. **Actionable Parse Diagnostics**: Syntax errors return 1-indexed line/column pointers, source snippets, and targeted fix hints (unquoted `()`/`[]`/`{}` inside labels, reserved lowercase `end` node IDs, unmatched `subgraph` blocks).
+5. **Calm, Eye-Comfortable Human Workspace**:
    - Unified low-glare **Warm Graphite (Dark)** and **Warm Paper (Light)** modes across interface, CodeMirror 6 scratchpad, and rendered diagrams.
-   - Distraction-free full-bleed **`Preview ↔ Code`** flip view (`Ctrl/Cmd + E`) with 1-click theme toggle, export menu, and built-in MCP setup docs.
+   - Distraction-free full-bleed **`Preview ↔ Code`** flip view (`Ctrl/Cmd + E`) with 1-click theme toggle, permalink sharing, export menu, and built-in MCP setup docs.
+
 
 ---
 
@@ -135,7 +141,8 @@ npm test
 
 | Tool | Purpose | Returns PNG Vision? |
 |---|---|---|
-| `mermaid_render` | Stateless validate + 2x Retina PNG render + layout diagnostics + optional SVG/file output | Yes (`image/png`) |
+| `mermaid_render` | Stateless validate + 2x Retina PNG render + `studioUrl` (`/p/:id`) + `liveUrl` (`/live/:token`) + layout diagnostics | Yes (`image/png`) |
+
 | `mermaid_validate` | Fast stateless syntax check, line/column snippet, lint warnings, fix suggestions | — |
 | `mermaid_export` | Stateless render & export raw `code` to `.png`, `.svg`, `.mmd`, or `.md` | — |
 | `mermaid_syntax_guide` | Curated syntax & escaping reference (`pitfalls`, `flowchart`, `sequence`, `er`, `state`, `class`, `mindmap`, `gantt`) | — |

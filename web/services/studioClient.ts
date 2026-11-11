@@ -5,6 +5,8 @@ import type {
   MermaidLook,
   MermaidTheme,
   ParseErrorDetail,
+  PreviewHubStats,
+  PreviewSnapshot,
   RenderEngineStats,
   ValidationResult,
 } from '../../src/shared/types';
@@ -18,6 +20,7 @@ export interface ServerStatus {
   baseUrl: string;
   mcpHttpSessions: number;
   engine: RenderEngineStats | null;
+  previews: PreviewHubStats;
   connections: {
     mcpStreamableHttp: string;
     mcpLegacySse: string;
@@ -31,6 +34,9 @@ export interface ServerStatus {
 
 export interface StatelessRenderResponse {
   renderId: string;
+  previewId: string | null;
+  studioUrl: string | null;
+  liveUrl: string | null;
   title: string;
   valid: boolean;
   diagramType: string | null;
@@ -46,6 +52,19 @@ export interface StatelessRenderResponse {
   svg: string | null;
   pngDataUrl: string | null;
 }
+
+export interface PreviewSnapshotResponse extends PreviewSnapshot {
+  liveUrl: string | null;
+  sessionTabs: PreviewSnapshot[];
+}
+
+export interface LiveSessionResponse {
+  token: string;
+  latest: PreviewSnapshot | null;
+  tabs: PreviewSnapshot[];
+  subscriberCount: number;
+}
+
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -83,4 +102,10 @@ export const studioApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  getPreview: (id: string) =>
+    requestJson<PreviewSnapshotResponse>(`/api/preview/${encodeURIComponent(id)}`),
+
+  getLiveSession: (token: string) =>
+    requestJson<LiveSessionResponse>(`/api/live/${encodeURIComponent(token)}`),
 };

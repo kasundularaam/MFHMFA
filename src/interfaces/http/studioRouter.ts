@@ -5,9 +5,14 @@ import {
   APP_NAME,
   APP_VERSION,
   GITHUB_REPO_URL,
+  LOCAL_WORKSPACE_CHANNEL,
+  isLocalRequestHost,
+  resolveRequestBaseUrl,
   resolveVisibleProjectRoot,
 } from '../../config/env.js';
+import { sanitizeLiveChannel } from '../../infrastructure/ephemeral/previewHub.js';
 import { dispatchNamedTool, getOpenAiToolSchemas } from '../tools/toolRegistry.js';
+
 
 export function createStudioRouter(
   service: StudioService,
@@ -28,7 +33,9 @@ export function createStudioRouter(
       baseUrl: service.baseUrl,
       mcpHttpSessions: getMcpSessionCount(),
       engine: service.getEngineStats(),
+      previews: service.getPreviewStats(),
       connections: {
+
         mcpStreamableHttp: `${service.baseUrl}/mcp`,
         mcpLegacySse: `${service.baseUrl}/mcp/sse`,
         mcpStdioCommand: 'npx',
@@ -60,7 +67,22 @@ export function createStudioRouter(
     try {
       const name = String(req.body?.name ?? '');
       const args = req.body?.arguments ?? {};
-      const out = await dispatchNamedTool(name, args, service, 'rest-tool');
+      const reqBaseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
+      const headerWs = req.headers['x-mfhmfa-workspace'];
+      const explicitWs =
+        sanitizeLiveChannel(req.query.workspace) ??
+        sanitizeLiveChannel(Array.isArray(headerWs) ? headerWs[0] : headerWs);
+      const workspaceToken =
+        explicitWs ??
+        (isLocalRequestHost(req.headers) ? LOCAL_WORKSPACE_CHANNEL : null);
+
+      const out = await dispatchNamedTool(name, args, service, {
+        source: 'rest-tool',
+        getBaseUrl: () => reqBaseUrl,
+        getWorkspaceToken: () => workspaceToken,
+      });
+
+
 
       res.json({
         ok: out.ok,

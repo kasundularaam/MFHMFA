@@ -3,11 +3,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import puppeteer from 'puppeteer-core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { resolveChromePath } from '../../src/infrastructure/renderer/browserDiscovery.js';
 import { ChromiumRenderEngine } from '../../src/infrastructure/renderer/chromiumEngine.js';
 import { startStudioServer, type StartedStudioServer } from '../../src/server.js';
+import {
+  buildPermalinkUrl,
+  decodePermalinkPayload,
+  extractHashToken,
+} from '../../src/shared/permalink.js';
+
+
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -112,14 +121,71 @@ describe('MFHMFA Stateless Engine — Integration & Parallel Stress Suite', () =
     const meta = JSON.parse(contentArr[0].text!) as {
       renderId: string;
       valid: boolean;
+      studioUrl: string;
+      liveUrl: string;
       svg: string;
       dimensions: { width: number };
     };
     expect(meta.valid).toBe(true);
+    expect(meta.studioUrl).toMatch(/\/p\/[A-Za-z0-9_-]+$/);
+    expect(meta.liveUrl).toMatch(/\/live\/[A-Za-z0-9_-]+$/);
     expect(meta.svg).toContain('<svg');
     expect(meta.dimensions.width).toBeGreaterThan(200);
 
+    // Verify browser snapshot endpoint serves the exact rendered diagram
+    const previewId = meta.studioUrl.split('/p/')[1]!;
+    const snapResp = await fetch(`${started.baseUrl}/api/preview/${previewId}`);
+    expect(snapResp.ok).toBe(true);
+    const snapJson = (await snapResp.json()) as {
+      title: string;
+      code: string;
+      liveUrl: string;
+    };
+    expect(snapJson.title).toBe('Stateless Payment Flow');
+    expect(snapJson.code).toContain('Payments API');
+    expect(snapJson.liveUrl).toBe(meta.liveUrl);
+
+    // Verify real-time SSE live stream pushes iterative agent renders to browser
+    const liveToken = meta.liveUrl.split('/live/')[1]!;
+    const sseAbort = new AbortController();
+    const sseResp = await fetch(`${started.baseUrl}/api/live/${liveToken}/events`, {
+      signal: sseAbort.signal,
+    });
+    expect(sseResp.ok).toBe(true);
+    const reader = sseResp.body!.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+
+    const readUntilTitle = async (expectedTitle: string): Promise<void> => {
+      while (true) {
+        if (sseBuffer.includes(expectedTitle)) return;
+        const { done, value } = await reader.read();
+        if (done) throw new Error('SSE stream ended prematurely');
+        sseBuffer += decoder.decode(value, { stream: true });
+      }
+    };
+
+    try {
+      // Initial snapshot sent immediately upon connecting
+      await readUntilTitle('Stateless Payment Flow');
+
+      // Agent refines the diagram in the same MCP session -> streams live over SSE!
+      await mcpClient.callTool({
+        name: 'mermaid_render',
+        arguments: {
+          title: 'Refined Payment Flow v2',
+          code: 'flowchart TB\n  Client(["Checkout UI"]) --> API["Payments API v2"]',
+        },
+      });
+
+      await readUntilTitle('Refined Payment Flow v2');
+    } finally {
+      sseAbort.abort();
+      await reader.cancel().catch(() => {});
+    }
+
     // Stateless template resource read
+
     const tplRes = await mcpClient.readResource({
       uri: 'mermaid://templates/sequence-oauth',
     });
@@ -284,12 +350,51 @@ describe('MFHMFA Stateless Engine — Integration & Parallel Stress Suite', () =
     });
 
     expect(previewRes.isError).toBeFalsy();
-    const parts = previewRes.content as Array<{ type: string; data?: string }>;
+    const parts = previewRes.content as Array<{ type: string; text?: string; data?: string }>;
+    const bridgedMeta = JSON.parse(parts[0].text!) as {
+      studioUrl: string;
+      liveUrl: string;
+    };
+    expect(bridgedMeta.studioUrl).toContain(`${started.baseUrl}/p/`);
+    expect(bridgedMeta.liveUrl).toContain(`${started.baseUrl}/live/`);
     expect(parts[1].type).toBe('image');
     expect(Buffer.from(parts[1].data!, 'base64').subarray(0, 8).equals(PNG_MAGIC)).toBe(true);
 
     await stdioClient.close();
-  }, 30_000);
+
+    // Also verify offline/standalone stdio fallback emits #z= stateless permalink
+    const offlineTransport = new StdioClientTransport({
+      command: path.join(projectRoot, 'node_modules/.bin/tsx'),
+      args: [path.join(projectRoot, 'src/mcp-stdio.ts')],
+      env: {
+        ...process.env,
+        MERMAID_STUDIO_URL: 'http://127.0.0.1:1',
+      } as Record<string, string>,
+    });
+    const offlineClient = new Client({ name: 'test-offline-stdio', version: '2.0.0' });
+    await offlineClient.connect(offlineTransport);
+
+    const offlineRes = await offlineClient.callTool({
+      name: 'mermaid_render',
+      arguments: {
+        title: 'Offline Permalink Test',
+        code: 'flowchart LR\n  A["Stdio"] --> B["Permalink"]',
+      },
+    });
+    const offlineParts = offlineRes.content as Array<{ type: string; text?: string }>;
+    const offlineMeta = JSON.parse(offlineParts[0].text!) as {
+      studioUrl: string;
+      liveUrl: string | null;
+    };
+    expect(offlineMeta.studioUrl).toContain('#z=');
+    expect(offlineMeta.liveUrl).toBeNull();
+    const decoded = await decodePermalinkPayload(extractHashToken(offlineMeta.studioUrl)!);
+    expect(decoded.title).toBe('Offline Permalink Test');
+    expect(decoded.code).toContain('Permalink');
+
+    await offlineClient.close();
+  }, 45_000);
+
 
   it('supports OpenAI/Anthropic REST tool schemas and stateless mermaid_export', async () => {
     const schemaResp = await fetch(`${started.baseUrl}/api/tools/schemas`);
@@ -314,4 +419,170 @@ describe('MFHMFA Stateless Engine — Integration & Parallel Stress Suite', () =
     expect(fs.existsSync(outSvg)).toBe(true);
     expect(fs.readFileSync(outSvg, 'utf8')).toContain('<svg');
   }, 20_000);
+
+  it('renders /p/:id snapshots, /live/:token real-time SSE updates, and /#z= permalinks in the Browser UI', async () => {
+    const projectRoot = path.resolve(__dirname, '../..');
+    if (!fs.existsSync(path.join(projectRoot, 'dist/web/index.html'))) {
+      return;
+    }
+
+    const mcpClient = new Client({ name: 'test-browser-bridge-agent', version: '2.0.0' });
+    await mcpClient.connect(new StreamableHTTPClientTransport(new URL(`${started.baseUrl}/mcp`)));
+
+    const browser = await puppeteer.launch({
+      executablePath: resolveChromePath(),
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+
+    try {
+      const r1 = await mcpClient.callTool({
+        name: 'mermaid_render',
+        arguments: {
+          title: 'Browser Bridge V1',
+          code: 'flowchart LR\n  A["AlphaGateway"] --> B["BetaWorker"]',
+        },
+      });
+      const meta1 = JSON.parse(
+        ((r1.content as Array<{ text?: string }>)[0]?.text ?? '{}')
+      ) as { studioUrl: string; liveUrl: string };
+
+      const page = await browser.newPage();
+
+      // 1. Open /p/:id snapshot in browser
+      await page.goto(meta1.studioUrl, { waitUntil: 'networkidle2' });
+      await page.waitForFunction(
+        () => document.querySelector('.canvas-stage svg')?.textContent?.includes('AlphaGateway'),
+        { timeout: 10_000 }
+      );
+
+      // 2. Open /live/:token in browser and verify live SSE update when agent renders V2
+      await page.goto(meta1.liveUrl, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(
+        () => document.querySelector('.live-pill')?.textContent?.includes('Live'),
+        { timeout: 10_000 }
+      );
+
+      await mcpClient.callTool({
+        name: 'mermaid_render',
+        arguments: {
+          title: 'Browser Bridge V2',
+          code: 'flowchart LR\n  X["OmegaLiveNode"] --> Y["DeltaStream"]',
+        },
+      });
+
+      await page.waitForFunction(
+        () => document.querySelector('.canvas-stage svg')?.textContent?.includes('OmegaLiveNode'),
+        { timeout: 10_000 }
+      );
+
+      // 3. Open stateless multi-tab /#z= permalink in browser
+      const permUrl = await buildPermalinkUrl(started.baseUrl, {
+        title: 'Stateless Hash Chart',
+        code: 'flowchart TD\n  P1["SigmaPermalink"] --> P2["ForeverLink"]',
+        activeIndex: 0,
+        tabs: [
+          {
+            title: 'Stateless Hash Chart',
+            code: 'flowchart TD\n  P1["SigmaPermalink"] --> P2["ForeverLink"]',
+          },
+          {
+            title: 'Second Bundled Tab',
+            code: 'flowchart LR\n  Q1["SecondTabNode"] --> Q2["EndNode"]',
+          },
+        ],
+      });
+      await page.goto(permUrl, { waitUntil: 'networkidle2' });
+      await page.waitForFunction(
+        () =>
+          document.querySelector('.canvas-stage svg')?.textContent?.includes('SigmaPermalink') &&
+          document.querySelectorAll('.editor-tab').length === 2,
+        { timeout: 10_000 }
+      );
+
+      // 4. Zero-Link Workspace Sync (?workspace=...): open Studio with NO /p/ or /live/ link,
+      // connect paired MCP agent, generate multiple graphs + retry, and verify VS Code tabs!
+      const wsPage = await browser.newPage();
+      await wsPage.goto(`${started.baseUrl}/?workspace=ws_pair_e2e_test`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await wsPage.waitForFunction(
+        () => document.querySelector('.live-pill')?.textContent?.includes('Live'),
+        { timeout: 10_000 }
+      );
+
+      const pairedMcp = new Client({ name: 'paired-ws-agent', version: '2.0.0' });
+      await pairedMcp.connect(
+        new StreamableHTTPClientTransport(
+          new URL(`${started.baseUrl}/mcp?workspace=ws_pair_e2e_test`)
+        )
+      );
+
+      try {
+        // Graph 1 (attempt 1)
+        await pairedMcp.callTool({
+          name: 'mermaid_render',
+          arguments: {
+            title: 'Checkout Overview',
+            code: 'flowchart LR\n  C1["DraftOverviewV1"] --> C2["Cart"]',
+          },
+        });
+        // Graph 1 (attempt 2 — same title updates tab 1 in-place!)
+        await pairedMcp.callTool({
+          name: 'mermaid_render',
+          arguments: {
+            title: 'Checkout Overview',
+            code: 'flowchart TB\n  C1["RefinedOverviewV2"] --> C2["Cart"]',
+          },
+        });
+        // Graph 2 (distinct title opens a 2nd VS Code tab!)
+        await pairedMcp.callTool({
+          name: 'mermaid_render',
+          arguments: {
+            title: 'Stripe Sequence',
+            code: 'sequenceDiagram\n  Cart->>Stripe: ChargeCardToken',
+          },
+        });
+
+        await wsPage.waitForFunction(
+          () => {
+            const labels = Array.from(document.querySelectorAll('.editor-tab .tab-label')).map(
+              (el) => el.textContent?.trim()
+            );
+            return (
+              labels.length === 2 &&
+              labels[0] === 'Checkout Overview' &&
+              labels[1] === 'Stripe Sequence' &&
+              document
+                .querySelector('.canvas-stage svg')
+                ?.textContent?.includes('ChargeCardToken')
+            );
+          },
+          { timeout: 10_000 }
+        );
+
+        // Click first VS Code tab ("Checkout Overview") and verify refined V2 graph is rendered!
+        await wsPage.evaluate(() => {
+          const firstTab = document.querySelector('.editor-tab') as HTMLElement | null;
+          firstTab?.click();
+        });
+
+        await wsPage.waitForFunction(
+          () =>
+            document
+              .querySelector('.canvas-stage svg')
+              ?.textContent?.includes('RefinedOverviewV2'),
+          { timeout: 10_000 }
+        );
+      } finally {
+        await pairedMcp.close().catch(() => {});
+        await wsPage.close().catch(() => {});
+      }
+    } finally {
+
+      await browser.close().catch(() => {});
+      await mcpClient.close().catch(() => {});
+    }
+  }, 45_000);
 });
+

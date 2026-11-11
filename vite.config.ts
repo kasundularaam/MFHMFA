@@ -14,10 +14,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:48333',
       '/mcp': 'http://localhost:48333',
-      '/ws': {
-        target: 'ws://localhost:48333',
-        ws: true,
-      },
     },
   },
+
 });

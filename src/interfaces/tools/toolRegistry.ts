@@ -1,10 +1,22 @@
 import { z } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
-import type { StudioService } from '../../application/studioService.js';
+import type {
+  StatelessRenderInput,
+  StudioService,
+} from '../../application/studioService.js';
 import type { CallerSource } from '../../shared/types.js';
 
 const THEME_ENUM = z.enum(['default', 'neutral', 'dark', 'forest', 'base']);
 const LOOK_ENUM = z.enum(['classic', 'handDrawn']);
+
+export interface ToolCallContext {
+  source: CallerSource;
+  getBaseUrl?: () => string;
+  liveToken?: string | null;
+  getWorkspaceToken?: () => string | null;
+  previewBridge?: StatelessRenderInput['previewBridge'];
+}
+
 
 export interface ToolExecutionOutput {
   ok: boolean;
@@ -23,7 +35,7 @@ export interface AgentToolDefinition<Shape extends z.ZodRawShape = z.ZodRawShape
   execute: (
     args: z.infer<z.ZodObject<Shape>>,
     service: StudioService,
-    source: CallerSource
+    ctx: ToolCallContext
   ) => Promise<ToolExecutionOutput>;
 }
 
@@ -43,10 +55,19 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
     name: 'mermaid_render',
     title: 'Validate, Render & Visually Inspect Mermaid Diagram',
     description:
-      'Statelessly validate and render Mermaid code into a high-DPI 2x Retina PNG image and optional SVG. Returns layout diagnostics, dimensions, node/edge metrics, and the rendered PNG image so you can visually inspect your chart.',
+      'Statelessly validate and render Mermaid code into a high-DPI 2x Retina PNG image, layout diagnostics, and interactive browser links (`studioUrl` for this snapshot and `liveUrl` for real-time session updates). Share `studioUrl` with the user so they can view, pan/zoom, edit, and export in the browser.',
     zodShape: {
       code: z.string().describe('Raw Mermaid diagram source code (without ```mermaid fences).'),
-      title: z.string().optional().describe('Optional human-readable title.'),
+      title: z
+        .string()
+        .optional()
+        .describe(
+          'Concise tab title (e.g. "System Overview", "Auth Sequence"). Distinct titles open separate VS Code tabs in the browser; re-rendering the same title updates that tab in place.'
+        ),
+      tabId: z
+        .string()
+        .optional()
+        .describe('Optional stable tab key to update an existing browser tab even if title changes.'),
       theme: THEME_ENUM.optional().describe('Visual theme (default, neutral, dark, forest, base).'),
       look: LOOK_ENUM.optional().describe('Render style: classic or handDrawn.'),
       background: z.string().optional().describe('CSS color or "transparent".'),
@@ -54,12 +75,17 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
       outputPath: z.string().optional().describe('Optional file path (.png or .svg) to write output.'),
       returnImage: z.boolean().optional().describe('Attach rendered PNG image (default true).'),
       includeSvg: z.boolean().optional().describe('Include raw SVG XML string (default false).'),
+      liveChannel: z
+        .string()
+        .optional()
+        .describe('Optional custom live-stream channel token (4-64 alphanumeric/_/- chars).'),
     },
     jsonParameters: {
       type: 'object',
       properties: {
         code: { type: 'string', description: 'Raw Mermaid diagram source code.' },
         title: { type: 'string' },
+        tabId: { type: 'string' },
         theme: { type: 'string', enum: ['default', 'neutral', 'dark', 'forest', 'base'] },
         look: { type: 'string', enum: ['classic', 'handDrawn'] },
         background: { type: 'string' },
@@ -67,20 +93,27 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         outputPath: { type: 'string' },
         returnImage: { type: 'boolean', default: true },
         includeSvg: { type: 'boolean', default: false },
+        liveChannel: { type: 'string' },
       },
       required: ['code'],
     },
     annotations: { idempotentHint: true },
-    execute: async (args, service, source) => {
+    execute: async (args, service, ctx) => {
       const res = await service.render(args.code, {
         title: args.title,
+        tabId: args.tabId,
         theme: args.theme,
         look: args.look,
         background: args.background,
         scale: args.scale,
         outputPath: args.outputPath,
-        source,
+        source: ctx.source,
+        requestBaseUrl: ctx.getBaseUrl?.(),
+        liveToken: args.liveChannel ?? ctx.liveToken ?? null,
+        workspaceToken: ctx.getWorkspaceToken?.() ?? null,
+        previewBridge: ctx.previewBridge,
       });
+
 
       return {
         ok: res.valid,
@@ -88,6 +121,8 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
           renderId: res.renderId,
           title: res.title,
           valid: res.valid,
+          studioUrl: res.studioUrl,
+          liveUrl: res.liveUrl,
           diagramType: res.diagramType,
           theme: res.theme,
           look: res.look,
@@ -122,8 +157,8 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
       required: ['code'],
     },
     annotations: { readOnlyHint: true, idempotentHint: true },
-    execute: async ({ code }, service, source) => {
-      const res = await service.validate(code, source);
+    execute: async ({ code }, service, ctx) => {
+      const res = await service.validate(code, ctx.source);
       return { ok: res.valid, payload: res };
     },
   }),
@@ -158,8 +193,8 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
       required: ['code', 'outputPath'],
     },
     annotations: { idempotentHint: true },
-    execute: async (args, service, source) => {
-      const out = await service.exportDiagram({ ...args, source });
+    execute: async (args, service, ctx) => {
+      const out = await service.exportDiagram({ ...args, source: ctx.source });
       return { ok: true, payload: out };
     },
   }),
@@ -177,8 +212,8 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
       properties: { topic: { type: 'string' } },
     },
     annotations: { readOnlyHint: true, idempotentHint: true },
-    execute: async ({ topic }, service, source) => {
-      const guide = service.syntaxGuide(topic, source);
+    execute: async ({ topic }, service, ctx) => {
+      const guide = service.syntaxGuide(topic, ctx.source);
       return { ok: true, payload: { guide }, textOverride: guide };
     },
   }),
@@ -212,12 +247,14 @@ export async function dispatchNamedTool(
   name: string,
   rawArgs: unknown,
   service: StudioService,
-  source: CallerSource
+  sourceOrCtx: CallerSource | ToolCallContext
 ): Promise<ToolExecutionOutput> {
   const tool = AGENT_TOOLS.find((t) => t.name === name);
   if (!tool) {
     throw new Error(`Unknown tool "${name}". Fetch GET /api/tools/schemas for available tools.`);
   }
+  const ctx: ToolCallContext =
+    typeof sourceOrCtx === 'string' ? { source: sourceOrCtx } : sourceOrCtx;
   const parsedArgs = z.object(tool.zodShape).parse(rawArgs ?? {});
-  return tool.execute(parsedArgs, service, source);
+  return tool.execute(parsedArgs, service, ctx);
 }

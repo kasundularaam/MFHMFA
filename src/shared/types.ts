@@ -81,3 +81,25 @@ export interface MermaidTemplate {
   look?: MermaidLook;
   code: string;
 }
+
+export interface PreviewSnapshot {
+  id: string;
+  tabKey: string;
+  title: string;
+  code: string;
+  diagramType: string | null;
+  theme: MermaidTheme;
+  look: MermaidLook;
+  liveToken: string | null;
+  workspaceToken: string | null;
+  createdAt: number;
+}
+
+
+export interface PreviewHubStats {
+  snapshots: number;
+  maxSnapshots: number;
+  liveChannels: number;
+  liveSubscribers: number;
+}
+

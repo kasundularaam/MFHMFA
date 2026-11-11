@@ -6,6 +6,7 @@ interface PreviewCanvasProps {
   viewportRef: RefObject<HTMLDivElement | null>;
   chartKey: string;
   renderedSvg: string;
+  waitingForLive?: boolean;
   parseError: ParseErrorDetail | null;
   zoom: number;
   pan: { x: number; y: number };
@@ -15,6 +16,7 @@ interface PreviewCanvasProps {
   onFitCanvas: () => void;
   onFlipToCode: () => void;
 }
+
 
 interface FrozenLayer {
   svg: string;
@@ -26,6 +28,7 @@ export function PreviewCanvas({
   viewportRef,
   chartKey,
   renderedSvg,
+  waitingForLive = false,
   parseError,
   zoom,
   pan,
@@ -35,9 +38,12 @@ export function PreviewCanvas({
   onFitCanvas,
   onFlipToCode,
 }: PreviewCanvasProps) {
+
   // Smooth camera transition ONLY when clicking zoom/fit buttons (never on mount or chart swap)
   const [cameraGlide, setCameraGlide] = useState(false);
   const [outgoingLayer, setOutgoingLayer] = useState<FrozenLayer | null>(null);
+
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const prevSnapshotRef = useRef<{
     chartKey: string;
@@ -59,27 +65,38 @@ export function PreviewCanvas({
     origY: 0,
   });
 
+  useEffect(
+    () => () => {
+      if (fadeTimerRef.current) {
+        clearTimeout(fadeTimerRef.current);
+      }
+    },
+    []
+  );
+
   // Cross-dissolve outgoing chart into incoming chart with zero blank frames
   useEffect(() => {
     const prev = prevSnapshotRef.current;
     if (prev.chartKey !== chartKey) {
       setCameraGlide(false);
       if (prev.svg && renderedSvg && prev.svg !== renderedSvg) {
+        if (fadeTimerRef.current) {
+          clearTimeout(fadeTimerRef.current);
+        }
         setOutgoingLayer({
           svg: prev.svg,
           zoom: prev.zoom,
           pan: prev.pan,
         });
-        const timer = setTimeout(() => {
+        fadeTimerRef.current = setTimeout(() => {
           setOutgoingLayer(null);
+          fadeTimerRef.current = null;
         }, 170);
-        prevSnapshotRef.current = { chartKey, svg: renderedSvg, zoom, pan };
-        return () => clearTimeout(timer);
       }
     }
     prevSnapshotRef.current = { chartKey, svg: renderedSvg, zoom, pan };
-    return undefined;
   }, [chartKey, renderedSvg, zoom, pan]);
+
 
   return (
     <div
@@ -148,9 +165,12 @@ export function PreviewCanvas({
             color: 'var(--text-muted)',
           }}
         >
-          Switch to Code to edit diagram
+          {waitingForLive
+            ? 'Waiting for AI agent to render a diagram…'
+            : 'Switch to Code to edit diagram'}
         </div>
       )}
+
 
       {parseError && (
         <div

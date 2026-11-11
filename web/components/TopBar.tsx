@@ -1,6 +1,21 @@
 import { useState } from 'react';
-import { ArrowLeft, BookOpen, Copy, Download, FileCode2, Moon, Sun } from 'lucide-react';
-import type { StageMode, StudioPage } from '../hooks/useStudioController';
+import {
+  ArrowLeft,
+  BookOpen,
+  Copy,
+  Download,
+  FileCode2,
+  Link2,
+  Moon,
+  Radio,
+  Sun,
+} from 'lucide-react';
+import type {
+  LiveConnectionState,
+  StageMode,
+  StudioPage,
+  ViewMode,
+} from '../hooks/useStudioController';
 import type { AppearanceMode } from '../theme/comfortTheme';
 
 const DEFAULT_GITHUB_URL = 'https://github.com/kasundularaam/MFHMFA';
@@ -12,6 +27,14 @@ interface TopBarProps {
   onChangeStageMode: (mode: StageMode) => void;
   appearanceMode: AppearanceMode;
   onToggleAppearance: () => void;
+  viewMode: ViewMode;
+  linkedLiveToken: string | null;
+  liveState: LiveConnectionState;
+  hasBufferedLiveUpdate: boolean;
+  onBrandClick: () => void;
+  onToggleLivePause: () => void;
+  onWatchLive: () => void;
+  onCopyPermalink: () => void;
   repoUrl?: string;
   hasError: boolean;
   onExportPng: () => void;
@@ -26,6 +49,14 @@ export function TopBar({
   onChangeStageMode,
   appearanceMode,
   onToggleAppearance,
+  viewMode,
+  linkedLiveToken,
+  liveState,
+  hasBufferedLiveUpdate,
+  onBrandClick,
+  onToggleLivePause,
+  onWatchLive,
+  onCopyPermalink,
   repoUrl,
   hasError,
   onExportPng,
@@ -33,15 +64,23 @@ export function TopBar({
   onCopyCode,
 }: TopBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const brandInteractive = page === 'docs' || viewMode !== 'scratchpad';
+  const showLiveBadge =
+    viewMode === 'live' ||
+    (viewMode === 'scratchpad' && (liveState === 'connected' || liveState === 'paused'));
 
   return (
     <header className="topbar" onClick={() => menuOpen && setMenuOpen(false)}>
       <div className="topbar-left">
         <button
           className="brand-lockup"
-          onClick={() => page === 'docs' && onChangePage('studio')}
-          style={{ cursor: page === 'docs' ? 'pointer' : 'default' }}
-          title="MFHMFA — Mermaid For Humans, Mermaid For Agents"
+          onClick={onBrandClick}
+          style={{ cursor: brandInteractive ? 'pointer' : 'default' }}
+          title={
+            viewMode !== 'scratchpad'
+              ? 'Return to local workspace'
+              : 'MFHMFA — Mermaid For Humans, Mermaid For Agents'
+          }
         >
           <svg
             className="brand-logo"
@@ -87,10 +126,53 @@ export function TopBar({
           <span className="brand-name">MFHMFA</span>
         </button>
 
-        {page === 'docs' && (
+        {page === 'docs' ? (
           <button className="btn ghost sm" onClick={() => onChangePage('studio')}>
             <ArrowLeft size={13} /> Studio
           </button>
+        ) : (
+          <>
+            {showLiveBadge && (
+              <button
+                className={`live-pill ${liveState === 'paused' ? 'paused' : 'active'}`}
+                onClick={onToggleLivePause}
+                title={
+                  liveState === 'paused'
+                    ? 'Click to resume auto-opening agent tabs'
+                    : 'Auto-syncing agent diagrams into tabs — click to pause'
+                }
+              >
+                <span
+                  className={`live-dot ${
+                    liveState === 'connected'
+                      ? 'online'
+                      : liveState === 'paused'
+                        ? 'paused'
+                        : 'connecting'
+                  }`}
+                />
+                <span>
+                  {liveState === 'paused'
+                    ? hasBufferedLiveUpdate
+                      ? 'Update ready · Resume'
+                      : 'Paused · Resume'
+                    : liveState === 'connected'
+                      ? 'Live'
+                      : 'Connecting…'}
+                </span>
+              </button>
+            )}
+
+            {viewMode === 'snapshot' && linkedLiveToken && (
+              <button
+                className="btn ghost sm"
+                onClick={onWatchLive}
+                title="Follow real-time updates from this AI agent session"
+              >
+                <Radio size={12} /> Watch Live
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -120,6 +202,14 @@ export function TopBar({
       </div>
 
       <div className="topbar-right">
+        <button
+          className="icon-btn"
+          onClick={onCopyPermalink}
+          title="Copy Shareable Permalink (all open tabs)"
+        >
+          <Link2 size={15} />
+        </button>
+
         <div className="dropdown-wrap" onClick={(e) => e.stopPropagation()}>
           <button
             className="icon-btn"
@@ -147,6 +237,15 @@ export function TopBar({
                 }}
               >
                 <FileCode2 size={13} /> Export SVG
+              </button>
+              <button
+                className="dropdown-item"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onCopyPermalink();
+                }}
+              >
+                <Link2 size={13} /> Copy Permalink
               </button>
               <button
                 className="dropdown-item"

@@ -3,43 +3,145 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveBaseUrl } from '../config/env.js';
 import { getSyntaxGuide, MERMAID_TEMPLATES } from '../domain/catalog.js';
-import type { RenderEnginePort } from '../domain/ports.js';
+import type {
+  LiveSnapshotListener,
+  PreviewHubPort,
+  RenderEnginePort,
+} from '../domain/ports.js';
+import {
+  InMemoryPreviewHub,
+  sanitizeLiveChannel,
+} from '../infrastructure/ephemeral/previewHub.js';
 import type {
   CallerSource,
   MermaidLook,
   MermaidTemplate,
   MermaidTheme,
+  PreviewHubStats,
+  PreviewSnapshot,
   RenderEngineStats,
   RenderOptions,
   RenderedDiagram,
   ValidationResult,
 } from '../shared/types.js';
 
+export interface PreviewBridgeResult {
+  previewId?: string | null;
+  studioUrl: string;
+  liveUrl: string | null;
+}
+
 export interface StatelessRenderInput extends RenderOptions {
   title?: string;
+  tabId?: string;
   outputPath?: string;
   source?: CallerSource;
+  requestBaseUrl?: string;
+  liveToken?: string | null;
+  workspaceToken?: string | null;
+  previewBridge?: (params: {
+    code: string;
+    title: string;
+    tabId?: string;
+    diagramType: string | null;
+    theme: MermaidTheme;
+    look: MermaidLook;
+  }) => Promise<PreviewBridgeResult>;
 }
+
 
 export interface StatelessRenderResult extends RenderedDiagram {
   renderId: string;
   title: string;
   outputPath: string | null;
+  previewId: string | null;
+  studioUrl: string | null;
+  liveUrl: string | null;
 }
 
 export type ExportFormat = 'png' | 'svg' | 'mmd' | 'md';
 
 export class StudioService {
   public readonly engine: RenderEnginePort;
+  public readonly previewHub: PreviewHubPort;
   public baseUrl: string;
 
-  constructor(deps: { engine: RenderEnginePort; baseUrl?: string }) {
+  constructor(deps: {
+    engine: RenderEnginePort;
+    previewHub?: PreviewHubPort;
+    baseUrl?: string;
+  }) {
     this.engine = deps.engine;
+    this.previewHub = deps.previewHub ?? new InMemoryPreviewHub();
     this.baseUrl = resolveBaseUrl(deps.baseUrl);
   }
 
   getEngineStats(): RenderEngineStats | null {
     return this.engine.getStats ? this.engine.getStats() : null;
+  }
+
+  getPreviewStats(): PreviewHubStats {
+    return this.previewHub.getStats();
+  }
+
+  registerPreview(params: {
+    code: string;
+    title?: string;
+    tabId?: string;
+    diagramType?: string | null;
+    theme?: MermaidTheme;
+    look?: MermaidLook;
+    liveToken?: string | null;
+    workspaceToken?: string | null;
+    requestBaseUrl?: string;
+  }): {
+    snapshot: PreviewSnapshot;
+    studioUrl: string;
+    liveUrl: string | null;
+  } {
+    const cleanBase = (params.requestBaseUrl || this.baseUrl).replace(/\/+$/, '');
+    const title = params.title?.trim() || inferDiagramTitle(params.code, params.diagramType ?? null);
+    const snapshot = this.previewHub.saveSnapshot({
+      title,
+      tabId: params.tabId ?? null,
+      code: params.code,
+      diagramType: params.diagramType ?? null,
+      theme: params.theme ?? 'default',
+      look: params.look ?? 'classic',
+      liveToken: sanitizeLiveChannel(params.liveToken),
+      workspaceToken: sanitizeLiveChannel(params.workspaceToken),
+    });
+
+    return {
+      snapshot,
+      studioUrl: `${cleanBase}/p/${snapshot.id}`,
+      liveUrl: snapshot.liveToken ? `${cleanBase}/live/${snapshot.liveToken}` : null,
+    };
+  }
+
+  getPreview(id: string): PreviewSnapshot | null {
+    return this.previewHub.getSnapshot(id);
+  }
+
+  getLiveLatest(token: string): PreviewSnapshot | null {
+    return this.previewHub.getLiveLatest(token);
+  }
+
+  getChannelTabs(token: string): PreviewSnapshot[] {
+    return this.previewHub.getChannelTabs(token);
+  }
+
+
+  subscribeLive(
+    token: string,
+    listener: LiveSnapshotListener,
+    onClose?: () => void
+  ): (() => void) | null {
+    return this.previewHub.subscribeLive(token, listener, onClose);
+  }
+
+  getLiveSubscriberCount(token: string): number {
+    return this.previewHub.getSubscriberCount(token);
   }
 
   async validate(code: string, _source?: CallerSource): Promise<ValidationResult> {
@@ -70,11 +172,50 @@ export class StudioService {
       }
     }
 
+    let previewId: string | null = null;
+    let studioUrl: string | null = null;
+    let liveUrl: string | null = null;
+
+    if (res.valid) {
+      if (options.previewBridge) {
+        const bridged = await options.previewBridge({
+          code,
+          title,
+          tabId: options.tabId,
+          diagramType: res.diagramType,
+          theme: res.theme,
+          look: res.look,
+        });
+        previewId = bridged.previewId ?? null;
+        studioUrl = bridged.studioUrl;
+        liveUrl = bridged.liveUrl;
+      } else {
+        const registered = this.registerPreview({
+          code,
+          title,
+          tabId: options.tabId,
+          diagramType: res.diagramType,
+          theme: res.theme,
+          look: res.look,
+          liveToken: options.liveToken,
+          workspaceToken: options.workspaceToken,
+          requestBaseUrl: options.requestBaseUrl,
+        });
+        previewId = registered.snapshot.id;
+        studioUrl = registered.studioUrl;
+        liveUrl = registered.liveUrl;
+      }
+    }
+
+
     return {
       ...res,
       renderId,
       title,
       outputPath: savedOutputPath,
+      previewId,
+      studioUrl,
+      liveUrl,
     };
   }
 
@@ -171,7 +312,7 @@ export class StudioService {
   }
 }
 
-function inferDiagramTitle(code: string, diagramType: string | null): string {
+export function inferDiagramTitle(code: string, diagramType: string | null): string {
   const titleMatch = code.match(/^\s*title\s+(.+)$/m);
   if (titleMatch?.[1]) {
     return titleMatch[1].replace(/^["']|["']$/g, '').trim();

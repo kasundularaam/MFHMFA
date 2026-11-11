@@ -5,7 +5,17 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { StudioService } from '../../application/studioService.js';
-import { APP_NAME, APP_VERSION } from '../../config/env.js';
+import {
+  APP_NAME,
+  APP_VERSION,
+  LOCAL_WORKSPACE_CHANNEL,
+  isLocalRequestHost,
+  resolveRequestBaseUrl,
+} from '../../config/env.js';
+import {
+  generateLiveToken,
+  sanitizeLiveChannel,
+} from '../../infrastructure/ephemeral/previewHub.js';
 import { createMermaidMcpServer } from './createMcpServer.js';
 
 const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
@@ -13,17 +23,36 @@ const SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
 interface ActiveHttpSession {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
+  liveToken: string;
+  workspaceToken: string | null;
+  baseUrl: string;
   lastActiveAt: number;
 }
 
 interface ActiveSseSession {
   server: McpServer;
   transport: SSEServerTransport;
+  liveToken: string;
+  workspaceToken: string | null;
+  baseUrl: string;
 }
 
 export interface MountedMcpEndpoints {
   getSessionCount: () => number;
   closeAll: () => Promise<void>;
+}
+
+function resolveWorkspaceToken(req: Request): string | null {
+  const headerVal = req.headers['x-mfhmfa-workspace'];
+  const rawHeader = Array.isArray(headerVal) ? headerVal[0] : headerVal;
+  const explicit =
+    sanitizeLiveChannel(req.query.workspace) ??
+    sanitizeLiveChannel(req.query.ws) ??
+    sanitizeLiveChannel(rawHeader);
+  if (explicit) {
+    return explicit;
+  }
+  return isLocalRequestHost(req.headers) ? LOCAL_WORKSPACE_CHANNEL : null;
 }
 
 export function mountMcpHttpEndpoints(
@@ -47,6 +76,8 @@ export function mountMcpHttpEndpoints(
 
   app.all('/mcp', async (req: Request, res: Response) => {
     try {
+      const reqBaseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
+      const reqWorkspace = resolveWorkspaceToken(req);
       const headerVal = req.headers['mcp-session-id'];
       const sessionId = Array.isArray(headerVal) ? headerVal[0] : headerVal;
 
@@ -66,21 +97,49 @@ export function mountMcpHttpEndpoints(
           return;
         }
         active.lastActiveAt = Date.now();
+        active.baseUrl = reqBaseUrl;
+        if (reqWorkspace) {
+          active.workspaceToken = reqWorkspace;
+        }
         await active.transport.handleRequest(req, res, req.body);
         return;
       }
 
       if (req.method === 'POST' && isInitializeRequest(req.body)) {
-        const mcpServer = createMermaidMcpServer(service, 'mcp-http');
+        const liveToken = sanitizeLiveChannel(req.query.channel) ?? generateLiveToken();
+        let currentBaseUrl = reqBaseUrl;
+        let currentWorkspace = reqWorkspace;
+
+        const mcpServer = createMermaidMcpServer(service, {
+          source: 'mcp-http',
+          getBaseUrl: () => currentBaseUrl,
+          liveToken,
+          getWorkspaceToken: () => currentWorkspace,
+        });
+
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => crypto.randomUUID(),
           enableJsonResponse: true,
           onsessioninitialized: (sid) => {
-            httpSessions.set(sid, {
+            const sessionRecord: ActiveHttpSession = {
               server: mcpServer,
               transport,
+              liveToken,
+              get workspaceToken() {
+                return currentWorkspace;
+              },
+              set workspaceToken(next: string | null) {
+                currentWorkspace = next;
+              },
+              get baseUrl() {
+                return currentBaseUrl;
+              },
+              set baseUrl(next: string) {
+                currentBaseUrl = next;
+              },
               lastActiveAt: Date.now(),
-            });
+            };
+            httpSessions.set(sid, sessionRecord);
           },
           onsessionclosed: (sid) => {
             httpSessions.delete(sid);
@@ -99,7 +158,13 @@ export function mountMcpHttpEndpoints(
       }
 
       if (req.method === 'POST') {
-        const statelessServer = createMermaidMcpServer(service, 'mcp-http');
+        const statelessChannel = sanitizeLiveChannel(req.query.channel);
+        const statelessServer = createMermaidMcpServer(service, {
+          source: 'mcp-http',
+          getBaseUrl: () => reqBaseUrl,
+          liveToken: statelessChannel,
+          getWorkspaceToken: () => reqWorkspace,
+        });
         const statelessTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
@@ -123,11 +188,11 @@ export function mountMcpHttpEndpoints(
           stateless: true,
           protocol: 'Model Context Protocol (Streamable HTTP & SSE)',
           endpoints: {
-            streamableHttp: `${service.baseUrl}/mcp`,
-            legacySse: `${service.baseUrl}/mcp/sse`,
-            legacyMessages: `${service.baseUrl}/mcp/messages`,
-            restToolSchemas: `${service.baseUrl}/api/tools/schemas`,
-            restToolCall: `${service.baseUrl}/api/tools/call`,
+            streamableHttp: `${reqBaseUrl}/mcp`,
+            legacySse: `${reqBaseUrl}/mcp/sse`,
+            legacyMessages: `${reqBaseUrl}/mcp/messages`,
+            restToolSchemas: `${reqBaseUrl}/api/tools/schemas`,
+            restToolCall: `${reqBaseUrl}/api/tools/call`,
           },
         });
         return;
@@ -153,10 +218,35 @@ export function mountMcpHttpEndpoints(
     }
   });
 
-  app.get('/mcp/sse', async (_req: Request, res: Response) => {
-    const mcpServer = createMermaidMcpServer(service, 'mcp-http');
+  app.get('/mcp/sse', async (req: Request, res: Response) => {
+    const liveToken = sanitizeLiveChannel(req.query.channel) ?? generateLiveToken();
+    let currentBaseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
+    let currentWorkspace = resolveWorkspaceToken(req);
+
+    const mcpServer = createMermaidMcpServer(service, {
+      source: 'mcp-http',
+      getBaseUrl: () => currentBaseUrl,
+      liveToken,
+      getWorkspaceToken: () => currentWorkspace,
+    });
     const transport = new SSEServerTransport('/mcp/messages', res);
-    sseSessions.set(transport.sessionId, { server: mcpServer, transport });
+    sseSessions.set(transport.sessionId, {
+      server: mcpServer,
+      transport,
+      liveToken,
+      get workspaceToken() {
+        return currentWorkspace;
+      },
+      set workspaceToken(next: string | null) {
+        currentWorkspace = next;
+      },
+      get baseUrl() {
+        return currentBaseUrl;
+      },
+      set baseUrl(next: string) {
+        currentBaseUrl = next;
+      },
+    });
 
     res.on('close', () => {
       sseSessions.delete(transport.sessionId);
@@ -173,6 +263,9 @@ export function mountMcpHttpEndpoints(
       res.status(404).json({ error: `Unknown SSE sessionId: ${sessionId}` });
       return;
     }
+    session.baseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
+    const ws = resolveWorkspaceToken(req);
+    if (ws) session.workspaceToken = ws;
     await session.transport.handlePostMessage(req, res, req.body);
   });
 

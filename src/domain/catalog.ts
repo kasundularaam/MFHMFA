@@ -16,21 +16,20 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
         A3["Custom REST Tool Agent"]
     end
 
-    subgraph Studio["Mermaid Agent Studio"]
+    subgraph Studio["MFHMFA Stateless Engine"]
         MCP["MCP Server<br/>(Stdio + Streamable HTTP)"]
         API["REST & Tool API"]
-        ENG["Headless Chrome Engine<br/>(Parse + SVG + Retina PNG)"]
-        DB[("SQLite WAL Store<br/>+ Version History")]
-        WS["Live WebSocket Hub"]
+        ENG["Parallel Chromium Pool<br/>(Parse + SVG + Retina PNG)"]
+        HUB["Bounded Ephemeral Hub<br/>(/p/:id LRU + /live/:token SSE)"]
     end
 
-    UI["Interactive Web Canvas<br/>(Pan / Zoom / Edit)"]
+    UI["Interactive Browser Studio<br/>(Pan / Zoom / Edit / #z= Permalink)"]
 
-    A1 & A2 <-->|"validate / create / see PNG"| MCP
+    A1 & A2 <-->|"validate / render / PNG vision"| MCP
     A3 <-->|"JSON + PNG"| API
-    MCP & API --> ENG
-    ENG --> DB
-    DB --> WS --> UI`,
+    MCP & API --> ENG & HUB
+    HUB ==>|"studioUrl & liveUrl"| UI`,
+
   },
   {
     id: 'sequence-oauth',
@@ -172,14 +171,15 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     }
 
     class StudioService {
-        -repo: ChartRepositoryPort
-        -engine: RenderEnginePort
-        +createChart(input: CreateChartInput) Promise~ChartOperationResult~
-        +updateChart(id: string, patch: UpdateChartInput) Promise~ChartOperationResult~
+        +engine: RenderEnginePort
+        +previewHub: PreviewHubPort
+        +validate(code: string) Promise~ValidationResult~
+        +render(code: string, opts: StatelessRenderInput) Promise~StatelessRenderResult~
     }
 
     RenderEnginePort <|.. ChromiumRenderEngine : implements
     StudioService o-- RenderEnginePort : delegates`,
+
   },
   {
     id: 'mindmap-product-strategy',
