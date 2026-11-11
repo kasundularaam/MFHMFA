@@ -51,13 +51,7 @@ export function App() {
               ctrl.setStageMode(ctrl.defaultOpenMode);
             }}
             onDeleteChart={ctrl.handleDeleteChart}
-            onSelectTemplate={(tpl) => {
-              ctrl.setActiveChartId(null);
-              ctrl.setTitle(tpl.name);
-              ctrl.setCode(tpl.code);
-              ctrl.setIsDirty(true);
-              ctrl.setStageMode('preview');
-            }}
+            onSelectTemplate={ctrl.handleSelectTemplate}
             onNewChart={ctrl.handleNewChart}
           />
 
@@ -65,7 +59,7 @@ export function App() {
             {ctrl.stageMode === 'preview' ? (
               <PreviewCanvas
                 viewportRef={ctrl.viewportRef}
-                chartKey={ctrl.activeChartId || ctrl.title}
+                chartKey={ctrl.diagramIdentity}
                 renderedSvg={ctrl.renderedSvg}
                 parseError={ctrl.parseError}
                 zoom={ctrl.zoom}

@@ -1,10 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import mermaid from 'mermaid';
-import {
-  extractSvgDimensions,
-  normalizeSvgIntrinsicDimensions,
-  slugify,
-} from '../../src/shared/svg';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { slugify } from '../../src/shared/svg';
 import type {
   AgentEventRecord,
   ChartRecord,
@@ -12,12 +7,18 @@ import type {
   MermaidTemplate,
   ParseErrorDetail,
 } from '../../src/shared/types';
+import {
+  getCachedClientRender,
+  renderMermaidClient,
+} from '../services/mermaidRenderer';
 import { connectLiveSocket, studioApi, type ServerStatus } from '../services/studioClient';
-import { getMermaidComfortConfig, type AppearanceMode } from '../theme/comfortTheme';
+import type { AppearanceMode } from '../theme/comfortTheme';
 
 export type StudioPage = 'studio' | 'settings';
 export type StageMode = 'preview' | 'code';
 export type SettingsSection = 'general' | 'mcp' | 'activity' | 'history';
+
+const INITIAL_CODE = `flowchart TB\n  User(["Developer / Agent"]) --> Studio["Mermaid Studio"]\n  Studio --> Validate["Validate Syntax"]\n  Studio --> Render["Render Preview"]`;
 
 export function useStudioController() {
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>(() => {
@@ -41,10 +42,9 @@ export function useStudioController() {
   const [search, setSearch] = useState('');
 
   const [activeChartId, setActiveChartId] = useState<string | null>(null);
+  const [diagramIdentity, setDiagramIdentity] = useState<string>('initial');
   const [title, setTitle] = useState('Untitled Diagram');
-  const [code, setCode] = useState(
-    `flowchart TB\n  User(["Developer / Agent"]) --> Studio["Mermaid Studio"]\n  Studio --> Validate["Validate Syntax"]\n  Studio --> Render["Render Preview"]`
-  );
+  const [code, setCode] = useState(INITIAL_CODE);
   const [version, setVersion] = useState(1);
   const [versions, setVersions] = useState<ChartVersionSummary[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -64,8 +64,15 @@ export function useStudioController() {
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const renderCounterRef = useRef(0);
+  const loadSeqRef = useRef(0);
+  const skipNextCodeEffectRef = useRef(false);
+  const needsFitOnPreviewRef = useRef(true);
+
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const appearanceRef = useRef(appearanceMode);
+  appearanceRef.current = appearanceMode;
   const followRef = useRef(followAgentLive);
   followRef.current = followAgentLive;
   const activeIdRef = useRef(activeChartId);
@@ -93,37 +100,74 @@ export function useStudioController() {
     }, 2200);
   }, []);
 
-  const fitDimensionsInViewport = useCallback((w: number, h: number) => {
-    requestAnimationFrame(() => {
-      const vp = viewportRef.current;
-      if (!vp) return;
-      const vw = Math.max(320, vp.clientWidth - 96);
-      const vh = Math.max(240, vp.clientHeight - 96);
-      const fit = Math.min(1, Math.max(0.22, Math.min(vw / (w + 48), vh / (h + 48))));
-      setZoom(Number(fit.toFixed(2)));
-      setPan({ x: 0, y: 0 });
-    });
+  const computeViewportFitZoom = useCallback((w: number, h: number): number | null => {
+    const vp = viewportRef.current;
+    if (!vp || vp.clientWidth === 0 || vp.clientHeight === 0) {
+      return null;
+    }
+    const vw = Math.max(320, vp.clientWidth - 96);
+    const vh = Math.max(240, vp.clientHeight - 96);
+    const fit = Math.min(1, Math.max(0.22, Math.min(vw / (w + 48), vh / (h + 48))));
+    return Number(fit.toFixed(2));
   }, []);
 
+  // Pre-paint fit when entering Preview mode (zero visual jump!)
+  useLayoutEffect(() => {
+    if (page === 'studio' && stageMode === 'preview' && needsFitOnPreviewRef.current && dimensions) {
+      const fit = computeViewportFitZoom(dimensions.width, dimensions.height);
+      if (fit !== null) {
+        setZoom(fit);
+        setPan({ x: 0, y: 0 });
+        needsFitOnPreviewRef.current = false;
+      }
+    }
+  }, [page, stageMode, dimensions, computeViewportFitZoom]);
+
+  // Atomic chart loader: renders new SVG offscreen FIRST, then commits all state in one paint frame
   const loadChartIntoWorkspace = useCallback(
     async (id: string, ver?: number) => {
+      const seq = ++loadSeqRef.current;
       try {
         const detail = await studioApi.getChart(id, ver);
+        if (seq !== loadSeqRef.current) return;
+
+        const mode = appearanceRef.current;
+        const cached = getCachedClientRender(detail.code, mode);
+        const outcome = cached ?? (await renderMermaidClient(detail.code, mode));
+        if (seq !== loadSeqRef.current) return;
+
+        skipNextCodeEffectRef.current = true;
+
         setActiveChartId(detail.chart.id);
+        setDiagramIdentity(`${detail.chart.id}:v${detail.selectedVersion}`);
         setTitle(detail.chart.title);
         setCode(detail.code);
         setVersion(detail.selectedVersion);
         setVersions(detail.versions);
-        setDiagramType(detail.chart.diagramType);
-        setParseError(detail.chart.error);
-        if (detail.chart.width && detail.chart.height) {
-          setDimensions({ width: detail.chart.width, height: detail.chart.height });
-          fitDimensionsInViewport(detail.chart.width, detail.chart.height);
-        } else {
-          setZoom(1);
-          setPan({ x: 0, y: 0 });
-        }
         setIsDirty(false);
+
+        if (outcome.ok) {
+          setRenderedSvg(outcome.svg);
+          setDiagramType(outcome.diagramType);
+          setParseError(null);
+          setDimensions(outcome.dimensions);
+
+          if (outcome.dimensions) {
+            const fit = computeViewportFitZoom(
+              outcome.dimensions.width,
+              outcome.dimensions.height
+            );
+            if (fit !== null) {
+              setZoom(fit);
+              setPan({ x: 0, y: 0 });
+              needsFitOnPreviewRef.current = false;
+            } else {
+              needsFitOnPreviewRef.current = true;
+            }
+          }
+        } else {
+          setParseError(detail.chart.error);
+        }
 
         const url = new URL(window.location.href);
         url.searchParams.set('chart', detail.chart.id);
@@ -133,10 +177,49 @@ export function useStudioController() {
         notifyToast(`Could not load chart: ${message}`);
       }
     },
-    [fitDimensionsInViewport, notifyToast]
+    [computeViewportFitZoom, notifyToast]
   );
 
-  // Initial load
+  const handleSelectTemplate = useCallback(
+    async (tpl: MermaidTemplate) => {
+      const seq = ++loadSeqRef.current;
+      const mode = appearanceRef.current;
+      const cached = getCachedClientRender(tpl.code, mode);
+      const outcome = cached ?? (await renderMermaidClient(tpl.code, mode));
+      if (seq !== loadSeqRef.current) return;
+
+      skipNextCodeEffectRef.current = true;
+      setActiveChartId(null);
+      setDiagramIdentity(`tpl:${tpl.id}`);
+      setTitle(tpl.name);
+      setCode(tpl.code);
+      setVersion(1);
+      setVersions([]);
+      setIsDirty(true);
+      setStageMode('preview');
+
+      if (outcome.ok) {
+        setRenderedSvg(outcome.svg);
+        setDiagramType(outcome.diagramType);
+        setParseError(null);
+        setDimensions(outcome.dimensions);
+
+        if (outcome.dimensions) {
+          const fit = computeViewportFitZoom(outcome.dimensions.width, outcome.dimensions.height);
+          if (fit !== null) {
+            setZoom(fit);
+            setPan({ x: 0, y: 0 });
+            needsFitOnPreviewRef.current = false;
+          } else {
+            needsFitOnPreviewRef.current = true;
+          }
+        }
+      }
+    },
+    [computeViewportFitZoom]
+  );
+
+  // Initial bootstrap
   useEffect(() => {
     Promise.all([
       studioApi.getStatus(),
@@ -145,7 +228,7 @@ export function useStudioController() {
       studioApi.listEvents(),
       studioApi.getGuide('all'),
     ])
-      .then(([st, ch, tpl, ev, gd]) => {
+      .then(async ([st, ch, tpl, ev, gd]) => {
         setStatus(st);
         setCharts(ch.charts);
         setTemplates(tpl.templates);
@@ -156,7 +239,13 @@ export function useStudioController() {
         const target =
           (urlChart && ch.charts.find((c) => c.id === urlChart)) || ch.charts[0];
         if (target) {
-          loadChartIntoWorkspace(target.id);
+          await loadChartIntoWorkspace(target.id);
+        } else {
+          const initial = await renderMermaidClient(INITIAL_CODE, appearanceRef.current);
+          if (initial.ok) {
+            setRenderedSvg(initial.svg);
+            setDimensions(initial.dimensions);
+          }
         }
       })
       .catch((err: unknown) => console.error('Bootstrap error:', err));
@@ -198,15 +287,22 @@ export function useStudioController() {
     );
   }, [loadChartIntoWorkspace, notifyToast]);
 
-  // Re-fit diagram when switching back to Preview
+  // Background render on code edits or Dark/Light theme switch
   useEffect(() => {
-    if (page === 'studio' && stageMode === 'preview' && dimensions) {
-      fitDimensionsInViewport(dimensions.width, dimensions.height);
+    if (skipNextCodeEffectRef.current) {
+      skipNextCodeEffectRef.current = false;
+      return;
     }
-  }, [page, stageMode, dimensions, fitDimensionsInViewport]);
 
-  // Debounced Eye-Comfort Mermaid Renderer
-  useEffect(() => {
+    const cached = getCachedClientRender(code, appearanceMode);
+    if (cached) {
+      setRenderedSvg(cached.svg);
+      setDiagramType(cached.diagramType);
+      setParseError(null);
+      setDimensions(cached.dimensions);
+      return;
+    }
+
     const timer = setTimeout(async () => {
       const seq = ++renderCounterRef.current;
 
@@ -224,26 +320,18 @@ export function useStudioController() {
         return;
       }
 
-      try {
-        mermaid.initialize(getMermaidComfortConfig(appearanceMode));
+      const outcome = await renderMermaidClient(code, appearanceMode);
+      if (seq !== renderCounterRef.current) return;
 
-        const parsed = await mermaid.parse(code);
-        if (seq !== renderCounterRef.current) return;
-
-        const uid = `comfort_svg_${seq}_${Date.now()}`;
-        const out = await mermaid.render(uid, code);
-        if (seq !== renderCounterRef.current) return;
-
-        const cleanSvg = normalizeSvgIntrinsicDimensions(out.svg);
-        setRenderedSvg(cleanSvg);
-        setDiagramType(parsed?.diagramType || out.diagramType || null);
+      if (outcome.ok) {
+        setRenderedSvg(outcome.svg);
+        setDiagramType(outcome.diagramType);
         setParseError(null);
-
-        const dims = extractSvgDimensions(cleanSvg);
-        if (dims) {
-          setDimensions(dims);
+        setDimensions(outcome.dimensions);
+        if (stageMode === 'code') {
+          needsFitOnPreviewRef.current = true;
         }
-      } catch {
+      } else {
         try {
           const diag = await studioApi.validate(code);
           if (seq !== renderCounterRef.current) return;
@@ -265,10 +353,10 @@ export function useStudioController() {
           });
         }
       }
-    }, 100);
+    }, 90);
 
     return () => clearTimeout(timer);
-  }, [code, appearanceMode]);
+  }, [code, appearanceMode, stageMode]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -301,6 +389,7 @@ export function useStudioController() {
           background: serverBg,
         });
         setActiveChartId(res.chart.id);
+        setDiagramIdentity(`${res.chart.id}:v${res.chart.version}`);
         setVersion(res.chart.version);
         setIsDirty(false);
         setCharts((prev) => [res.chart, ...prev.filter((c) => c.id !== res.chart.id)]);
@@ -334,15 +423,25 @@ export function useStudioController() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleSave, page]);
 
-  const handleNewChart = useCallback(() => {
+  const handleNewChart = useCallback(async () => {
+    const draftCode = `flowchart TD\n  Start(["Start"]) --> Step["Design Flow"]\n  Step --> Done(["Complete"])`;
+    const outcome = await renderMermaidClient(draftCode, appearanceRef.current);
+
+    skipNextCodeEffectRef.current = true;
     setActiveChartId(null);
+    setDiagramIdentity(`draft:${Date.now()}`);
     setTitle('Untitled Diagram');
-    setCode(
-      `flowchart TD\n  Start(["Start"]) --> Step["Design Flow"]\n  Step --> Done(["Complete"])`
-    );
+    setCode(draftCode);
     setVersion(1);
     setVersions([]);
     setIsDirty(true);
+    if (outcome.ok) {
+      setRenderedSvg(outcome.svg);
+      setDiagramType(outcome.diagramType);
+      setDimensions(outcome.dimensions);
+      setParseError(null);
+      needsFitOnPreviewRef.current = true;
+    }
     setPage('studio');
     setStageMode('code');
   }, []);
@@ -354,9 +453,9 @@ export function useStudioController() {
       setCharts(remaining);
       if (activeChartId === id) {
         if (remaining[0]) {
-          loadChartIntoWorkspace(remaining[0].id);
+          await loadChartIntoWorkspace(remaining[0].id);
         } else {
-          handleNewChart();
+          await handleNewChart();
         }
       }
       notifyToast('Deleted');
@@ -370,8 +469,10 @@ export function useStudioController() {
       setPan({ x: 0, y: 0 });
       return;
     }
-    fitDimensionsInViewport(dimensions.width, dimensions.height);
-  }, [dimensions, fitDimensionsInViewport]);
+    const fit = computeViewportFitZoom(dimensions.width, dimensions.height);
+    setZoom(fit ?? 1);
+    setPan({ x: 0, y: 0 });
+  }, [computeViewportFitZoom, dimensions]);
 
   const handleExportPng = useCallback(async () => {
     const serverTheme = appearanceMode === 'dark' ? 'dark' : 'neutral';
@@ -441,7 +542,7 @@ export function useStudioController() {
     search,
     setSearch,
     activeChartId,
-    setActiveChartId,
+    diagramIdentity,
     title,
     setTitle,
     code,
@@ -466,6 +567,7 @@ export function useStudioController() {
     viewportRef,
     notifyToast,
     loadChartIntoWorkspace,
+    handleSelectTemplate,
     handleSave,
     handleNewChart,
     handleDeleteChart,

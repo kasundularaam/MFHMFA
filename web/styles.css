@@ -90,7 +90,25 @@ textarea {
   }
 }
 
-@keyframes diagramReveal {
+@keyframes stageSettle {
+  from {
+    opacity: 0.72;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes layerFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes layerFadeIn {
   from {
     opacity: 0;
   }
@@ -233,7 +251,7 @@ textarea {
   font-size: 11px;
   color: var(--text-muted);
   user-select: none;
-  animation: diagramReveal 160ms var(--ease-out);
+  animation: layerFadeIn 160ms var(--ease-out);
 }
 
 /* Sliding Segmented Control (Preview / Code, Charts / Templates, Dark / Light) */
@@ -377,7 +395,6 @@ textarea {
   display: flex;
   min-height: 0;
   overflow: hidden;
-  animation: diagramReveal 180ms var(--ease-out);
 }
 
 /* Zero-Reflow Smooth Collapsible Left Panel */
@@ -561,7 +578,7 @@ textarea {
   cursor: grab;
   user-select: none;
   background: var(--bg-canvas);
-  animation: stageFadeIn 190ms var(--ease-out);
+  animation: stageSettle 140ms var(--ease-out);
 }
 
 .canvas-viewport:active {
@@ -574,15 +591,20 @@ textarea {
   left: 50%;
   transform-origin: center center;
   padding: 24px;
-  will-change: transform;
+  will-change: transform, opacity;
 }
 
 .canvas-stage.smooth-camera {
-  transition: transform 240ms var(--ease-out);
+  transition: transform 220ms var(--ease-out);
 }
 
-.canvas-diagram-fade {
-  animation: diagramReveal 200ms var(--ease-out);
+.canvas-layer-out {
+  pointer-events: none;
+  animation: layerFadeOut 150ms var(--ease-out) forwards;
+}
+
+.canvas-layer-in {
+  animation: layerFadeIn 165ms var(--ease-out);
 }
 
 .canvas-stage svg {
@@ -635,7 +657,7 @@ textarea {
   flex-direction: column;
   background: var(--bg-canvas);
   position: relative;
-  animation: stageFadeIn 180ms var(--ease-out);
+  animation: stageSettle 140ms var(--ease-out);
 }
 
 .codemirror-wrap {
@@ -661,7 +683,7 @@ textarea {
   font-size: 11.5px;
   color: var(--text-muted);
   pointer-events: none;
-  animation: diagramReveal 160ms var(--ease-out);
+  animation: layerFadeIn 160ms var(--ease-out);
 }
 
 .diagnostics-drawer {

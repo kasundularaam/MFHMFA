@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { AlertCircle, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import type { ParseErrorDetail } from '../../src/shared/types';
 
@@ -16,6 +16,12 @@ interface PreviewCanvasProps {
   onFlipToCode: () => void;
 }
 
+interface FrozenLayer {
+  svg: string;
+  zoom: number;
+  pan: { x: number; y: number };
+}
+
 export function PreviewCanvas({
   viewportRef,
   chartKey,
@@ -29,8 +35,22 @@ export function PreviewCanvas({
   onFitCanvas,
   onFlipToCode,
 }: PreviewCanvasProps) {
-  const [directInput, setDirectInput] = useState(false);
-  const wheelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Smooth camera transition ONLY when clicking zoom/fit buttons (never on mount or chart swap)
+  const [cameraGlide, setCameraGlide] = useState(false);
+  const [outgoingLayer, setOutgoingLayer] = useState<FrozenLayer | null>(null);
+
+  const prevSnapshotRef = useRef<{
+    chartKey: string;
+    svg: string;
+    zoom: number;
+    pan: { x: number; y: number };
+  }>({
+    chartKey,
+    svg: renderedSvg,
+    zoom,
+    pan,
+  });
+
   const dragRef = useRef({
     active: false,
     startX: 0,
@@ -39,21 +59,40 @@ export function PreviewCanvas({
     origY: 0,
   });
 
+  // Cross-dissolve outgoing chart into incoming chart with zero blank frames
+  useEffect(() => {
+    const prev = prevSnapshotRef.current;
+    if (prev.chartKey !== chartKey) {
+      setCameraGlide(false);
+      if (prev.svg && renderedSvg && prev.svg !== renderedSvg) {
+        setOutgoingLayer({
+          svg: prev.svg,
+          zoom: prev.zoom,
+          pan: prev.pan,
+        });
+        const timer = setTimeout(() => {
+          setOutgoingLayer(null);
+        }, 170);
+        prevSnapshotRef.current = { chartKey, svg: renderedSvg, zoom, pan };
+        return () => clearTimeout(timer);
+      }
+    }
+    prevSnapshotRef.current = { chartKey, svg: renderedSvg, zoom, pan };
+    return undefined;
+  }, [chartKey, renderedSvg, zoom, pan]);
+
   return (
     <div
       ref={viewportRef}
       className="canvas-viewport"
       onWheel={(e) => {
         e.preventDefault();
-        setDirectInput(true);
-        if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
-        wheelTimerRef.current = setTimeout(() => setDirectInput(false), 120);
-
+        if (cameraGlide) setCameraGlide(false);
         const delta = e.deltaY < 0 ? 1.08 : 0.92;
         onChangeZoom((z) => Number(Math.min(4, Math.max(0.15, z * delta)).toFixed(2)));
       }}
       onMouseDown={(e) => {
-        setDirectInput(true);
+        if (cameraGlide) setCameraGlide(false);
         dragRef.current = {
           active: true,
           startX: e.clientX,
@@ -71,26 +110,33 @@ export function PreviewCanvas({
       }}
       onMouseUp={() => {
         dragRef.current.active = false;
-        setDirectInput(false);
       }}
       onMouseLeave={() => {
         dragRef.current.active = false;
-        setDirectInput(false);
       }}
     >
+      {/* Outgoing frozen layer during chart switch (prevents empty-canvas blink) */}
+      {outgoingLayer && (
+        <div
+          className="canvas-stage canvas-layer-out"
+          style={{
+            transform: `translate(calc(-50% + ${outgoingLayer.pan.x}px), calc(-50% + ${outgoingLayer.pan.y}px)) scale(${outgoingLayer.zoom})`,
+          }}
+          dangerouslySetInnerHTML={{ __html: outgoingLayer.svg }}
+        />
+      )}
+
+      {/* Active diagram layer */}
       {renderedSvg ? (
         <div
-          className={`canvas-stage ${directInput ? '' : 'smooth-camera'}`}
+          className={`canvas-stage ${cameraGlide ? 'smooth-camera' : ''} ${
+            outgoingLayer ? 'canvas-layer-in' : ''
+          }`}
           style={{
             transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
           }}
-        >
-          <div
-            key={chartKey}
-            className="canvas-diagram-fade"
-            dangerouslySetInnerHTML={{ __html: renderedSvg }}
-          />
-        </div>
+          dangerouslySetInnerHTML={{ __html: renderedSvg }}
+        />
       ) : (
         <div
           style={{
@@ -123,7 +169,7 @@ export function PreviewCanvas({
         <button
           className="btn ghost sm"
           onClick={() => {
-            setDirectInput(false);
+            setCameraGlide(true);
             onChangeZoom((z) => Number(Math.max(0.15, z - 0.14).toFixed(2)));
           }}
           title="Zoom out"
@@ -133,7 +179,7 @@ export function PreviewCanvas({
         <button
           className="btn ghost sm"
           onClick={() => {
-            setDirectInput(false);
+            setCameraGlide(true);
             onResetView();
           }}
           title="100%"
@@ -143,7 +189,7 @@ export function PreviewCanvas({
         <button
           className="btn ghost sm"
           onClick={() => {
-            setDirectInput(false);
+            setCameraGlide(true);
             onChangeZoom((z) => Number(Math.min(4, z + 0.14).toFixed(2)));
           }}
           title="Zoom in"
@@ -153,7 +199,7 @@ export function PreviewCanvas({
         <button
           className="btn ghost sm"
           onClick={() => {
-            setDirectInput(false);
+            setCameraGlide(true);
             onFitCanvas();
           }}
           title="Fit"
