@@ -1,0 +1,19 @@
+services:
+  mermaid-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mermaid-agent-studio:latest
+    container_name: mermaid-agent-studio
+    restart: unless-stopped
+    init: true
+    shm_size: "512mb"
+    ports:
+      - "${MERMAID_STUDIO_PORT:-48333}:48333"
+    environment:
+      - NODE_ENV=production
+      - PORT=48333
+      - MERMAID_STUDIO_URL=http://localhost:${MERMAID_STUDIO_PORT:-48333}
+      - HOST_PROJECT_ROOT=${HOST_PROJECT_ROOT:-${PWD}}
+    volumes:
+      - ./data:/app/data
