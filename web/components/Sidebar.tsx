@@ -32,85 +32,90 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <aside className={`sidebar ${open ? '' : 'collapsed'}`}>
-      <div className="sidebar-top">
-        <div className="sidebar-header-row">
-          <div className="sidebar-tabs">
-            <button
-              className={`sidebar-tab ${tab === 'charts' ? 'active' : ''}`}
-              onClick={() => onChangeTab('charts')}
-            >
-              Charts
-            </button>
-            <button
-              className={`sidebar-tab ${tab === 'templates' ? 'active' : ''}`}
-              onClick={() => onChangeTab('templates')}
-            >
-              Templates
-            </button>
-          </div>
-          <button className="icon-btn" onClick={onNewChart} title="New diagram">
-            <Plus size={15} />
-          </button>
-        </div>
-
-        {tab === 'charts' && (
-          <input
-            className="search-input"
-            placeholder="Filter..."
-            value={search}
-            onChange={(e) => onChangeSearch(e.target.value)}
-          />
-        )}
-      </div>
-
-      {tab === 'charts' ? (
-        <div className="sidebar-list">
-          {charts.map((c) => (
-            <div
-              key={c.id}
-              className={`chart-item ${activeChartId === c.id ? 'selected' : ''}`}
-              onClick={() => onSelectChart(c.id)}
-            >
-              <div className="chart-item-info">
-                <span className="chart-item-title">{c.title}</span>
-                <span className="chart-item-sub">
-                  {c.diagramType || 'diagram'} · v{c.version}
-                </span>
-              </div>
+      <div className="sidebar-inner">
+        <div className="sidebar-top">
+          <div className="sidebar-header-row">
+            <div className="segmented-track compact">
+              <span
+                className={`segmented-thumb ${tab === 'templates' ? 'right' : ''}`}
+              />
               <button
-                className="chart-delete-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteChart(c.id);
-                }}
-                title="Delete"
+                className={`segmented-btn ${tab === 'charts' ? 'active' : ''}`}
+                onClick={() => onChangeTab('charts')}
               >
-                <Trash2 size={13} />
+                Charts
+              </button>
+              <button
+                className={`segmented-btn ${tab === 'templates' ? 'active' : ''}`}
+                onClick={() => onChangeTab('templates')}
+              >
+                Templates
               </button>
             </div>
-          ))}
-          {charts.length === 0 && (
-            <div style={{ padding: 16, color: 'var(--text-muted)', textAlign: 'center' }}>
-              No charts found
-            </div>
+            <button className="icon-btn" onClick={onNewChart} title="New diagram">
+              <Plus size={15} />
+            </button>
+          </div>
+
+          {tab === 'charts' && (
+            <input
+              className="search-input"
+              placeholder="Filter..."
+              value={search}
+              onChange={(e) => onChangeSearch(e.target.value)}
+            />
           )}
         </div>
-      ) : (
-        <div className="sidebar-list">
-          {templates.map((tpl) => (
-            <div
-              key={tpl.id}
-              className="chart-item"
-              onClick={() => onSelectTemplate(tpl)}
-            >
-              <div className="chart-item-info">
-                <span className="chart-item-title">{tpl.name}</span>
-                <span className="chart-item-sub">{tpl.category}</span>
+
+        {tab === 'charts' ? (
+          <div key="charts-list" className="sidebar-list">
+            {charts.map((c) => (
+              <div
+                key={c.id}
+                className={`chart-item ${activeChartId === c.id ? 'selected' : ''}`}
+                onClick={() => onSelectChart(c.id)}
+              >
+                <div className="chart-item-info">
+                  <span className="chart-item-title">{c.title}</span>
+                  <span className="chart-item-sub">
+                    {c.diagramType || 'diagram'} · v{c.version}
+                  </span>
+                </div>
+                <button
+                  className="chart-delete-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteChart(c.id);
+                  }}
+                  title="Delete"
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+            {charts.length === 0 && (
+              <div style={{ padding: 16, color: 'var(--text-muted)', textAlign: 'center' }}>
+                No charts found
+              </div>
+            )}
+          </div>
+        ) : (
+          <div key="templates-list" className="sidebar-list">
+            {templates.map((tpl) => (
+              <div
+                key={tpl.id}
+                className="chart-item"
+                onClick={() => onSelectTemplate(tpl)}
+              >
+                <div className="chart-item-info">
+                  <span className="chart-item-title">{tpl.name}</span>
+                  <span className="chart-item-sub">{tpl.category}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

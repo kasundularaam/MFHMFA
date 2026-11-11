@@ -4,7 +4,7 @@
   --bg-bar: #151514;
   --bg-elevated: #222220;
   --bg-hover: #292926;
-  --bg-active: #2e2e2b;
+  --bg-active: #2f2f2c;
   --border-line: #272724;
   --border-strong: #383733;
   --text-primary: #d6d3cb;
@@ -19,7 +19,11 @@
   --hint-fg: #c2b088;
   --hint-bg: rgba(180, 155, 100, 0.1);
   --hint-border: rgba(180, 155, 100, 0.25);
-  --shadow-menu: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-menu: 0 10px 28px rgba(0, 0, 0, 0.38);
+
+  /* Motion tokens */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 :root[data-mode='light'] {
@@ -42,7 +46,7 @@
   --hint-fg: #6b562b;
   --hint-bg: rgba(160, 130, 65, 0.1);
   --hint-border: rgba(160, 130, 65, 0.25);
-  --shadow-menu: 0 8px 24px rgba(30, 28, 24, 0.1);
+  --shadow-menu: 0 10px 28px rgba(30, 28, 24, 0.1);
 }
 
 * {
@@ -63,6 +67,7 @@ body,
   font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 220ms var(--ease-out), color 220ms var(--ease-out);
 }
 
 button,
@@ -73,12 +78,67 @@ textarea {
   color: inherit;
 }
 
+/* Keyframes */
+@keyframes stageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes diagramReveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pillDropIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes drawerSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .studio-shell {
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
   background: var(--bg-canvas);
+  transition: background-color 220ms var(--ease-out);
 }
 
 /* Quiet Top Bar */
@@ -92,6 +152,7 @@ textarea {
   align-items: center;
   padding: 0 12px;
   gap: 12px;
+  transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out);
 }
 
 .topbar-left {
@@ -125,13 +186,18 @@ textarea {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out),
+    transform 120ms var(--ease-out), border-color 150ms var(--ease-out);
   flex-shrink: 0;
 }
 
 .icon-btn:hover {
   background: var(--bg-elevated);
   color: var(--text-primary);
+}
+
+.icon-btn:active {
+  transform: scale(0.94);
 }
 
 .icon-btn.active {
@@ -150,6 +216,7 @@ textarea {
   color: var(--text-primary);
   min-width: 140px;
   max-width: 280px;
+  transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out);
 }
 
 .title-input:hover {
@@ -166,23 +233,43 @@ textarea {
   font-size: 11px;
   color: var(--text-muted);
   user-select: none;
+  animation: diagramReveal 160ms var(--ease-out);
 }
 
-/* Segmented Flip Control (Preview / Code) */
-.mode-flip {
-  display: inline-flex;
+/* Sliding Segmented Control (Preview / Code, Charts / Templates, Dark / Light) */
+.segmented-track {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
   align-items: center;
   background: var(--bg-elevated);
   border: 1px solid var(--border-line);
   border-radius: 7px;
   padding: 2px;
-  gap: 2px;
 }
 
-.mode-flip-btn {
-  height: 26px;
-  padding: 0 14px;
+.segmented-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
   border-radius: 5px;
+  background: var(--bg-active);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: transform 220ms var(--ease-out), background-color 220ms var(--ease-out);
+  pointer-events: none;
+}
+
+.segmented-thumb.right {
+  transform: translateX(100%);
+}
+
+.segmented-btn {
+  position: relative;
+  z-index: 1;
+  height: 26px;
+  padding: 0 15px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -190,19 +277,28 @@ textarea {
   font-weight: 500;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: color 160ms var(--ease-out);
+  user-select: none;
 }
 
-.mode-flip-btn:hover {
+.segmented-btn:hover,
+.segmented-btn.active {
   color: var(--text-primary);
 }
 
-.mode-flip-btn.active {
-  background: var(--bg-active);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+.segmented-track.compact {
+  flex: 1;
+  border: none;
+  border-radius: 6px;
+}
+
+.segmented-track.compact .segmented-btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11.5px;
 }
 
 .error-dot {
@@ -212,7 +308,7 @@ textarea {
   background: var(--danger-fg);
 }
 
-/* Restrained Monochrome Buttons */
+/* Tactile Restrained Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -227,13 +323,18 @@ textarea {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out),
+    color 150ms var(--ease-out), transform 110ms var(--ease-out);
   white-space: nowrap;
 }
 
 .btn:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--border-strong);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn:disabled {
@@ -276,27 +377,43 @@ textarea {
   display: flex;
   min-height: 0;
   overflow: hidden;
+  animation: diagramReveal 180ms var(--ease-out);
 }
 
-/* Collapsible Left Panel */
+/* Zero-Reflow Smooth Collapsible Left Panel */
 .sidebar {
   width: 260px;
   min-width: 260px;
   background: var(--bg-bar);
   border-right: 1px solid var(--border-line);
+  min-height: 0;
+  overflow: hidden;
+  transition: width 240ms var(--ease-out), min-width 240ms var(--ease-out),
+    border-color 240ms var(--ease-out), background-color 220ms var(--ease-out);
+  will-change: width;
+}
+
+.sidebar-inner {
+  width: 260px;
+  min-width: 260px;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  transition: width 0.16s ease, min-width 0.16s ease, opacity 0.14s ease;
-  overflow: hidden;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 180ms var(--ease-out), transform 240ms var(--ease-out);
 }
 
 .sidebar.collapsed {
   width: 0;
   min-width: 0;
   border-right-color: transparent;
-  opacity: 0;
   pointer-events: none;
+}
+
+.sidebar.collapsed .sidebar-inner {
+  opacity: 0;
+  transform: translateX(-14px);
 }
 
 .sidebar-top {
@@ -313,31 +430,6 @@ textarea {
   gap: 6px;
 }
 
-.sidebar-tabs {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  background: var(--bg-elevated);
-  padding: 2px;
-  border-radius: 6px;
-}
-
-.sidebar-tab {
-  height: 24px;
-  border-radius: 4px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.sidebar-tab.active {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-
 .search-input {
   width: 100%;
   height: 28px;
@@ -347,6 +439,7 @@ textarea {
   padding: 0 9px;
   font-size: 12px;
   color: var(--text-primary);
+  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out);
 }
 
 .search-input::placeholder {
@@ -365,6 +458,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  animation: stageFadeIn 170ms var(--ease-out);
 }
 
 .chart-item {
@@ -376,11 +470,15 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  transition: background 0.1s ease;
+  transition: background-color 140ms var(--ease-out), transform 140ms var(--ease-out);
 }
 
 .chart-item:hover {
   background: var(--bg-elevated);
+}
+
+.chart-item:active {
+  transform: scale(0.99);
 }
 
 .chart-item.selected {
@@ -402,6 +500,7 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 140ms var(--ease-out);
 }
 
 .chart-item.selected .chart-item-title,
@@ -430,6 +529,8 @@ textarea {
   border-radius: 4px;
   cursor: pointer;
   display: flex;
+  transition: opacity 140ms var(--ease-out), color 140ms var(--ease-out),
+    background-color 140ms var(--ease-out);
 }
 
 .chart-item:hover .chart-delete-btn {
@@ -452,7 +553,7 @@ textarea {
   background: var(--bg-canvas);
 }
 
-/* Eye-Comfortable Matte Preview Canvas (no dot-grid noise, no harsh card box) */
+/* Eye-Comfortable Matte Preview Canvas */
 .canvas-viewport {
   flex: 1;
   position: relative;
@@ -460,6 +561,7 @@ textarea {
   cursor: grab;
   user-select: none;
   background: var(--bg-canvas);
+  animation: stageFadeIn 190ms var(--ease-out);
 }
 
 .canvas-viewport:active {
@@ -472,6 +574,15 @@ textarea {
   left: 50%;
   transform-origin: center center;
   padding: 24px;
+  will-change: transform;
+}
+
+.canvas-stage.smooth-camera {
+  transition: transform 240ms var(--ease-out);
+}
+
+.canvas-diagram-fade {
+  animation: diagramReveal 200ms var(--ease-out);
 }
 
 .canvas-stage svg {
@@ -490,6 +601,7 @@ textarea {
   border-radius: 7px;
   background: var(--bg-bar);
   border: 1px solid var(--border-line);
+  transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out);
 }
 
 .floating-error-pill {
@@ -507,6 +619,12 @@ textarea {
   align-items: center;
   gap: 8px;
   cursor: pointer;
+  animation: pillDropIn 200ms var(--ease-out);
+  transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out);
+}
+
+.floating-error-pill:hover {
+  background: var(--bg-elevated);
 }
 
 /* Full-Bleed Seamless Code Editor */
@@ -517,6 +635,7 @@ textarea {
   flex-direction: column;
   background: var(--bg-canvas);
   position: relative;
+  animation: stageFadeIn 180ms var(--ease-out);
 }
 
 .codemirror-wrap {
@@ -542,6 +661,7 @@ textarea {
   font-size: 11.5px;
   color: var(--text-muted);
   pointer-events: none;
+  animation: diagramReveal 160ms var(--ease-out);
 }
 
 .diagnostics-drawer {
@@ -550,6 +670,7 @@ textarea {
   max-height: 200px;
   overflow-y: auto;
   padding: 12px 18px;
+  animation: drawerSlideUp 190ms var(--ease-out);
 }
 
 .error-snippet {
@@ -581,6 +702,7 @@ textarea {
   min-height: 0;
   background: var(--bg-canvas);
   overflow-y: auto;
+  animation: stageFadeIn 200ms var(--ease-out);
 }
 
 .settings-layout {
@@ -615,12 +737,17 @@ textarea {
   gap: 9px;
   cursor: pointer;
   text-align: left;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition: color 140ms var(--ease-out), background-color 140ms var(--ease-out),
+    transform 120ms var(--ease-out);
 }
 
 .settings-nav-btn:hover {
   color: var(--text-primary);
   background: var(--bg-bar);
+}
+
+.settings-nav-btn:active {
+  transform: scale(0.98);
 }
 
 .settings-nav-btn.active {
@@ -636,6 +763,7 @@ textarea {
 .settings-container {
   display: flex;
   flex-direction: column;
+  animation: stageFadeIn 190ms var(--ease-out);
 }
 
 .settings-header {
@@ -712,38 +840,14 @@ textarea {
   padding: 0 10px;
   font-size: 12.5px;
   cursor: pointer;
+  transition: border-color 150ms var(--ease-out), background-color 150ms var(--ease-out);
 }
 
-.mode-choice-group {
-  display: inline-flex;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-line);
-  border-radius: 6px;
-  padding: 2px;
-  gap: 2px;
+.select-input:hover {
+  border-color: var(--border-strong);
 }
 
-.mode-choice-btn {
-  height: 28px;
-  padding: 0 14px;
-  border-radius: 4px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.mode-choice-btn.active {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-
-/* Subtle Monochrome Switch */
+/* Smooth Monochrome Switch */
 .switch {
   width: 38px;
   height: 21px;
@@ -754,7 +858,7 @@ textarea {
   cursor: pointer;
   display: flex;
   align-items: center;
-  transition: background 0.14s ease;
+  transition: background-color 180ms var(--ease-out), border-color 180ms var(--ease-out);
 }
 
 .switch.on {
@@ -768,7 +872,7 @@ textarea {
   border-radius: 50%;
   background: var(--text-secondary);
   transform: translateX(0);
-  transition: transform 0.14s ease, background 0.14s ease;
+  transition: transform 200ms var(--ease-out), background-color 180ms var(--ease-out);
 }
 
 .switch.on .switch-thumb {
@@ -789,6 +893,7 @@ textarea {
   overflow-x: auto;
   white-space: pre;
   margin: 0;
+  transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out);
 }
 
 @media (max-width: 760px) {
@@ -804,7 +909,7 @@ textarea {
   }
 }
 
-/* Dropdown menu */
+/* Animated Popover Dropdown Menu */
 .dropdown-wrap {
   position: relative;
 }
@@ -823,6 +928,8 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  transform-origin: top right;
+  animation: popoverIn 150ms var(--ease-snappy);
 }
 
 .dropdown-item {
@@ -837,18 +944,20 @@ textarea {
   font-size: 12px;
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms var(--ease-out);
 }
 
 .dropdown-item:hover {
   background: var(--bg-elevated);
 }
 
-/* Quiet Toast */
+/* Smooth Enter/Exit Toast */
 .toast-banner {
   position: fixed;
   bottom: 20px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, 8px) scale(0.97);
+  opacity: 0;
   background: var(--bg-bar);
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
@@ -857,4 +966,20 @@ textarea {
   font-size: 12px;
   box-shadow: var(--shadow-menu);
   z-index: 200;
+  pointer-events: none;
+  transition: opacity 180ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+.toast-banner.visible {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

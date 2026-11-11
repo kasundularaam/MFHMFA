@@ -60,9 +60,12 @@ export function useStudioController() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [guideText, setGuideText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const renderCounterRef = useRef(0);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const followRef = useRef(followAgentLive);
   followRef.current = followAgentLive;
   const activeIdRef = useRef(activeChartId);
@@ -76,10 +79,18 @@ export function useStudioController() {
   }, [appearanceMode]);
 
   const notifyToast = useCallback((msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    if (toastClearRef.current) clearTimeout(toastClearRef.current);
+
     setToast(msg);
-    setTimeout(() => {
-      setToast((cur) => (cur === msg ? null : cur));
-    }, 2500);
+    requestAnimationFrame(() => setToastVisible(true));
+
+    toastTimerRef.current = setTimeout(() => {
+      setToastVisible(false);
+      toastClearRef.current = setTimeout(() => {
+        setToast(null);
+      }, 200);
+    }, 2200);
   }, []);
 
   const fitDimensionsInViewport = useCallback((w: number, h: number) => {
@@ -451,6 +462,7 @@ export function useStudioController() {
     setPan,
     guideText,
     toast,
+    toastVisible,
     viewportRef,
     notifyToast,
     loadChartIntoWorkspace,

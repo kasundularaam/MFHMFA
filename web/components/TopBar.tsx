@@ -76,15 +76,18 @@ export function TopBar({
 
       <div className="topbar-center">
         {page === 'studio' ? (
-          <div className="mode-flip" title="Switch view (Ctrl+E)">
+          <div className="segmented-track" title="Switch view (Ctrl+E)">
+            <span
+              className={`segmented-thumb ${stageMode === 'code' ? 'right' : ''}`}
+            />
             <button
-              className={`mode-flip-btn ${stageMode === 'preview' ? 'active' : ''}`}
+              className={`segmented-btn ${stageMode === 'preview' ? 'active' : ''}`}
               onClick={() => onChangeStageMode('preview')}
             >
               Preview
             </button>
             <button
-              className={`mode-flip-btn ${stageMode === 'code' ? 'active' : ''}`}
+              className={`segmented-btn ${stageMode === 'code' ? 'active' : ''}`}
               onClick={() => onChangeStageMode('code')}
             >
               Code

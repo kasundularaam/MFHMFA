@@ -165,15 +165,18 @@ export function SettingsView({
                       Low-glare warm palette across interface, editor, and diagrams.
                     </div>
                   </div>
-                  <div className="mode-choice-group">
+                  <div className="segmented-track">
+                    <span
+                      className={`segmented-thumb ${appearanceMode === 'light' ? 'right' : ''}`}
+                    />
                     <button
-                      className={`mode-choice-btn ${appearanceMode === 'dark' ? 'active' : ''}`}
+                      className={`segmented-btn ${appearanceMode === 'dark' ? 'active' : ''}`}
                       onClick={() => onChangeAppearanceMode('dark')}
                     >
                       <Moon size={13} /> Dark
                     </button>
                     <button
-                      className={`mode-choice-btn ${appearanceMode === 'light' ? 'active' : ''}`}
+                      className={`segmented-btn ${appearanceMode === 'light' ? 'active' : ''}`}
                       onClick={() => onChangeAppearanceMode('light')}
                     >
                       <Sun size={13} /> Light

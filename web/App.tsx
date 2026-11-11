@@ -65,6 +65,7 @@ export function App() {
             {ctrl.stageMode === 'preview' ? (
               <PreviewCanvas
                 viewportRef={ctrl.viewportRef}
+                chartKey={ctrl.activeChartId || ctrl.title}
                 renderedSvg={ctrl.renderedSvg}
                 parseError={ctrl.parseError}
                 zoom={ctrl.zoom}
@@ -127,7 +128,11 @@ export function App() {
         />
       )}
 
-      {ctrl.toast && <div className="toast-banner">{ctrl.toast}</div>}
+      {ctrl.toast && (
+        <div className={`toast-banner ${ctrl.toastVisible ? 'visible' : ''}`}>
+          {ctrl.toast}
+        </div>
+      )}
     </div>
   );
 }
