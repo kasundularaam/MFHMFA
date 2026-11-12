@@ -603,13 +603,34 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
 
         // Verify clean Explorer UI: no agent badges on file rows, no storage footer,
         // `File history` tooltip on version pill, 3-dot context menu, Light theme, and Docs logo return!
-        const uiAudit = await wsPage.evaluate(() => ({
-          authorBadgesInTree: document.querySelectorAll('.explorer-tree .tree-author-badge')
-            .length,
-          storageFooter: document.querySelectorAll('.sidebar-storage-footer').length,
-          historyTitle: document.querySelector('.version-pill')?.getAttribute('title'),
-        }));
+        const uiAudit = await wsPage.evaluate(() => {
+          const projRow = document.querySelector(
+            '[data-project-key="project-a"] .tree-project-row'
+          );
+          const projChildren = projRow ? Array.from(projRow.children) : [];
+          const dotIdx = projChildren.findIndex((el) =>
+            el.classList.contains('project-live-dot')
+          );
+          const labelIdx = projChildren.findIndex((el) =>
+            el.classList.contains('tree-project-label')
+          );
+          return {
+            authorBadgesInTree: document.querySelectorAll(
+              '.explorer-tree .tree-author-badge'
+            ).length,
+            projectCountBadges: document.querySelectorAll('.project-live-badge').length,
+            dotBeforeProjectLabel: dotIdx >= 0 && labelIdx > dotIdx,
+            agentsHeaderButtons: document.querySelectorAll(
+              '.sidebar-agents-pane .sidebar-header-actions button'
+            ).length,
+            storageFooter: document.querySelectorAll('.sidebar-storage-footer').length,
+            historyTitle: document.querySelector('.version-pill')?.getAttribute('title'),
+          };
+        });
         expect(uiAudit.authorBadgesInTree).toBe(0);
+        expect(uiAudit.projectCountBadges).toBe(0);
+        expect(uiAudit.dotBeforeProjectLabel).toBe(true);
+        expect(uiAudit.agentsHeaderButtons).toBe(0);
         expect(uiAudit.storageFooter).toBe(0);
         expect(uiAudit.historyTitle).toBe('File history');
 
@@ -842,21 +863,25 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         );
 
         // 5. Click Zoom Into in the component detail card -> dives into `browser-storage.mmd`
-        //    and renders the regular component-aware breadcrumb:
-        //    `System Memory Overview / Browser Local Storage / Browser Storage Internals`!
+        //    and renders VS Code plain-text breadcrumb (`overview > browser-storage`) + docked panel!
+        const chipCountInWalkthrough = await wsPage.evaluate(
+          () => document.querySelectorAll('.story-node-chip').length
+        );
+        expect(chipCountInWalkthrough).toBe(0);
+
         await wsPage.click('.node-drilldown-btn');
         await wsPage.waitForFunction(
           () => {
-            const crumbText =
-              document.querySelector('[data-testid="canvas-breadcrumb"]')?.textContent ||
-              '';
+            const crumbEl = document.querySelector('[data-testid="canvas-breadcrumb"]');
+            const crumbText = crumbEl?.textContent || '';
             return (
-              crumbText.includes('System Memory Overview') &&
-              crumbText.includes('Browser Local Storage') &&
-              crumbText.includes('Browser Storage Internals') &&
+              Boolean(crumbEl?.classList.contains('vscode-breadcrumb')) &&
+              crumbText.includes('overview') &&
+              crumbText.includes('browser-storage') &&
+              !crumbText.includes('Browser Local Storage') &&
               Boolean(
                 document
-                  .querySelector('[data-testid="comprehension-dock"]')
+                  .querySelector('.walkthrough-panel[data-testid="comprehension-dock"]')
                   ?.textContent?.includes('caps history at 5 versions')
               )
             );
@@ -864,7 +889,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 5_000 }
         );
 
-        // Click `System Memory Overview` in the breadcrumb -> returns cleanly to `overview.mmd`!
+        // Click `overview` in the breadcrumb -> returns cleanly to `overview.mmd`!
         await wsPage.click('[data-testid="canvas-breadcrumb"] .crumb-link');
         await wsPage.waitForFunction(
           () =>

@@ -11,14 +11,11 @@ import {
   FolderPlus,
   Layers,
   MoreHorizontal,
-  Pause,
   Pencil,
-  Play,
   Trash2,
 } from 'lucide-react';
 import type { AgentSessionInfo } from '../../src/shared/types';
 import { parentDirOfPath } from '../../src/shared/vfsPath';
-import type { RelayConnectionState } from '../hooks/useStudioController';
 import {
   buildExplorerSubtree,
   type ExplorerFileTreeNode,
@@ -32,7 +29,6 @@ interface ExplorerSidebarProps {
   activeFileId: string | null;
   activeProjectKey: string | null;
   workspaceId: string;
-  relayState: RelayConnectionState;
   connectedAgents: AgentSessionInfo[];
   liveProjectCounts: Map<string, number>;
   onResizeWidth: (width: number) => void;
@@ -44,7 +40,6 @@ interface ExplorerSidebarProps {
   onDeleteGraph: (projectKey: string, fileId: string) => void;
   onDeleteFolder: (projectKey: string, folderPath: string) => void;
   onDeleteProject: (projectKey: string) => void;
-  onToggleLivePause: () => void;
   onNotifyToast: (msg: string) => void;
 }
 
@@ -101,7 +96,6 @@ export function ExplorerSidebar({
   activeFileId,
   activeProjectKey,
   workspaceId,
-  relayState,
   connectedAgents,
   liveProjectCounts,
   onResizeWidth,
@@ -113,7 +107,6 @@ export function ExplorerSidebar({
   onDeleteGraph,
   onDeleteFolder,
   onDeleteProject,
-  onToggleLivePause,
   onNotifyToast,
 }: ExplorerSidebarProps) {
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set());
@@ -536,16 +529,13 @@ export function ExplorerSidebar({
                 ) : (
                   <ChevronRight size={14} className="tree-chevron" />
                 )}
-                <span className="tree-project-label">{project.projectLabel}</span>
                 {liveCount > 0 && (
                   <span
-                    className="project-live-badge"
-                    title={`${liveCount} connected`}
-                  >
-                    <span className="live-dot online" />
-                    {liveCount}
-                  </span>
+                    className="live-dot online project-live-dot"
+                    title="Agent connected"
+                  />
                 )}
+                <span className="tree-project-label">{project.projectLabel}</span>
 
                 <div
                   className="tree-row-actions"
@@ -797,31 +787,6 @@ export function ExplorerSidebar({
               {connectedAgents.length}
             </span>
           </div>
-
-          <div
-            className="sidebar-header-actions"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className={`tree-action-btn visible ${
-                relayState === 'paused' ? 'paused-accent' : ''
-              }`}
-              title={
-                relayState === 'paused'
-                  ? 'Resume live updates'
-                  : 'Pause live updates'
-              }
-              aria-label={
-                relayState === 'paused'
-                  ? 'Resume live updates'
-                  : 'Pause live updates'
-              }
-              onClick={onToggleLivePause}
-            >
-              {relayState === 'paused' ? <Play size={14} /> : <Pause size={14} />}
-            </button>
-          </div>
         </div>
 
         {agentsPaneOpen && (
@@ -843,11 +808,7 @@ export function ExplorerSidebar({
               <ul className="sidebar-agent-list">
                 {connectedAgents.map((ag) => (
                   <li key={ag.sessionId} className="sidebar-agent-item">
-                    <span
-                      className={`live-dot ${
-                        relayState === 'paused' ? 'paused' : 'online'
-                      }`}
-                    />
+                    <span className="live-dot online" />
                     <span className="sidebar-agent-name">{ag.agentLabel}</span>
                     <span className="sidebar-agent-proj">
                       {ag.project || 'General'}

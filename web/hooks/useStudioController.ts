@@ -304,25 +304,16 @@ export function useStudioController() {
     }, 2400);
   }, []);
 
-  const hasGuideDock = Boolean(
-    activeGuide?.gist ||
-      (activeGuide?.steps && activeGuide.steps.length > 0) ||
-      (activeGuide?.nodes && Object.keys(activeGuide.nodes).length > 0)
-  );
-
-  const computeViewportFitZoom = useCallback(
-    (w: number, h: number): number | null => {
-      const vp = viewportRef.current;
-      if (!vp || vp.clientWidth === 0 || vp.clientHeight === 0) {
-        return null;
-      }
-      const vw = Math.max(280, vp.clientWidth - 96);
-      const vh = Math.max(200, vp.clientHeight - (hasGuideDock ? 186 : 96));
-      const fit = Math.min(1, Math.max(0.22, Math.min(vw / (w + 48), vh / (h + 48))));
-      return Number(fit.toFixed(2));
-    },
-    [hasGuideDock]
-  );
+  const computeViewportFitZoom = useCallback((w: number, h: number): number | null => {
+    const vp = viewportRef.current;
+    if (!vp || vp.clientWidth === 0 || vp.clientHeight === 0) {
+      return null;
+    }
+    const vw = Math.max(280, vp.clientWidth - 88);
+    const vh = Math.max(200, vp.clientHeight - 80);
+    const fit = Math.min(1, Math.max(0.22, Math.min(vw / (w + 48), vh / (h + 48))));
+    return Number(fit.toFixed(2));
+  }, []);
 
   useLayoutEffect(() => {
     if (
@@ -335,11 +326,11 @@ export function useStudioController() {
       const fit = computeViewportFitZoom(dimensions.width, dimensions.height);
       if (fit !== null) {
         setZoom(fit);
-        setPan({ x: 0, y: hasGuideDock ? -34 : 0 });
+        setPan({ x: 0, y: 0 });
         needsFitOnPreviewRef.current = false;
       }
     }
-  }, [page, stageMode, dimensions, activeFile, computeViewportFitZoom, hasGuideDock]);
+  }, [page, stageMode, dimensions, activeFile, computeViewportFitZoom]);
 
   const snapshotCurrentCamera = useCallback((state: WorkspaceState): WorkspaceState => {
     if (!state.activeFileId) return state;
@@ -1309,16 +1300,15 @@ export function useStudioController() {
   ]);
 
   const handleFitCanvas = useCallback(() => {
-    const basePan = { x: 0, y: hasGuideDock ? -34 : 0 };
     if (!dimensions) {
       setZoom(1);
-      setPan(basePan);
+      setPan({ x: 0, y: 0 });
       return;
     }
     const fit = computeViewportFitZoom(dimensions.width, dimensions.height);
     setZoom(fit ?? 1);
-    setPan(basePan);
-  }, [computeViewportFitZoom, dimensions, hasGuideDock]);
+    setPan({ x: 0, y: 0 });
+  }, [computeViewportFitZoom, dimensions]);
 
   const handleCopyPermalink = useCallback(async () => {
     const flatItems: Array<{

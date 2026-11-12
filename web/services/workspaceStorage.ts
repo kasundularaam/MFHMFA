@@ -105,7 +105,7 @@ export const WELCOME_GUIDE: DiagramComprehensionGuide = {
       summary:
         'Renders diagrams locally, highlights walkthrough steps, and opens component details when you click a box.',
       example: 'Use Left and Right arrows to step through a flow, or click any outlined box.',
-      whatIf: 'If you pause live updates in the sidebar, incoming changes wait until you resume.',
+      whatIf: 'If a diagram has a syntax error while editing, a banner links straight to the line in Code view.',
       files: ['web/components/PreviewCanvas.tsx', 'web/services/mermaidRenderer.ts'],
     },
     VFS: {

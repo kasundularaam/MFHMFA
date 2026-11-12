@@ -46,7 +46,6 @@ export function App() {
               activeFileId={ctrl.workspace.activeFileId}
               activeProjectKey={ctrl.activeProject?.projectKey ?? null}
               workspaceId={ctrl.workspaceId}
-              relayState={ctrl.relayState}
               connectedAgents={ctrl.connectedAgents}
               liveProjectCounts={ctrl.liveProjectCounts}
               onResizeWidth={ctrl.handleResizeSidebar}
@@ -58,7 +57,6 @@ export function App() {
               onDeleteGraph={ctrl.handleDeleteGraph}
               onDeleteFolder={ctrl.handleDeleteFolder}
               onDeleteProject={ctrl.handleDeleteProject}
-              onToggleLivePause={ctrl.handleToggleLivePause}
               onNotifyToast={ctrl.notifyToast}
             />
           )}
@@ -86,7 +84,6 @@ export function App() {
                 <PreviewCanvas
                   viewportRef={ctrl.viewportRef}
                   chartKey={ctrl.chartKey}
-                  activeGraphTitle={ctrl.title}
                   renderedSvg={ctrl.renderedSvg}
                   hasActiveFile={Boolean(ctrl.activeFile)}
                   historicalVersion={
@@ -104,7 +101,6 @@ export function App() {
                   breadcrumbHops={ctrl.breadcrumbHops}
                   transitionKind={ctrl.transitionKind}
                   onJumpToAncestor={ctrl.handleJumpToAncestor}
-                  onOpenGraphById={ctrl.handleOpenFile}
                   onDrillToPath={ctrl.handleDrillToPath}
                   onCopyFilePath={(fp) => {
                     navigator.clipboard.writeText(fp);
