@@ -614,4 +614,218 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
       await browser.close().catch(() => {});
     }
   }, 50_000);
+
+  it('streams interactive Comprehension Guides (Story Stepper, Node Inspector & Sub-Graph Zoom) to Browser VFS', async () => {
+    const projectRoot = path.resolve(__dirname, '../..');
+    if (!fs.existsSync(path.join(projectRoot, 'dist/web/index.html'))) {
+      return;
+    }
+
+    const browser = await puppeteer.launch({
+      executablePath: resolveChromePath(),
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+
+    try {
+      const wsPage = await browser.newPage();
+      await wsPage.setViewport({ width: 1280, height: 840 });
+      await wsPage.goto(`${started.baseUrl}/?workspace=ws_comprehension_e2e`, {
+        waitUntil: 'networkidle2',
+      });
+
+      const pi = new Client(
+        { name: '@earendil-works/pi-coding-agent', version: '1.5.2' },
+        { capabilities: { roots: { listChanged: true } } }
+      );
+      pi.setRequestHandler(ListRootsRequestSchema, async () => ({
+        roots: [{ uri: 'file:///workspace/MFHMFA', name: 'MFHMFA' }],
+      }));
+
+      try {
+        await pi.connect(
+          new StreamableHTTPClientTransport(
+            new URL(`${started.baseUrl}/mcp?workspace=ws_comprehension_e2e`)
+          )
+        );
+
+        // 1. Render child sub-graph first (`memory/browser-storage.mmd`)
+        const childRes = await pi.callTool({
+          name: 'mermaid_render',
+          arguments: {
+            path: 'memory/browser-storage.mmd',
+            title: 'Browser Storage Internals',
+            code: 'flowchart TB\n  Coalesce["90s Retry Merger"] --> Ring["5-Version Ring"] --> Store[("localStorage Key")]',
+            guide: {
+              gist: 'Combines quick retries and caps history at 5 versions per graph.',
+              parentPath: 'memory/overview.mmd',
+              nodes: {
+                Ring: {
+                  summary: 'Keeps only the latest 5 revisions using slice(-5).',
+                  example: 'v1..v6 -> v1 is dropped automatically',
+                  whatIf: 'Restoring an older version appends a new head revision.',
+                },
+              },
+            },
+          },
+        });
+        expect(childRes.isError).toBeFalsy();
+
+        // 2. Render parent overview (`memory/overview.mmd`) with Story Mode + Node Inspector + Drilldown
+        const overviewRes = await pi.callTool({
+          name: 'mermaid_render',
+          arguments: {
+            path: 'memory/overview.mmd',
+            title: 'System Memory Overview',
+            code: 'flowchart TB\n  AI(["AI Agent"]) --> Relay["Live Pass-Through"] --> Browser[("Browser Storage")]\n  AI --> Preview["Preview Worker"]',
+            guide: {
+              gist: 'Server holds zero diagrams; your open browser tab holds every file.',
+              steps: [
+                {
+                  title: '1. Temporary preview check',
+                  caption: 'AI renders a temporary PNG to check layout, then the PNG is discarded.',
+                  focusNodes: ['AI', 'Preview'],
+                },
+                {
+                  title: '2. Live stream to browser',
+                  caption: 'Valid Mermaid text passes through the server straight into your open tab.',
+                  focusNodes: ['AI', 'Relay', 'Browser'],
+                },
+              ],
+              nodes: {
+                Browser: {
+                  label: 'Browser Local Storage',
+                  summary: 'Stores all project folders, diagrams, and 5-version history on your computer.',
+                  example: 'mfhmfa-workspace-v4 (~14 KB JSON)',
+                  whatIf: 'Close all Studio tabs -> AI ls/read calls time out after 2.5s.',
+                  files: ['web/services/workspaceStorage.ts'],
+                  childPath: 'memory/browser-storage.mmd',
+                },
+              },
+            },
+          },
+        });
+        expect(overviewRes.isError).toBeFalsy();
+
+        // Wait for overview dock to appear in browser
+        await wsPage.waitForFunction(
+          () =>
+            document
+              .querySelector('[data-testid="comprehension-dock"]')
+              ?.textContent?.includes('Server holds zero diagrams'),
+          { timeout: 10_000 }
+        );
+
+        // 3. Start Story Mode (`Walk Through (2)`) -> verify SVG spotlighting & dimming!
+        await wsPage.click('[data-testid="story-start-btn"]');
+        await wsPage.waitForFunction(
+          () => {
+            const svg = document.querySelector('.canvas-stage svg');
+            const previewFocused = svg
+              ?.querySelector('[data-mfhmfa-node="Preview"]')
+              ?.classList.contains('mfhmfa-focus');
+            const browserDimmed = svg
+              ?.querySelector('[data-mfhmfa-node="Browser"]')
+              ?.classList.contains('mfhmfa-dim');
+            return (
+              Boolean(svg?.classList.contains('mfhmfa-story-active')) &&
+              Boolean(previewFocused) &&
+              Boolean(browserDimmed) &&
+              Boolean(
+                document
+                  .querySelector('.story-step-title')
+                  ?.textContent?.includes('1. Temporary preview check')
+              )
+            );
+          },
+          { timeout: 5_000 }
+        );
+
+        // Press ArrowRight -> advances to Step 2!
+        await wsPage.keyboard.press('ArrowRight');
+        await wsPage.waitForFunction(
+          () =>
+            Boolean(
+              document
+                .querySelector('.story-step-title')
+                ?.textContent?.includes('2. Live stream to browser')
+            ) &&
+            Boolean(
+              document
+                .querySelector('.canvas-stage svg [data-mfhmfa-node="Browser"]')
+                ?.classList.contains('mfhmfa-focus')
+            ),
+          { timeout: 5_000 }
+        );
+
+        // 4. Click `Browser` SVG node -> opens Node Inspector Card with Example, What-If & Drill-Down!
+        await wsPage.evaluate(() => {
+          const el = document.querySelector(
+            '.canvas-stage svg [data-mfhmfa-node="Browser"]'
+          ) as HTMLElement | null;
+          el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        await wsPage.waitForFunction(
+          () => {
+            const card = document.querySelector('[data-testid="node-inspector-card"]');
+            const txt = card?.textContent || '';
+            return (
+              txt.includes('Browser Local Storage') &&
+              txt.includes('mfhmfa-workspace-v4') &&
+              txt.includes('2.5s') &&
+              txt.includes('Zoom into memory/browser-storage.mmd')
+            );
+          },
+          { timeout: 5_000 }
+        );
+
+        // 5. Click Zoom Into sub-graph -> navigates to `browser-storage.mmd` & shows Back breadcrumb!
+        await wsPage.click('.node-drilldown-btn');
+        await wsPage.waitForFunction(
+          () =>
+            Boolean(
+              document
+                .querySelector('.floating-drillback-pill')
+                ?.textContent?.includes('Back to System Memory Overview')
+            ) &&
+            Boolean(
+              document
+                .querySelector('[data-testid="comprehension-dock"]')
+                ?.textContent?.includes('caps history at 5 versions')
+            ),
+          { timeout: 5_000 }
+        );
+
+        // Click Back breadcrumb -> zooms right back out to `overview.mmd`!
+        await wsPage.click('.floating-drillback-pill');
+        await wsPage.waitForFunction(
+          () =>
+            Boolean(
+              document
+                .querySelector('[data-testid="comprehension-dock"]')
+                ?.textContent?.includes('Server holds zero diagrams')
+            ),
+          { timeout: 5_000 }
+        );
+
+        // 6. Verify `mermaid_read` returns full `guide` from browser localStorage & server still stores 0!
+        const readBack = await pi.callTool({
+          name: 'mermaid_read',
+          arguments: { path: 'memory/overview.mmd' },
+        });
+        const readJson = JSON.parse(
+          ((readBack.content as Array<{ text?: string }>)[0]?.text ?? '{}')
+        ) as { guide?: { steps?: unknown[]; nodes?: Record<string, unknown> } };
+        expect(readJson.guide?.steps?.length).toBe(2);
+        expect(Boolean(readJson.guide?.nodes?.Browser)).toBe(true);
+        expect(started.service.getRelayStats().storedDiagrams).toBe(0);
+      } finally {
+        await pi.close().catch(() => {});
+        await wsPage.close().catch(() => {});
+      }
+    } finally {
+      await browser.close().catch(() => {});
+    }
+  }, 45_000);
 });

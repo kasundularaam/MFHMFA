@@ -214,6 +214,27 @@ export function analyzeStaticWarnings(code: string): LintWarning[] {
       });
     }
 
+    if (!line.startsWith('subgraph ')) {
+      const quotedBoxes = line.matchAll(/[A-Za-z0-9_-]+\s*(?:\[\["|\(\["|\[\("|(?:\{\{")|\["|\(")([^"]+)"/g);
+      for (const m of quotedBoxes) {
+        const plain = (m[1] ?? '')
+          .replace(/<br\s*\/?>/gi, ' ')
+          .replace(/#quot;/g, '"')
+          .trim();
+        const words = plain.split(/\s+/).filter(Boolean);
+        if (words.length > 11) {
+          warnings.push({
+            line: lineNum,
+            code: 'DENSE_NODE_LABEL',
+            message: `Node label crams ${words.length} words into one box, overloading visual scanning (Dual Coding Principle).`,
+            suggestion:
+              'Keep box labels to 2–6 plain words and attach detailed mechanics, examples, and "what-if" failure cases via `guide.nodes` in `mermaid_render`.',
+          });
+          break;
+        }
+      }
+    }
+
     if (/<script|<iframe|<img/i.test(line)) {
       warnings.push({
         line: lineNum,
@@ -290,6 +311,12 @@ export function computeLayoutDiagnostics(
   if (notes.length === 0) {
     notes.push(
       `Balanced layout (${width}×${height}px, ${aspectRatio}:1 aspect ratio) with clean theme/background pairing.`
+    );
+  }
+
+  if (metrics && metrics.nodeCount > 8) {
+    notes.push(
+      `Cognitive load notice: ${metrics.nodeCount} nodes exceeds the ~4–7 chunk human working-memory sweet spot. For codebase comprehension, prefer 4–7 concise boxes on the overview and link deeper subsystems via \`guide.nodes[nodeId].childPath\`.`
     );
   }
 

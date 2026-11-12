@@ -1,3 +1,6 @@
+import { sanitizeComprehensionGuide } from './comprehension.js';
+import type { DiagramComprehensionGuide } from './types.js';
+
 const MAX_DECOMPRESSED_BYTES = 256 * 1024;
 
 export interface PermalinkTabItem {
@@ -6,6 +9,7 @@ export interface PermalinkTabItem {
   path?: string;
   project?: string;
   agent?: string;
+  guide?: DiagramComprehensionGuide;
 }
 
 export interface PermalinkPayload {
@@ -14,6 +18,7 @@ export interface PermalinkPayload {
   path?: string;
   project?: string;
   agent?: string;
+  guide?: DiagramComprehensionGuide;
   tabs?: PermalinkTabItem[];
   activeIndex?: number;
 }
@@ -24,6 +29,7 @@ interface WireTabItem {
   pa?: string;
   p?: string;
   ag?: string;
+  g?: DiagramComprehensionGuide;
 }
 
 interface WirePermalinkPayload {
@@ -32,6 +38,7 @@ interface WirePermalinkPayload {
   pa?: string;
   p?: string;
   ag?: string;
+  g?: DiagramComprehensionGuide;
   tabs?: WireTabItem[];
   a?: number;
 }
@@ -67,6 +74,8 @@ export async function encodePermalinkPayload(payload: PermalinkPayload): Promise
   if (payload.path?.trim()) wire.pa = payload.path.trim();
   if (payload.project?.trim()) wire.p = payload.project.trim();
   if (payload.agent?.trim()) wire.ag = payload.agent.trim();
+  const cleanTopGuide = sanitizeComprehensionGuide(payload.guide);
+  if (cleanTopGuide) wire.g = cleanTopGuide;
 
   if (payload.tabs && payload.tabs.length > 1) {
     wire.tabs = payload.tabs.map((tab) => {
@@ -75,6 +84,8 @@ export async function encodePermalinkPayload(payload: PermalinkPayload): Promise
       if (tab.path?.trim()) item.pa = tab.path.trim();
       if (tab.project?.trim()) item.p = tab.project.trim();
       if (tab.agent?.trim()) item.ag = tab.agent.trim();
+      const cleanTabGuide = sanitizeComprehensionGuide(tab.guide);
+      if (cleanTabGuide) item.g = cleanTabGuide;
       return item;
     });
     if (typeof payload.activeIndex === 'number' && payload.activeIndex >= 0) {
@@ -131,14 +142,30 @@ export async function decodePermalinkPayload(
   const tabs: PermalinkTabItem[] | undefined = Array.isArray(parsed.tabs)
     ? parsed.tabs
         .filter((item): item is WireTabItem => Boolean(item && typeof item.c === 'string'))
-        .map((item) => ({
-          code: item.c,
-          ...(typeof item.t === 'string' && item.t.trim() ? { title: item.t.trim() } : {}),
-          ...(typeof item.pa === 'string' && item.pa.trim() ? { path: item.pa.trim() } : {}),
-          ...(typeof item.p === 'string' && item.p.trim() ? { project: item.p.trim() } : {}),
-          ...(typeof item.ag === 'string' && item.ag.trim() ? { agent: item.ag.trim() } : {}),
-        }))
+        .map((item) => {
+          let itemGuide: DiagramComprehensionGuide | undefined;
+          try {
+            itemGuide = sanitizeComprehensionGuide(item.g);
+          } catch {
+            itemGuide = undefined;
+          }
+          return {
+            code: item.c,
+            ...(typeof item.t === 'string' && item.t.trim() ? { title: item.t.trim() } : {}),
+            ...(typeof item.pa === 'string' && item.pa.trim() ? { path: item.pa.trim() } : {}),
+            ...(typeof item.p === 'string' && item.p.trim() ? { project: item.p.trim() } : {}),
+            ...(typeof item.ag === 'string' && item.ag.trim() ? { agent: item.ag.trim() } : {}),
+            ...(itemGuide ? { guide: itemGuide } : {}),
+          };
+        })
     : undefined;
+
+  let topGuide: DiagramComprehensionGuide | undefined;
+  try {
+    topGuide = sanitizeComprehensionGuide(parsed.g);
+  } catch {
+    topGuide = undefined;
+  }
 
   return {
     code: parsed.c,
@@ -146,6 +173,7 @@ export async function decodePermalinkPayload(
     ...(typeof parsed.pa === 'string' && parsed.pa.trim() ? { path: parsed.pa.trim() } : {}),
     ...(typeof parsed.p === 'string' && parsed.p.trim() ? { project: parsed.p.trim() } : {}),
     ...(typeof parsed.ag === 'string' && parsed.ag.trim() ? { agent: parsed.ag.trim() } : {}),
+    ...(topGuide ? { guide: topGuide } : {}),
     ...(tabs && tabs.length > 0 ? { tabs } : {}),
     ...(typeof parsed.a === 'number' ? { activeIndex: parsed.a } : {}),
   };

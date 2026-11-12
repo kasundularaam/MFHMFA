@@ -18,6 +18,7 @@ import {
 import { slugify } from '../../src/shared/svg';
 import type {
   AgentSessionInfo,
+  DiagramComprehensionGuide,
   DiagramRelayPayload,
   ParseErrorDetail,
   VfsRpcRequest,
@@ -120,10 +121,15 @@ export function useStudioController() {
   );
 
   const code = activeVersionRecord?.code ?? '';
+  const activeGuide = activeVersionRecord?.guide;
   const title = activeFile?.title ?? null;
   const chartKey = activeFile
     ? `${activeFile.id}:v${activeVersionRecord?.version ?? activeFile.currentVersion}`
     : 'empty-stage';
+
+  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [drillStack, setDrillStack] = useState<string[]>([]);
 
   const [renderedSvg, setRenderedSvg] = useState<string>('');
   const [diagramType, setDiagramType] = useState<string | null>('flowchart-v2');
@@ -187,6 +193,45 @@ export function useStudioController() {
     persistWorkspaceState(workspace);
   }, [workspace]);
 
+  // Reset transient Story Stepper & Node Inspector selection when switching files/versions
+  const activeFileIdVal = activeFile?.id ?? null;
+  useEffect(() => {
+    setActiveStepIndex(null);
+    setSelectedNodeId(null);
+  }, [activeFileIdVal, selectedVersion]);
+
+  // Clamp step index & node selection safely if a live update alters the active guide
+  useEffect(() => {
+    const stepLen = activeGuide?.steps?.length ?? 0;
+    if (activeStepIndex !== null && (stepLen === 0 || activeStepIndex >= stepLen)) {
+      setActiveStepIndex(stepLen > 0 ? stepLen - 1 : null);
+    }
+    if (selectedNodeId && !activeGuide?.nodes?.[selectedNodeId]) {
+      setSelectedNodeId(null);
+    }
+  }, [activeGuide, activeStepIndex, selectedNodeId]);
+
+  const parentGraphEntry = useMemo(() => {
+    for (let i = drillStack.length - 1; i >= 0; i--) {
+      const candidateId = drillStack[i]!;
+      if (candidateId === activeFileIdVal) continue;
+      const found = findFileWithProject(workspace, candidateId);
+      if (found) return { file: found.file, fromStack: true };
+    }
+    if (activeGuide?.parentPath && activeProject) {
+      try {
+        const cleanParent = normalizeRelativeGraphPath(activeGuide.parentPath);
+        const match = activeProject.files.find(
+          (f) => f.path === cleanParent && f.id !== activeFileIdVal
+        );
+        if (match) return { file: match, fromStack: false };
+      } catch {
+        // ignore invalid parentPath
+      }
+    }
+    return null;
+  }, [drillStack, activeFileIdVal, workspace, activeGuide, activeProject]);
+
   const toggleAppearanceMode = useCallback(() => {
     setAppearanceMode((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
@@ -206,16 +251,25 @@ export function useStudioController() {
     }, 2400);
   }, []);
 
-  const computeViewportFitZoom = useCallback((w: number, h: number): number | null => {
-    const vp = viewportRef.current;
-    if (!vp || vp.clientWidth === 0 || vp.clientHeight === 0) {
-      return null;
-    }
-    const vw = Math.max(280, vp.clientWidth - 96);
-    const vh = Math.max(220, vp.clientHeight - 96);
-    const fit = Math.min(1, Math.max(0.22, Math.min(vw / (w + 48), vh / (h + 48))));
-    return Number(fit.toFixed(2));
-  }, []);
+  const hasGuideDock = Boolean(
+    activeGuide?.gist ||
+      (activeGuide?.steps && activeGuide.steps.length > 0) ||
+      (activeGuide?.nodes && Object.keys(activeGuide.nodes).length > 0)
+  );
+
+  const computeViewportFitZoom = useCallback(
+    (w: number, h: number): number | null => {
+      const vp = viewportRef.current;
+      if (!vp || vp.clientWidth === 0 || vp.clientHeight === 0) {
+        return null;
+      }
+      const vw = Math.max(280, vp.clientWidth - 96);
+      const vh = Math.max(200, vp.clientHeight - (hasGuideDock ? 186 : 96));
+      const fit = Math.min(1, Math.max(0.22, Math.min(vw / (w + 48), vh / (h + 48))));
+      return Number(fit.toFixed(2));
+    },
+    [hasGuideDock]
+  );
 
   useLayoutEffect(() => {
     if (
@@ -228,11 +282,11 @@ export function useStudioController() {
       const fit = computeViewportFitZoom(dimensions.width, dimensions.height);
       if (fit !== null) {
         setZoom(fit);
-        setPan({ x: 0, y: 0 });
+        setPan({ x: 0, y: hasGuideDock ? -34 : 0 });
         needsFitOnPreviewRef.current = false;
       }
     }
-  }, [page, stageMode, dimensions, activeFile, computeViewportFitZoom]);
+  }, [page, stageMode, dimensions, activeFile, computeViewportFitZoom, hasGuideDock]);
 
   const snapshotCurrentCamera = useCallback((state: WorkspaceState): WorkspaceState => {
     if (!state.activeFileId) return state;
@@ -312,6 +366,7 @@ export function useStudioController() {
                 path: decoded.path,
                 project: decoded.project,
                 agent: decoded.agent,
+                guide: decoded.guide,
               },
             ];
 
@@ -339,6 +394,7 @@ export function useStudioController() {
           path: relPath,
           title: itemTitle,
           code: item.code,
+          guide: item.guide ?? (rawItems.length === 1 ? decoded.guide : undefined),
           agentSlug: agentNorm.slug,
           agentLabel: agentNorm.label,
           agentShortLabel: agentNorm.shortLabel,
@@ -452,6 +508,7 @@ export function useStudioController() {
         path: diag.path,
         title: diag.title,
         code: diag.code,
+        guide: diag.guide,
         diagramType: diag.diagramType,
         agentSlug: diag.agentSlug,
         agentLabel: diag.agentLabel,
@@ -1065,7 +1122,42 @@ export function useStudioController() {
     return () => clearTimeout(timer);
   }, [activeFile, code, appearanceMode, stageMode]);
 
-  // Keyboard shortcuts: Ctrl/Cmd+B (Explorer Sidebar), Ctrl/Cmd+E (Preview <-> Code), Alt+1..9 (Open Tabs)
+  const handleDrillToPath = useCallback(
+    (rawTargetPath: string) => {
+      if (!activeProject) return;
+      try {
+        const targetRel = normalizeRelativeGraphPath(rawTargetPath);
+        const targetFile = activeProject.files.find((f) => f.path === targetRel);
+        if (!targetFile) {
+          notifyToast(`Sub-graph "${targetRel}" is not in this workspace yet`);
+          return;
+        }
+        if (activeFile && activeFile.id !== targetFile.id) {
+          setDrillStack((prev) =>
+            prev[prev.length - 1] === activeFile.id ? prev : [...prev, activeFile.id]
+          );
+        }
+        handleOpenFile(targetFile.id);
+      } catch (err: unknown) {
+        notifyToast(err instanceof Error ? err.message : 'Invalid sub-graph path');
+      }
+    },
+    [activeFile, activeProject, handleOpenFile, notifyToast]
+  );
+
+  const handleDrillBack = useCallback(() => {
+    if (!parentGraphEntry) return;
+    if (parentGraphEntry.fromStack) {
+      setDrillStack((prev) => {
+        const idx = prev.lastIndexOf(parentGraphEntry.file.id);
+        return idx >= 0 ? prev.slice(0, idx) : prev;
+      });
+    }
+    handleOpenFile(parentGraphEntry.file.id);
+  }, [handleOpenFile, parentGraphEntry]);
+
+  // Keyboard shortcuts: Ctrl/Cmd+B (Explorer), Ctrl/Cmd+E (Preview <-> Code), Alt+1..9 (Tabs),
+  // plus Story Mode ArrowLeft/ArrowRight & Escape in Preview mode!
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (page !== 'studio') return;
@@ -1091,22 +1183,84 @@ export function useStudioController() {
           e.preventDefault();
           handleOpenFile(targetId);
         }
+        return;
+      }
+
+      const targetEl = e.target as HTMLElement | null;
+      const inEditable = Boolean(
+        targetEl &&
+          (targetEl.tagName === 'INPUT' ||
+            targetEl.tagName === 'TEXTAREA' ||
+            targetEl.isContentEditable ||
+            targetEl.closest('.cm-editor'))
+      );
+      if (inEditable || stageMode !== 'preview') return;
+
+      const stepTotal = activeGuide?.steps?.length ?? 0;
+
+      if (e.key === 'Escape') {
+        if (selectedNodeId !== null) {
+          e.preventDefault();
+          setSelectedNodeId(null);
+          return;
+        }
+        if (activeStepIndex !== null) {
+          e.preventDefault();
+          setActiveStepIndex(null);
+          return;
+        }
+      }
+
+      if (
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        stepTotal > 0 &&
+        e.key === 'ArrowRight'
+      ) {
+        e.preventDefault();
+        setActiveStepIndex((prev) =>
+          prev === null ? 0 : Math.min(stepTotal - 1, prev + 1)
+        );
+        return;
+      }
+
+      if (
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        stepTotal > 0 &&
+        e.key === 'ArrowLeft'
+      ) {
+        e.preventDefault();
+        setActiveStepIndex((prev) =>
+          prev === null ? stepTotal - 1 : prev === 0 ? null : prev - 1
+        );
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleOpenFile, handleToggleSidebar, page]);
+  }, [
+    activeGuide,
+    activeStepIndex,
+    handleOpenFile,
+    handleToggleSidebar,
+    page,
+    selectedNodeId,
+    stageMode,
+  ]);
 
   const handleFitCanvas = useCallback(() => {
+    const basePan = { x: 0, y: hasGuideDock ? -34 : 0 };
     if (!dimensions) {
       setZoom(1);
-      setPan({ x: 0, y: 0 });
+      setPan(basePan);
       return;
     }
     const fit = computeViewportFitZoom(dimensions.width, dimensions.height);
     setZoom(fit ?? 1);
-    setPan({ x: 0, y: 0 });
-  }, [computeViewportFitZoom, dimensions]);
+    setPan(basePan);
+  }, [computeViewportFitZoom, dimensions, hasGuideDock]);
 
   const handleCopyPermalink = useCallback(async () => {
     const flatItems: Array<{
@@ -1116,6 +1270,7 @@ export function useStudioController() {
       path: string;
       project?: string;
       agent?: string;
+      guide?: DiagramComprehensionGuide;
     }> = [];
 
     for (const p of workspaceRef.current.projects) {
@@ -1129,6 +1284,7 @@ export function useStudioController() {
             path: f.path,
             project: p.isScratchpad ? undefined : p.projectLabel,
             agent: head.authorSlug === 'user' ? undefined : head.authorLabel,
+            ...(head.guide ? { guide: head.guide } : {}),
           });
         }
       }
@@ -1152,6 +1308,7 @@ export function useStudioController() {
         path: currentItem.path,
         project: currentItem.project,
         agent: currentItem.agent,
+        ...(currentItem.guide ? { guide: currentItem.guide } : {}),
         ...(flatItems.length > 1
           ? {
               tabs: flatItems.map((it) => ({
@@ -1160,6 +1317,7 @@ export function useStudioController() {
                 path: it.path,
                 project: it.project,
                 agent: it.agent,
+                ...(it.guide ? { guide: it.guide } : {}),
               })),
               activeIndex: activeIdx,
             }
@@ -1296,6 +1454,14 @@ export function useStudioController() {
     title,
     chartKey,
     code,
+    activeGuide,
+    activeStepIndex,
+    setActiveStepIndex,
+    selectedNodeId,
+    setSelectedNodeId,
+    parentGraphFile: parentGraphEntry?.file ?? null,
+    handleDrillToPath,
+    handleDrillBack,
     setCode: handleChangeCode,
     renderedSvg,
     diagramType,

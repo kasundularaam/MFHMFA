@@ -5,10 +5,83 @@ import type {
   StudioService,
   VfsRpcBridgeFn,
 } from '../../application/studioService.js';
-import type { CallerSource } from '../../shared/types.js';
+import { summarizeComprehensionGuide } from '../../shared/comprehension.js';
+import type { CallerSource, DiagramComprehensionGuide } from '../../shared/types.js';
 
 const THEME_ENUM = z.enum(['default', 'neutral', 'dark', 'forest', 'base']);
 const LOOK_ENUM = z.enum(['classic', 'handDrawn']);
+
+const NODE_DETAIL_ZOD = z.object({
+  label: z
+    .string()
+    .optional()
+    .describe('Optional display heading for the node inspector card.'),
+  summary: z
+    .string()
+    .describe(
+      '1–2 plain-English sentences describing what physically happens at this component (avoid raw code identifiers and forced domain metaphors).'
+    ),
+  example: z
+    .string()
+    .optional()
+    .describe(
+      'Concrete input -> output example with real sizes, counts, or timings (e.g. "1 KB Mermaid text -> 180 KB PNG -> deleted immediately").'
+    ),
+  whatIf: z
+    .string()
+    .optional()
+    .describe(
+      'Counterfactual boundary test: what happens when this component closes, fills up, or fails?'
+    ),
+  files: z
+    .array(z.string())
+    .optional()
+    .describe('Relevant repository file paths (e.g. ["src/infrastructure/ephemeral/workspaceRelay.ts"]).'),
+  childPath: z
+    .string()
+    .optional()
+    .describe(
+      'Optional relative `.mmd` path in this project VFS to zoom into when the user drills down into this subsystem.'
+    ),
+});
+
+const WALKTHROUGH_STEP_ZOD = z.object({
+  title: z.string().describe('Short step headline (e.g. "1. AI requests file list").'),
+  caption: z
+    .string()
+    .describe('1–2 plain-English sentences narrating what happens at this exact step.'),
+  focusNodes: z
+    .array(z.string())
+    .describe('Exact Mermaid node IDs (or sequence participant IDs) to spotlight during this step.'),
+});
+
+const COMPREHENSION_GUIDE_ZOD = z
+  .object({
+    gist: z
+      .string()
+      .optional()
+      .describe('1-sentence plain-English core takeaway for the diagram.'),
+    parentPath: z
+      .string()
+      .optional()
+      .describe('Optional parent `.mmd` path when this diagram is a zoomed-in subsystem view.'),
+    steps: z
+      .array(WALKTHROUGH_STEP_ZOD)
+      .optional()
+      .describe(
+        'Ordered Story Mode walkthrough steps (`◀ 1 / N ▶`) tracing one concrete action from start to finish.'
+      ),
+    nodes: z
+      .record(z.string(), NODE_DETAIL_ZOD)
+      .optional()
+      .describe(
+        'Map of Mermaid node ID -> clickable inspector details (summary, concrete example, whatIf counterfactual, source files, optional childPath drill-down).'
+      ),
+  })
+  .optional()
+  .describe(
+    'Interactive human comprehension layer saved alongside the `.mmd` in browser localStorage: Story Stepper (`steps`), Clickable Node Inspector (`nodes`), and Sub-Graph Zoom (`childPath` / `parentPath`). Keep box labels in `code` short (2–5 plain words, 4–7 boxes per view) and put rich details here.'
+  );
 
 export interface ActiveCallerMetadata {
   sessionId: string | null;
@@ -189,7 +262,7 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
     name: 'mermaid_render',
     title: 'Write, Validate, Render & Visually Inspect Mermaid Graph',
     description:
-      'Write or update a Mermaid graph at `path` inside your project working directory (auto-creating folders and coalescing rapid iterative refinements by the same agent into a single clean revision), validate syntax, and receive a 2x Retina PNG (`image/png`) + layout diagnostics. IMPORTANT: Never output raw ```mermaid``` code or URLs in chat unless explicitly asked — visually verify the PNG until clean, ensure `syncedToBrowser` is true, and simply tell the user their graphs are ready on MFHMFA.',
+      'Write or update a Mermaid graph at `path` inside your project working directory (auto-creating folders and coalescing rapid iterative refinements by the same agent into a single clean revision), attach an optional interactive `guide` (`gist`, `steps` Story Mode walkthrough, `nodes` clickable inspector cards & `childPath` sub-graph zoom), validate syntax, and receive a 2x Retina PNG (`image/png`) + layout/comprehension diagnostics. Keep each graph to ~4–7 concise plain-English boxes (2–5 words per box) and place detailed mechanics, concrete examples, and "what-if" edge cases in `guide`. IMPORTANT: Never output raw ```mermaid``` code or URLs in chat unless explicitly asked — visually verify the PNG until clean, ensure `syncedToBrowser` is true, and simply tell the user their graphs are ready on MFHMFA.',
     zodShape: {
       code: z.string().describe('Raw Mermaid diagram source code (without ```mermaid fences).'),
       path: z
@@ -202,6 +275,7 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         .string()
         .optional()
         .describe('Optional human-readable graph title (defaults to file name of `path`).'),
+      guide: COMPREHENSION_GUIDE_ZOD,
       project: z
         .string()
         .optional()
@@ -229,6 +303,42 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
           description: 'Relative `.mmd` file path inside your project working directory (e.g. "auth/oauth-flow.mmd").',
         },
         title: { type: 'string' },
+        guide: {
+          type: 'object',
+          description:
+            'Optional interactive comprehension layer (Story Mode `steps`, clickable `nodes` inspector cards with concrete `example` & `whatIf`, and `childPath`/`parentPath` sub-graph drill-down).',
+          properties: {
+            gist: { type: 'string' },
+            parentPath: { type: 'string' },
+            steps: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  title: { type: 'string' },
+                  caption: { type: 'string' },
+                  focusNodes: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['title', 'caption', 'focusNodes'],
+              },
+            },
+            nodes: {
+              type: 'object',
+              additionalProperties: {
+                type: 'object',
+                properties: {
+                  label: { type: 'string' },
+                  summary: { type: 'string' },
+                  example: { type: 'string' },
+                  whatIf: { type: 'string' },
+                  files: { type: 'array', items: { type: 'string' } },
+                  childPath: { type: 'string' },
+                },
+                required: ['summary'],
+              },
+            },
+          },
+        },
         project: { type: 'string' },
         agent: { type: 'string' },
         theme: { type: 'string', enum: ['default', 'neutral', 'dark', 'forest', 'base'] },
@@ -252,6 +362,7 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
       const res = await service.render(args.code, {
         path: args.path,
         title: args.title,
+        guide: args.guide as DiagramComprehensionGuide | undefined,
         project: effectiveProject,
         agentName: effectiveAgent,
         agentSessionId: callerMeta?.sessionId ?? null,
@@ -302,6 +413,7 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
           background: res.background,
           dimensions: res.dimensions,
           metrics: res.metrics,
+          comprehension: summarizeComprehensionGuide(res.guide),
           layoutDiagnostics: res.layoutDiagnostics,
           warnings: res.warnings,
           error: res.error,

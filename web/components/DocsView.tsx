@@ -184,6 +184,13 @@ docker compose up -d --build
               of the tab bar to inspect or restore earlier revisions. Only humans can delete graphs
               or folders.
             </li>
+            <li>
+              <strong>Story Mode, Node Inspector &amp; Sub-Graph Zoom</strong> — Agents can attach
+              an interactive comprehension <code>guide</code> (<code>gist</code>,{' '}
+              <code>steps</code>, <code>nodes</code>) to any graph so you can step through one
+              concrete trace at a time, click boxes for examples &amp; failure modes, and drill down
+              into linked child <code>.mmd</code> files.
+            </li>
           </ul>
 
           <h2 id="doc-tools">4. MCP Tools &amp; Resources</h2>
@@ -230,13 +237,15 @@ docker compose up -d --build
                 </td>
                 <td>
                   <code>code</code>, <code>path?</code>, <code>title?</code>,{' '}
-                  <code>project?</code>, <code>theme?</code>, <code>look?</code>,{' '}
-                  <code>scale?</code>, <code>outputPath?</code>
+                  <code>guide?</code>, <code>project?</code>, <code>theme?</code>,{' '}
+                  <code>look?</code>, <code>scale?</code>, <code>outputPath?</code>
                 </td>
                 <td>
-                  Creates parent folders, streams into browser <code>localStorage</code> (coalescing
-                  rapid retries by the same agent into 1 clean revision), validates syntax, and
-                  returns a 2x Retina PNG + layout diagnostics.
+                  Creates parent folders, streams Mermaid code + optional interactive{' '}
+                  <code>guide</code> (Story Mode <code>steps</code>, clickable <code>nodes</code>{' '}
+                  inspector &amp; <code>childPath</code> zoom) into browser{' '}
+                  <code>localStorage</code>, validates syntax, and returns a 2x Retina PNG +
+                  layout/cognitive diagnostics.
                 </td>
               </tr>
               <tr>
@@ -389,6 +398,14 @@ docker compose up -d --build
             </li>
             <li>
               <code>Alt + 1..9</code> — Switch to open tab 1–9
+            </li>
+            <li>
+              <code>&larr;</code> / <code>&rarr;</code> (in Preview) — Step through Story Mode
+              walkthrough frames (<code>Esc</code> exits back to Overview)
+            </li>
+            <li>
+              Click / Double-click outlined diagram box — Open Node Inspector card / Zoom into
+              linked child sub-graph
             </li>
             <li>Double-click item in Explorer — Rename graph</li>
             <li>Middle-click open tab — Close tab (keeps graph in Explorer)</li>

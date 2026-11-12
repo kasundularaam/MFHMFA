@@ -2,8 +2,14 @@ import {
   normalizeAgentIdentity,
   normalizeProjectName,
 } from '../../src/shared/agentIdentity';
+import {
+  rewriteGuidePaths,
+  sanitizeComprehensionGuide,
+  serializeGuideCanonical,
+} from '../../src/shared/comprehension';
 import { slugify } from '../../src/shared/svg';
 import type {
+  DiagramComprehensionGuide,
   VfsLsEntry,
   VfsLsResult,
   VfsMoveResult,
@@ -30,22 +36,88 @@ const HUMAN_EDIT_COALESCE_MS = 45_000;
 export const AGENT_ITERATION_COALESCE_MS = 90_000;
 
 export const WELCOME_CODE = `flowchart TB
-  subgraph Explorer["VS Code Project Explorer (localStorage)"]
-    P1["project-a/"]
-    F1["architecture/system-overview.mmd (claude)"]
-    F2["auth/oauth-flow.mmd (claude)"]
-    F3["auth/session-er.mmd (pi)"]
-    P1 --> F1 & F2 & F3
+  Agents(["Coding Agents"])
+
+  subgraph Server["Stateless Server (0 Stored Graphs)"]
+    Render[["PNG Renderer"]]
+    Relay["Live Pass-Through"]
   end
 
-  subgraph Engine["MFHMFA Zero-Storage Engine"]
-    VFS["Jailed VFS Tools<br/>(ls · read · render · mv)"]
-    POOL["Parallel Chromium Pool<br/>(2x Retina PNG Vision)"]
+  subgraph Browser["Your Browser (100% Local Storage)"]
+    Studio["Interactive Canvas"]
+    VFS[("Project VFS")]
   end
 
-  Agents["Claude Code & Pi"] <--> VFS
-  VFS --> POOL
-  VFS <==>|"2-Way Stateless SSE RPC"| Explorer`;
+  Agents -->|"1. Validate & render"| Render
+  Render -.->|"2. 2x Retina PNG"| Agents
+  Agents -->|"3. Stream graph"| Relay
+  Relay <==>|"4. Live sync + ls/read"| Studio
+  Studio <-->|"Last 5 versions"| VFS`;
+
+export const WELCOME_GUIDE: DiagramComprehensionGuide = {
+  gist: 'The server holds zero diagrams — agents verify layout via temporary PNGs while all folders, graphs, and history live in your browser.',
+  steps: [
+    {
+      title: '1. Agent renders & inspects PNG',
+      caption:
+        'Your coding agent sends Mermaid code to the server, receives a 2x Retina PNG to check visual layout, and the PNG buffer is discarded immediately.',
+      focusNodes: ['Agents', 'Render'],
+    },
+    {
+      title: '2. Live pass-through to your browser',
+      caption:
+        'Once valid, the server streams the graph + comprehension guide straight into your open browser tab without storing a copy on disk or in RAM.',
+      focusNodes: ['Agents', 'Relay', 'Studio'],
+    },
+    {
+      title: '3. Saved in your browser VFS',
+      caption:
+        'Your browser coalesces rapid retries and saves up to the last 5 versions per file in localStorage. Agents run ls/read directly against this open tab.',
+      focusNodes: ['Studio', 'VFS', 'Relay'],
+    },
+  ],
+  nodes: {
+    Agents: {
+      label: 'Coding Agents (Claude, Pi, Cursor)',
+      summary:
+        'AI agents connect over MCP, inspect existing graphs with mermaid_ls / mermaid_read, and push interactive diagrams with Story Mode steps and node cards.',
+      example: 'mermaid_render({ path: "arch/overview.mmd", code, guide }) -> 2x PNG + live browser sync',
+      whatIf: 'If two agents work on different repositories, each session is jailed strictly to its own project folder.',
+    },
+    Render: {
+      label: 'Headless Chromium Pool',
+      summary:
+        'A bounded pool of 4–16 isolated Chromium contexts validates syntax, renders 2x Retina PNGs for agent vision, clears DOM nodes after every call, and recycles workers after 150 ops.',
+      example: '1.2 KB Mermaid text -> ~180 KB PNG returned to agent -> 0 bytes retained on server',
+      whatIf: 'If all workers are busy, incoming renders wait in an in-memory queue; if a render hangs >12s, that worker is killed and replaced.',
+      files: ['src/infrastructure/renderer/chromiumEngine.ts'],
+    },
+    Relay: {
+      label: 'Stateless SSE Relay',
+      summary:
+        'Forwards incoming diagrams to open browser tabs and proxies ephemeral ls, read, and mv queries down to your browser with a 2.5s timeout.',
+      example: 'mermaid_ls -> SSE query to browser -> JSON folder tree reply in ~10ms (0 stored diagrams)',
+      whatIf: 'Close all MFHMFA Studio browser tabs -> mermaid_ls and mermaid_read fail after 2.5s because the server stores nothing.',
+      files: ['src/infrastructure/ephemeral/workspaceRelay.ts'],
+    },
+    Studio: {
+      label: 'Interactive Comprehension Canvas',
+      summary:
+        'Renders crisp SVGs locally (caching the last 80 views in tab memory), spotlights Story Mode steps, and opens inspector cards when you click any box.',
+      example: 'Click any box to inspect examples & failure modes, or press Left/Right arrows to step through a flow.',
+      whatIf: 'Pause Live Sync in the sidebar -> incoming agent updates buffer safely in tab memory until you resume.',
+      files: ['web/components/PreviewCanvas.tsx', 'web/services/mermaidRenderer.ts'],
+    },
+    VFS: {
+      label: 'Browser localStorage VFS',
+      summary:
+        'Persists all project trees, `.mmd` files, and interactive guides on your device under `mfhmfa-workspace-v4`.',
+      example: 'Rapid retries within 90s merge into 1 clean version; each graph keeps an immutable 5-version ring buffer.',
+      whatIf: 'Clear browser site data -> local diagrams are wiped unless exported or shared via a compressed `#z=` permalink.',
+      files: ['web/services/workspaceStorage.ts'],
+    },
+  },
+};
 
 export const NEW_TAB_STARTER = `flowchart LR
   Start(["Start"]) --> Step["Process"] --> Done(["Done"])`;
@@ -53,6 +125,7 @@ export const NEW_TAB_STARTER = `flowchart LR
 export interface GraphVersionRecord {
   version: number;
   code: string;
+  guide?: DiagramComprehensionGuide;
   authorSlug: string;
   authorLabel: string;
   authorBadge: string;
@@ -236,6 +309,7 @@ function createDefaultScratchpadProject(
       {
         version: 1,
         code: legacyCode || WELCOME_CODE,
+        ...(!legacyCode ? { guide: WELCOME_GUIDE } : {}),
         authorSlug: 'user',
         authorLabel: 'You',
         authorBadge: 'you',
@@ -372,7 +446,18 @@ export function initializeWorkspaceStorage(): WorkspaceState {
                       f.currentVersion ||
                       f.versions[f.versions.length - 1]!.version ||
                       1,
-                    versions: f.versions.slice(-MAX_GRAPH_VERSIONS),
+                    versions: f.versions.slice(-MAX_GRAPH_VERSIONS).map((v) => {
+                      let safeGuide: DiagramComprehensionGuide | undefined;
+                      try {
+                        safeGuide = sanitizeComprehensionGuide(v.guide);
+                      } catch {
+                        safeGuide = undefined;
+                      }
+                      return {
+                        ...v,
+                        ...(safeGuide ? { guide: safeGuide } : { guide: undefined }),
+                      };
+                    }),
                     zoom: null,
                     pan: { x: 0, y: 0 },
                   }))
@@ -681,6 +766,7 @@ export function upsertGraphInVfs(
     path: string;
     title?: string;
     code: string;
+    guide?: DiagramComprehensionGuide;
     diagramType?: string | null;
     agentSlug: string;
     agentLabel: string;
@@ -691,6 +777,13 @@ export function upsertGraphInVfs(
     now?: number;
   }
 ): { nextState: WorkspaceState; file: VfsGraphFile; projectKey: string } {
+  let incomingGuide: DiagramComprehensionGuide | undefined;
+  try {
+    incomingGuide = sanitizeComprehensionGuide(params.guide);
+  } catch {
+    incomingGuide = undefined;
+  }
+
   const alloc = allocateProjectSpace(state, {
     projectName: params.projectName,
     previousProjectKey: params.previousProjectKey,
@@ -740,22 +833,28 @@ export function upsertGraphInVfs(
       let nextVersionNum = prev.currentVersion;
       let nextVersions = prev.versions;
 
-      if (head.code !== params.code || head.authorSlug !== authorSlug) {
-        const canCoalesceAgentIteration =
-          !prev.isWelcome &&
-          authorSlug !== 'user' &&
-          head.authorSlug === authorSlug &&
-          (!params.agentSessionId ||
-            !head.agentSessionId ||
-            head.agentSessionId === params.agentSessionId) &&
-          now - head.createdAt < AGENT_ITERATION_COALESCE_MS;
+      const canCoalesceAgentIteration =
+        !prev.isWelcome &&
+        authorSlug !== 'user' &&
+        head.authorSlug === authorSlug &&
+        (!params.agentSessionId ||
+          !head.agentSessionId ||
+          head.agentSessionId === params.agentSessionId) &&
+        now - head.createdAt < AGENT_ITERATION_COALESCE_MS;
 
+      const effectiveGuide =
+        incomingGuide ?? (canCoalesceAgentIteration ? head.guide : undefined);
+      const guideChanged =
+        serializeGuideCanonical(head.guide) !== serializeGuideCanonical(effectiveGuide);
+
+      if (head.code !== params.code || head.authorSlug !== authorSlug || guideChanged) {
         if (canCoalesceAgentIteration) {
           nextVersions = [
             ...prev.versions.slice(0, -1),
             {
               ...head,
               code: params.code,
+              ...(effectiveGuide ? { guide: effectiveGuide } : { guide: undefined }),
               authorLabel,
               authorBadge,
               ...(params.agentSessionId
@@ -769,6 +868,7 @@ export function upsertGraphInVfs(
           const newRec: GraphVersionRecord = {
             version: nextVersionNum,
             code: params.code,
+            ...(incomingGuide ? { guide: incomingGuide } : {}),
             authorSlug,
             authorLabel,
             authorBadge,
@@ -807,6 +907,7 @@ export function upsertGraphInVfs(
           {
             version: 1,
             code: params.code,
+            ...(incomingGuide ? { guide: incomingGuide } : {}),
             authorSlug,
             authorLabel,
             authorBadge,
@@ -901,6 +1002,7 @@ export function editGraphByHuman(
         {
           version: nextVersionNum,
           code: nextCode,
+          ...(head.guide ? { guide: head.guide } : {}),
           authorSlug: 'user',
           authorLabel: 'You',
           authorBadge: 'you',
@@ -949,7 +1051,10 @@ export function restoreGraphVersion(
 
     restoredCode = targetRec.code;
     const head = getHeadVersion(file);
-    if (head.code === targetRec.code) {
+    if (
+      head.code === targetRec.code &&
+      serializeGuideCanonical(head.guide) === serializeGuideCanonical(targetRec.guide)
+    ) {
       return p;
     }
 
@@ -959,6 +1064,7 @@ export function restoreGraphVersion(
       {
         version: nextVer,
         code: targetRec.code,
+        ...(targetRec.guide ? { guide: targetRec.guide } : {}),
         authorSlug: 'user',
         authorLabel: 'You',
         authorBadge: 'you',
@@ -1057,6 +1163,8 @@ export function evaluateVfsLs(
     ...sortedFiles.map((f) => {
       const head = getHeadVersion(f);
       const baseName = f.path.split('/').pop() || f.path;
+      const stepCount = head.guide?.steps?.length ?? 0;
+      const nodeNoteCount = head.guide?.nodes ? Object.keys(head.guide.nodes).length : 0;
       return {
         name: baseName,
         path: f.path,
@@ -1065,6 +1173,8 @@ export function evaluateVfsLs(
         currentVersion: f.currentVersion,
         author: head.authorBadge,
         updatedAt: head.createdAt,
+        ...(stepCount > 0 ? { stepCount } : {}),
+        ...(nodeNoteCount > 0 ? { nodeNoteCount } : {}),
       };
     }),
   ];
@@ -1081,8 +1191,10 @@ export function evaluateVfsLs(
       const head = getHeadVersion(f);
       const baseName = f.path.split('/').pop() || f.path;
       const typeNote = f.diagramType ? `${f.diagramType}, ` : '';
+      const stepCount = head.guide?.steps?.length ?? 0;
+      const guideNote = stepCount > 0 ? `, ${stepCount} steps` : '';
       treeLines.push(
-        `${indent}${baseName}  (${typeNote}v${f.currentVersion}, by ${head.authorBadge})`
+        `${indent}${baseName}  (${typeNote}v${f.currentVersion}, by ${head.authorBadge}${guideNote})`
       );
     }
   };
@@ -1139,6 +1251,7 @@ export function evaluateVfsRead(
     requestedVersion: targetRec.version,
     currentVersion: file.currentVersion,
     code: targetRec.code,
+    ...(targetRec.guide ? { guide: targetRec.guide } : {}),
     author: targetRec.authorBadge,
     updatedAt: targetRec.createdAt,
     versions: file.versions.map((v) => ({
@@ -1191,15 +1304,26 @@ export function movePathInProject(
       );
     }
 
-    const existingFile = proj.files[exactFileIdx]!;
-    const renamedFile: VfsGraphFile = {
-      ...existingFile,
-      path: destFilePath,
-      title: graphTitleFromPath(destFilePath),
-    };
+    const rewriteSingleFile = (oldPath: string) =>
+      oldPath === candidateFileFrom ? destFilePath : oldPath;
 
-    const nextFiles = [...proj.files];
-    nextFiles[exactFileIdx] = renamedFile;
+    const nextFiles = proj.files.map((f, idx) => {
+      const base =
+        idx === exactFileIdx
+          ? {
+              ...f,
+              path: destFilePath,
+              title: graphTitleFromPath(destFilePath),
+            }
+          : f;
+      return {
+        ...base,
+        versions: base.versions.map((v) => {
+          const rewritten = rewriteGuidePaths(v.guide, rewriteSingleFile);
+          return rewritten !== v.guide ? { ...v, guide: rewritten } : v;
+        }),
+      };
+    });
 
     const nextProjects = [...state.projects];
     nextProjects[projIdx] = {
@@ -1236,13 +1360,21 @@ export function movePathInProject(
     throw new Error(`ENOENT: Path "${rawFrom}" not found in "${proj.projectLabel}".`);
   }
 
+  const rewriteDirFile = (oldPath: string) =>
+    oldPath.startsWith(fromPrefix)
+      ? `${toDir}/${oldPath.slice(fromPrefix.length)}`
+      : oldPath;
+
   const nextFiles = proj.files.map((f) => {
-    if (!f.path.startsWith(fromPrefix)) return f;
-    const suffix = f.path.slice(fromPrefix.length);
-    const nextPath = `${toDir}/${suffix}`;
+    const movedBase = f.path.startsWith(fromPrefix)
+      ? { ...f, path: `${toDir}/${f.path.slice(fromPrefix.length)}` }
+      : f;
     return {
-      ...f,
-      path: nextPath,
+      ...movedBase,
+      versions: movedBase.versions.map((v) => {
+        const rewritten = rewriteGuidePaths(v.guide, rewriteDirFile);
+        return rewritten !== v.guide ? { ...v, guide: rewritten } : v;
+      }),
     };
   });
 

@@ -17,6 +17,10 @@ import {
   normalizeProjectName,
 } from '../../src/shared/agentIdentity.js';
 import {
+  sanitizeComprehensionGuide,
+  summarizeComprehensionGuide,
+} from '../../src/shared/comprehension.js';
+import {
   buildPermalinkUrl,
   decodePermalinkPayload,
   encodePermalinkPayload,
@@ -375,5 +379,145 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
         'x-forwarded-host': 'mfhmfa.kasun.si',
       })
     ).toBe(false);
+  });
+
+  it('enforces cognitive load diagnostics, sanitizes comprehension guides, and rewrites childPath on mv', async () => {
+    // 1. Dual-Coding dense box warning (> 11 words inside a single box)
+    const denseWarnings = analyzeStaticWarnings(
+      'flowchart TB\n  Overloaded["This single box crams way too many technical explanation words inside one visual shape"] --> B["Clean Box"]'
+    );
+    expect(denseWarnings.some((w) => w.code === 'DENSE_NODE_LABEL')).toBe(true);
+
+    // 2. Working-memory > 8 nodes notice in layout diagnostics
+    const cognitiveNotes = computeLayoutDiagnostics(
+      { width: 1100, height: 950, aspectRatio: 1.16, scale: 2 },
+      { nodeCount: 11, edgeCount: 12, subgraphCount: 2, textLabelCount: 20, sampleLabels: [] },
+      'default',
+      '#ffffff'
+    );
+    expect(cognitiveNotes.some((n) => n.includes('Cognitive load notice'))).toBe(true);
+
+    // 3. Sanitize guide & reject path traversal in childPath / parentPath
+    const cleanGuide = sanitizeComprehensionGuide({
+      gist: '  Server stores 0 diagrams; browser stores everything. ',
+      parentPath: 'architecture/overview',
+      steps: [
+        {
+          title: ' 1. Render preview ',
+          caption: ' Agent validates syntax and inspects PNG. ',
+          focusNodes: ['AI', 'Preview', 'AI'],
+        },
+      ],
+      nodes: {
+        Preview: {
+          summary: ' Draws 2x PNG then deletes buffer. ',
+          example: ' 1 KB code -> 160 KB PNG ',
+          whatIf: ' Worker recycles after 150 renders. ',
+          files: ['src/infrastructure/renderer/chromiumEngine.ts'],
+          childPath: 'architecture/renderer-pool',
+        },
+      },
+    });
+    expect(cleanGuide?.parentPath).toBe('architecture/overview.mmd');
+    expect(cleanGuide?.nodes?.Preview?.childPath).toBe('architecture/renderer-pool.mmd');
+    expect(cleanGuide?.steps?.[0]?.focusNodes).toEqual(['AI', 'Preview']);
+    expect(summarizeComprehensionGuide(cleanGuide)).toEqual({
+      hasGuide: true,
+      hasGist: true,
+      stepCount: 1,
+      documentedNodeCount: 1,
+      drilldownPaths: ['architecture/renderer-pool.mmd'],
+      parentPath: 'architecture/overview.mmd',
+    });
+
+    expect(() =>
+      sanitizeComprehensionGuide({
+        nodes: { Bad: { summary: 'bad', childPath: '../../etc/passwd' } },
+      })
+    ).toThrow(/cannot traverse/i);
+
+    // 4. Round-trip `#z=` permalink with interactive comprehension guide
+    const linkUrl = await buildPermalinkUrl('https://mfhmfa.kasun.si', {
+      title: 'memory-overview',
+      path: 'architecture/overview.mmd',
+      project: 'MFHMFA',
+      code: 'flowchart TB\n  AI["AI"] --> Preview["Preview"]',
+      guide: cleanGuide,
+    });
+    const decoded = await decodePermalinkPayload(extractHashToken(linkUrl)!);
+    expect(decoded.guide).toEqual(cleanGuide);
+
+    // 5. Preserve guide across rapid layout-fix retries & rewrite links on `mv`
+    let state: WorkspaceState = {
+      version: 4,
+      workspaceId: 'ws_guide_unit',
+      sidebarOpen: true,
+      sidebarWidth: 256,
+      openTabIds: [],
+      activeFileId: null,
+      projects: [],
+    };
+
+    const t0 = 1_710_000_000_000;
+    state = upsertGraphInVfs(state, {
+      projectName: 'MFHMFA',
+      path: 'architecture/overview.mmd',
+      code: 'flowchart LR\n  A["Server"] --> B["Browser"]',
+      guide: {
+        gist: 'Zero server storage.',
+        nodes: {
+          A: {
+            summary: 'Stateless pool',
+            childPath: 'architecture/renderer-pool.mmd',
+          },
+        },
+      },
+      agentSlug: 'pi',
+      agentLabel: 'Pi',
+      agentSessionId: 'sess-1',
+      autoOpenTab: true,
+      autoFocus: true,
+      now: t0,
+    }).nextState;
+
+    // Layout tweak 10s later omitting `guide` keeps existing `guide` intact!
+    state = upsertGraphInVfs(state, {
+      projectName: 'MFHMFA',
+      path: 'architecture/overview.mmd',
+      code: 'flowchart TB\n  A["Server"] --> B["Browser"]',
+      agentSlug: 'pi',
+      agentLabel: 'Pi',
+      agentSessionId: 'sess-1',
+      autoOpenTab: true,
+      autoFocus: true,
+      now: t0 + 10_000,
+    }).nextState;
+
+    state = upsertGraphInVfs(state, {
+      projectName: 'MFHMFA',
+      path: 'architecture/renderer-pool.mmd',
+      code: 'flowchart TB\n  Slot["Slot 1..4"]',
+      guide: { parentPath: 'architecture/overview.mmd' },
+      agentSlug: 'pi',
+      agentLabel: 'Pi',
+      agentSessionId: 'sess-1',
+      autoOpenTab: false,
+      autoFocus: false,
+      now: t0 + 12_000,
+    }).nextState;
+
+    // Rename `architecture/renderer-pool.mmd` -> `internals/chromium-pool.mmd`
+    state = movePathInProject(
+      state,
+      'MFHMFA',
+      'architecture/renderer-pool.mmd',
+      'internals/chromium-pool.mmd'
+    ).nextState;
+
+    const overviewAfterMv = evaluateVfsRead(state, 'MFHMFA', 'architecture/overview.mmd');
+    expect(overviewAfterMv.currentVersion).toBe(1);
+    expect(overviewAfterMv.guide?.nodes?.A?.childPath).toBe(
+      'internals/chromium-pool.mmd'
+    );
   });
 });

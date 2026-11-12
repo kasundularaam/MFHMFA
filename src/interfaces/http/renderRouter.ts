@@ -6,9 +6,11 @@ import {
   resolveRequestBaseUrl,
 } from '../../config/env.js';
 import { sanitizeWorkspaceToken } from '../../infrastructure/ephemeral/workspaceRelay.js';
+import { sanitizeComprehensionGuide } from '../../shared/comprehension.js';
 import type {
   AgentSessionInfo,
   CallerSource,
+  DiagramComprehensionGuide,
   DiagramRelayPayload,
   VfsRpcQuery,
   VfsRpcReply,
@@ -53,6 +55,7 @@ export function createRenderRouter(
         code = '',
         path: graphPath,
         title,
+        guide,
         project,
         agent,
         theme,
@@ -80,6 +83,7 @@ export function createRenderRouter(
       const rendered = await service.render(String(code), {
         path: typeof graphPath === 'string' ? graphPath : undefined,
         title,
+        guide: guide as DiagramComprehensionGuide | undefined,
         project: typeof project === 'string' ? project : null,
         agentName: typeof agent === 'string' ? agent : null,
         theme,
@@ -99,6 +103,7 @@ export function createRenderRouter(
         syncedToBrowser: rendered.syncedSubscribers > 0,
         path: rendered.path,
         title: rendered.title,
+        guide: rendered.guide ?? null,
         project: rendered.project,
         agent: rendered.agent,
         valid: rendered.valid,
@@ -153,9 +158,19 @@ export function createRenderRouter(
         res.status(413).json({ error: 'Diagram code missing or exceeds safety limit.' });
         return;
       }
+      let safeGuide: DiagramComprehensionGuide | undefined;
+      try {
+        safeGuide = sanitizeComprehensionGuide(diag.guide);
+      } catch (err: unknown) {
+        res.status(400).json({ error: errorMessage(err) });
+        return;
+      }
       const delivered = service.publishEvent(cleanToken, {
         type: 'diagram',
-        diagram: diag,
+        diagram: {
+          ...diag,
+          ...(safeGuide ? { guide: safeGuide } : { guide: undefined }),
+        },
       });
       res.json({ ok: true, deliveredSubscribers: delivered });
       return;

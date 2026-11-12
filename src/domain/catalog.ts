@@ -430,11 +430,33 @@ gantt
     Engine Setup :done, t1, 2026-05-01, 3d
     MCP Tools    :active, t2, after t1, 4d
 \`\`\``,
+
+  comprehension: `# Human Comprehension Guide (Cognitive Load, Story Mode & Progressive Disclosure)
+
+MFHMFA is a **codebase comprehension tool**, not just a box drawer. Follow these universal cognitive-science rules:
+
+1. **Working Memory Limit (4–7 Nodes per View)**:
+   - Keep each diagram to **4–7 core boxes** with **2–5 plain-English words** per box.
+   - Never cram raw variable names, framework jargon, or 15-word paragraphs inside box labels (Dual Coding Principle).
+   - For larger systems, render a clean overview first, then create focused child \`.mmd\` graphs linked via \`guide.nodes[nodeId].childPath\` (and set \`guide.parentPath\` on each child graph).
+
+2. **Story Mode Stepper (\`guide.steps\`) — Concrete Trace First**:
+   - Humans understand unfamiliar systems by watching **one concrete request/item move step-by-step**, not by staring at a static wall of arrows.
+   - Attach 3–6 ordered \`steps\` (\`{ title, caption, focusNodes: ["NodeA", "NodeB"] }\`). Include a boundary or failure step when helpful.
+
+3. **Clickable Node Inspector (\`guide.nodes\`) — Mechanics + Counterfactuals**:
+   - Attach \`nodes\` keyed by exact Mermaid node ID:
+     - \`summary\`: 1–2 plain sentences explaining what physically happens here (avoid forced domain analogies).
+     - \`example\`: Concrete input -> output with real sizes, counts, or timings (e.g. \`"1 KB Mermaid text -> 180 KB PNG -> deleted immediately"\`).
+     - \`whatIf\`: Counterfactual boundary test (\`"What breaks or happens if this closes, fills up, or times out?"\`).
+     - \`files\`: Relevant source file paths in the repo.
+     - \`childPath\`: Optional relative \`.mmd\` path for click-to-zoom subsystem drill-down.`,
 };
 
 export function getSyntaxGuide(topic?: string): string {
   if (!topic || topic === 'all' || topic === 'all-pitfalls') {
     return [
+      SYNTAX_GUIDES.comprehension,
       SYNTAX_GUIDES.pitfalls,
       SYNTAX_GUIDES.flowchart,
       SYNTAX_GUIDES.sequence,

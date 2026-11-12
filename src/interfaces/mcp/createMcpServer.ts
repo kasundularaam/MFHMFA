@@ -47,12 +47,14 @@ export function createMermaidMcpServer(
     },
     {
       instructions: [
-        'MFHMFA (Mermaid For Humans, Mermaid For Agents) provides a project-scoped Virtual Diagram Filesystem (VFS) stored 100% in the user\'s browser localStorage (0 server storage) plus a headless 2x Retina PNG validation/rendering engine.',
-        'Follow this workflow:',
+        'MFHMFA (Mermaid For Humans, Mermaid For Agents) is a zero-server-storage Codebase Comprehension Studio & Virtual Diagram Filesystem (VFS) stored 100% in the user\'s browser localStorage plus a headless 2x Retina PNG validation/rendering engine.',
+        'Follow these Comprehension & VFS rules:',
         '1. Call `mermaid_ls` to inspect existing folders and `.mmd` graphs in this project (and `mermaid_read` before updating an existing graph).',
-        '2. Call `mermaid_render` with a clean relative `path` (e.g. `"architecture/system-overview.mmd"`, `"auth/oauth-flow.mmd"`). Visually inspect the returned 2x Retina PNG (`image/png`) and `layoutDiagnostics`, and re-render the same `path` until the diagram is accurate, legible, and free of overlaps (rapid iterative renders by the same agent coalesce automatically into a single clean revision).',
-        '3. Check `syncedToBrowser` in the `mermaid_render` result: if `syncStatus` is `"browser_tab_closed"` or `"workspace_not_paired"`, ask the user to open MFHMFA Studio in their browser (or pair `?workspace=ws_...`) so you can push the finalized diagram live.',
-        '4. STRICT RESPONSE RULE: Never output raw ```mermaid``` code blocks or any URLs/links in terminal/chat unless the user explicitly asks for raw code. Once visually verified and synced, simply tell the user their graphs are ready on MFHMFA (mentioning the graph title/path and a brief summary if helpful).',
+        '2. DESIGN FOR HUMAN WORKING MEMORY (4–7 Boxes per View): Keep each `.mmd` graph to ~4–7 core boxes with concise 2–5 word plain-English labels (never cram raw code identifiers, unexplained buzzwords, or forced metaphors inside boxes). For deeper subsystems, render clean child `.mmd` files and link them via `guide.nodes[nodeId].childPath` (setting `guide.parentPath` on child graphs).',
+        '3. ATTACH INTERACTIVE COMPREHENSION LAYERS (`guide` on `mermaid_render`): When explaining systems or flows, populate `guide.gist` (1-sentence takeaway), `guide.steps` (3–6 ordered Story Mode frames tracing one concrete request/item step-by-step via `focusNodes`), and `guide.nodes` (clickable inspector cards with plain `summary`, concrete `example` with real sizes/timings, `whatIf` failure/boundary behavior, `files`, and optional `childPath`).',
+        '4. Visually inspect the returned 2x Retina PNG (`image/png`) and `layoutDiagnostics`, re-rendering the same `path` until accurate, legible, and overlap-free (rapid retries by the same agent coalesce automatically into a single clean revision).',
+        '5. Check `syncedToBrowser` in `mermaid_render`: if `syncStatus` is `"browser_tab_closed"` or `"workspace_not_paired"`, ask the user to open MFHMFA Studio in their browser (or pair `?workspace=ws_...`) so you can push the finalized diagram live.',
+        '6. STRICT RESPONSE RULE: Never output raw ```mermaid``` code blocks or any URLs/links in terminal/chat unless the user explicitly asks for raw code. Once visually verified and synced, concisely tell the user their interactive graphs are ready on MFHMFA (mentioning they can step through Story Mode or click boxes to inspect/zoom in).',
         'If validation fails, check `error.line`, `error.snippet`, and `error.suggestion` (wrap labels containing (), [], or {} in double quotes ["..."], and avoid lowercase `end` as a node ID).',
       ].join(' '),
     }
@@ -271,7 +273,7 @@ export function createMermaidMcpServer(
               '',
               'Follow this project-scoped VFS workflow:',
               '1. Call `mermaid_ls` to see existing folders and `.mmd` graphs in this project (and `mermaid_read` if updating an existing graph).',
-              '2. Call `mermaid_render` with a descriptive relative `path` (e.g. `"architecture/overview.mmd"`) and double-quoted node labels (`Node["Label (detail)"]`).',
+              '2. Keep each view to ~4–7 concise boxes (2–5 plain words per box) and pass `guide: { gist, steps, nodes }` on `mermaid_render` so the user can step through Story Mode, click boxes for concrete examples & "what-if" edge cases, and drill down via `childPath` into child `.mmd` files.',
               '3. Visually inspect the returned 2x Retina PNG image and `layoutDiagnostics`, re-running `mermaid_render` at the same `path` until layout and legibility are clean (rapid retries coalesce automatically into one clean revision).',
               '4. Do NOT output raw ```mermaid``` code blocks or any URLs in chat — once `syncedToBrowser` is true, simply inform the user their graphs are ready on MFHMFA.',
             ].join('\n'),

@@ -97,6 +97,18 @@ export function App() {
                   }
                   onExitHistoricalVersion={() => ctrl.handleSelectVersion(null)}
                   parseError={ctrl.parseError}
+                  guide={ctrl.activeGuide}
+                  activeStepIndex={ctrl.activeStepIndex}
+                  onChangeStepIndex={ctrl.setActiveStepIndex}
+                  selectedNodeId={ctrl.selectedNodeId}
+                  onSelectNode={ctrl.setSelectedNodeId}
+                  parentGraphTitle={ctrl.parentGraphFile?.title ?? null}
+                  onDrillBack={ctrl.handleDrillBack}
+                  onDrillToPath={ctrl.handleDrillToPath}
+                  onCopyFilePath={(fp) => {
+                    navigator.clipboard.writeText(fp);
+                    ctrl.notifyToast(`Copied ${fp}`);
+                  }}
                   zoom={ctrl.zoom}
                   pan={ctrl.pan}
                   onChangeZoom={ctrl.setZoom}

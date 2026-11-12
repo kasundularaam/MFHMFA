@@ -34,6 +34,38 @@ export interface DiagramDimensions {
   scale: number;
 }
 
+/**
+ * Progressive-disclosure inspector card attached to a Mermaid node ID
+ * (Dual Coding + Counterfactual Reasoning + Sub-Graph Zoom).
+ */
+export interface DiagramNodeDetail {
+  label?: string;
+  summary: string;
+  example?: string;
+  whatIf?: string;
+  files?: string[];
+  childPath?: string;
+}
+
+/**
+ * User-paced Story Stepper frame (Mayer's Segmenting & Signaling Principles).
+ */
+export interface DiagramWalkthroughStep {
+  title: string;
+  caption: string;
+  focusNodes: string[];
+}
+
+/**
+ * Optional comprehension layer persisted alongside a `.mmd` revision in browser localStorage.
+ */
+export interface DiagramComprehensionGuide {
+  gist?: string;
+  steps?: DiagramWalkthroughStep[];
+  nodes?: Record<string, DiagramNodeDetail>;
+  parentPath?: string;
+}
+
 export interface ValidationResult {
   valid: boolean;
   diagramType: string | null;
@@ -102,6 +134,7 @@ export interface DiagramRelayPayload {
   path: string;
   title: string;
   code: string;
+  guide?: DiagramComprehensionGuide;
   diagramType: string | null;
   theme: MermaidTheme;
   look: MermaidLook;
@@ -121,6 +154,8 @@ export interface VfsLsEntry {
   currentVersion?: number;
   author?: string;
   updatedAt?: number;
+  stepCount?: number;
+  nodeNoteCount?: number;
 }
 
 export interface VfsLsResult {
@@ -145,6 +180,7 @@ export interface VfsReadResult {
   requestedVersion: number;
   currentVersion: number;
   code: string;
+  guide?: DiagramComprehensionGuide;
   author: string;
   updatedAt: number;
   versions: VfsRevisionSummary[];

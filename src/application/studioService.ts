@@ -16,10 +16,12 @@ import {
   normalizeAgentIdentity,
   normalizeProjectName,
 } from '../shared/agentIdentity.js';
+import { sanitizeComprehensionGuide } from '../shared/comprehension.js';
 import { buildPermalinkUrl } from '../shared/permalink.js';
 import type {
   AgentSessionInfo,
   CallerSource,
+  DiagramComprehensionGuide,
   DiagramRelayPayload,
   MermaidLook,
   MermaidTemplate,
@@ -50,6 +52,7 @@ export type VfsRpcBridgeFn = (
 export interface StatelessRenderInput extends RenderOptions {
   path?: string;
   title?: string;
+  guide?: DiagramComprehensionGuide;
   project?: string | null;
   agentName?: string | null;
   agentSessionId?: string | null;
@@ -65,6 +68,7 @@ export interface StatelessRenderResult extends RenderedDiagram {
   renderId: string;
   path: string;
   title: string;
+  guide?: DiagramComprehensionGuide;
   project: string;
   agent: string;
   outputPath: string | null;
@@ -212,10 +216,11 @@ export class StudioService {
   }
 
   async render(code: string, options: StatelessRenderInput = {}): Promise<StatelessRenderResult> {
-    // Validate relative path early so traversal errors surface cleanly before rendering
+    // Validate relative paths early so traversal errors surface cleanly before rendering
     const explicitRelPath = options.path?.trim()
       ? normalizeRelativeGraphPath(options.path)
       : null;
+    const cleanGuide = sanitizeComprehensionGuide(options.guide);
 
     const res = await this.engine.render(code, options);
     const hash = crypto
@@ -256,6 +261,7 @@ export class StudioService {
         path: relPath,
         title,
         code,
+        ...(cleanGuide ? { guide: cleanGuide } : {}),
         diagramType: res.diagramType,
         theme: res.theme,
         look: res.look,
@@ -291,6 +297,7 @@ export class StudioService {
           path: relPath,
           project,
           agent: agent.label,
+          ...(cleanGuide ? { guide: cleanGuide } : {}),
         });
       }
     }
@@ -300,6 +307,7 @@ export class StudioService {
       renderId,
       path: relPath,
       title,
+      ...(cleanGuide ? { guide: cleanGuide } : {}),
       project,
       agent: agent.label,
       outputPath: savedOutputPath,
