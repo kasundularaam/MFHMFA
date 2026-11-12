@@ -175,12 +175,20 @@ export interface StorageAllocationStats {
   versionCount: number;
 }
 
+export interface ExplorerFileTreeNode {
+  file: VfsGraphFile;
+  children: ExplorerFileTreeNode[];
+  isRootOverview: boolean;
+  parentFileId: string | null;
+}
+
 export interface ExplorerFolderNode {
   kind: 'folder';
   name: string;
   path: string;
   folders: ExplorerFolderNode[];
   files: VfsGraphFile[];
+  fileTree: ExplorerFileTreeNode[];
 }
 
 interface PersistedGraphFileV4 {
@@ -932,22 +940,105 @@ export function upsertGraphInVfs(
     };
   });
 
+  const updatedProj = projects.find((p) => p.projectKey === projectKey);
+  const hierarchy = updatedProj ? resolveProjectGraphHierarchy(updatedProj) : null;
+
+  const rootFile =
+    (hierarchy && hierarchy.getRootForFile(targetFile.id)) || targetFile;
+  const hasParentInProject = rootFile.id !== targetFile.id;
+  const declaredPendingParent = Boolean(
+    !hasParentInProject && getHeadVersion(targetFile).guide?.parentPath
+  );
+
+  // Collect all descendant IDs if `targetFile` is a parent overview (so children rendered earlier fold cleanly under it)
+  const descendantIds = new Set<string>();
+  if (hierarchy) {
+    const stack = [...(hierarchy.childrenByFileId.get(targetFile.id) ?? [])];
+    while (stack.length > 0) {
+      const child = stack.pop()!;
+      if (descendantIds.has(child.id)) continue;
+      descendantIds.add(child.id);
+      for (const grand of hierarchy.childrenByFileId.get(child.id) ?? []) {
+        stack.push(grand);
+      }
+    }
+  }
+
+  // Clear unread dot on silent child sub-graphs when their parent already exists
+  if (authorSlug !== 'user' && (hasParentInProject || declaredPendingParent)) {
+    projects = projects.map((proj) => {
+      if (proj.projectKey !== projectKey) return proj;
+      return {
+        ...proj,
+        files: proj.files.map((f) =>
+          f.id === targetFile.id ? { ...f, unread: false } : f
+        ),
+      };
+    });
+  }
+
   let openTabIds = alloc.nextState.openTabIds.filter(
     (id) => !removedWelcomeIds.includes(id)
   );
-  if (
-    (params.autoOpenTab || openTabIds.includes(targetFile.id)) &&
-    !openTabIds.includes(targetFile.id)
-  ) {
-    openTabIds = [...openTabIds, targetFile.id];
-  }
+  const priorActiveId =
+    alloc.nextState.activeFileId &&
+    !removedWelcomeIds.includes(alloc.nextState.activeFileId)
+      ? alloc.nextState.activeFileId
+      : null;
 
-  const nextActiveFileId =
-    params.autoFocus ||
-    !alloc.nextState.activeFileId ||
-    removedWelcomeIds.includes(alloc.nextState.activeFileId)
-      ? targetFile.id
-      : alloc.nextState.activeFileId;
+  let nextActiveFileId = priorActiveId;
+
+  if (authorSlug === 'user') {
+    if (
+      (params.autoOpenTab || openTabIds.includes(targetFile.id)) &&
+      !openTabIds.includes(targetFile.id)
+    ) {
+      openTabIds = [...openTabIds, targetFile.id];
+    }
+    if (params.autoFocus || !nextActiveFileId) {
+      nextActiveFileId = targetFile.id;
+    }
+  } else if (hasParentInProject) {
+    // Incoming agent diagram is a child of an existing parent overview:
+    // keep the root parent open & focused instead of spamming tabs or stealing focus!
+    if (params.autoOpenTab && !openTabIds.includes(rootFile.id)) {
+      openTabIds = [...openTabIds, rootFile.id];
+    }
+    if (params.autoFocus || !nextActiveFileId) {
+      nextActiveFileId = rootFile.id;
+    }
+  } else if (descendantIds.size > 0) {
+    // Incoming agent diagram is a parent overview whose children arrived earlier:
+    // fold auto-opened child tabs under this parent and promote focus to the parent!
+    openTabIds = openTabIds.filter((id) => !descendantIds.has(id));
+    if (
+      (params.autoOpenTab || openTabIds.includes(targetFile.id) || openTabIds.length === 0) &&
+      !openTabIds.includes(targetFile.id)
+    ) {
+      openTabIds = [...openTabIds, targetFile.id];
+    }
+    if (
+      params.autoFocus ||
+      !nextActiveFileId ||
+      descendantIds.has(nextActiveFileId)
+    ) {
+      nextActiveFileId = targetFile.id;
+    }
+  } else if (declaredPendingParent && priorActiveId) {
+    // Child sub-graph arrived before its parent while another graph is already open:
+    // store quietly in VFS until its parent arrives or the user clicks it.
+    nextActiveFileId = priorActiveId;
+  } else {
+    if (
+      (params.autoOpenTab || openTabIds.includes(targetFile.id)) &&
+      !openTabIds.includes(targetFile.id)
+    ) {
+      openTabIds = [...openTabIds, targetFile.id];
+    }
+    if (params.autoFocus || !nextActiveFileId) {
+      nextActiveFileId = targetFile.id;
+    }
+  }
 
   const nextState = normalizeWorkspaceConsistency({
     ...alloc.nextState,
@@ -1179,23 +1270,35 @@ export function evaluateVfsLs(
     }),
   ];
 
-  // Build concise full subtree ASCII overview for LLM context
+  // Build concise full subtree ASCII overview for LLM context (showing parent -> child hierarchy)
   const treeLines: string[] = [`${proj.projectLabel}/${dirPath ? `${dirPath}/` : ''}`];
   const subtreeRoot = buildExplorerSubtree(proj, dirPath);
+  const renderFileNodeLine = (
+    fNode: ExplorerFileTreeNode,
+    indent: string,
+    isNestedChild: boolean
+  ) => {
+    const f = fNode.file;
+    const head = getHeadVersion(f);
+    const baseName = f.path.split('/').pop() || f.path;
+    const typeNote = f.diagramType ? `${f.diagramType}, ` : '';
+    const stepCount = head.guide?.steps?.length ?? 0;
+    const guideNote = stepCount > 0 ? `, ${stepCount} steps` : '';
+    const prefixGlyph = isNestedChild ? '↳ ' : '';
+    treeLines.push(
+      `${indent}${prefixGlyph}${baseName}  (${typeNote}v${f.currentVersion}, by ${head.authorBadge}${guideNote})`
+    );
+    for (const child of fNode.children) {
+      renderFileNodeLine(child, `${indent}  `, true);
+    }
+  };
   const renderNode = (node: ExplorerFolderNode, indent: string) => {
     for (const sub of node.folders) {
       treeLines.push(`${indent}${sub.name}/`);
       renderNode(sub, `${indent}  `);
     }
-    for (const f of node.files) {
-      const head = getHeadVersion(f);
-      const baseName = f.path.split('/').pop() || f.path;
-      const typeNote = f.diagramType ? `${f.diagramType}, ` : '';
-      const stepCount = head.guide?.steps?.length ?? 0;
-      const guideNote = stepCount > 0 ? `, ${stepCount} steps` : '';
-      treeLines.push(
-        `${indent}${baseName}  (${typeNote}v${f.currentVersion}, by ${head.authorBadge}${guideNote})`
-      );
+    for (const fNode of node.fileTree) {
+      renderFileNodeLine(fNode, indent, false);
     }
   };
   renderNode(subtreeRoot, '  ');
@@ -1409,19 +1512,254 @@ export function movePathInProject(
 }
 
 // ============================================================================
-// Explorer Tree Builder (Folders sorted first, then Files alphabetically)
+// Parent -> Child Diagram Hierarchy & Explorer Tree Builder
 // ============================================================================
+
+export interface ParentComponentBranch {
+  nodeId: string;
+  componentLabel: string;
+  childFile: VfsGraphFile;
+}
+
+export interface GraphBreadcrumbHop {
+  parentFile: VfsGraphFile;
+  viaNodeId: string | null;
+  viaComponentLabel: string | null;
+  siblingBranches: ParentComponentBranch[];
+  childFile: VfsGraphFile;
+}
+
+export interface ProjectGraphHierarchy {
+  parentByFileId: Map<string, VfsGraphFile>;
+  childrenByFileId: Map<string, VfsGraphFile[]>;
+  getAncestors: (fileId: string) => VfsGraphFile[];
+  getBreadcrumbHops: (fileId: string) => GraphBreadcrumbHop[];
+  getRootForFile: (fileId: string) => VfsGraphFile | null;
+}
+
+export function extractNodeLabelFromMermaid(code: string, nodeId: string): string {
+  const escaped = nodeId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // 1. Quoted shapes: Node["Label"], Node(["Label"]), Node[("Label")], Node[["Label"]], Node{{"Label"}}, Node("Label"), Node{"Label"}
+  const quotedRe = new RegExp(
+    `(?:^|[^A-Za-z0-9_-])${escaped}\\s*(?:\\[\\["|\\(\\["|\\[\\("|\\{\\{"|\\(\\("|\\["|\\("|\\{")([^"]+)"`,
+    'm'
+  );
+  const qMatch = code.match(quotedRe);
+  if (qMatch?.[1]) {
+    const firstLine = qMatch[1]
+      .split(/<br\s*\/?>/i)[0]!
+      .replace(/#quot;/g, '"')
+      .trim();
+    if (firstLine) return firstLine;
+  }
+
+  // 2. Subgraph header: subgraph Node["Label"]
+  const subRe = new RegExp(`\\bsubgraph\\s+${escaped}\\s*\\["?([^"\\]]+)"?\\]`, 'm');
+  const sMatch = code.match(subRe);
+  if (sMatch?.[1]?.trim()) {
+    return sMatch[1].trim();
+  }
+
+  // 3. Sequence participant/actor alias: participant Node as Label
+  const partRe = new RegExp(
+    `\\b(?:participant|actor)\\s+${escaped}\\s+as\\s+([^\\r\\n]+)`,
+    'm'
+  );
+  const pMatch = code.match(partRe);
+  if (pMatch?.[1]?.trim()) {
+    return pMatch[1].trim().replace(/^["']|["']$/g, '');
+  }
+
+  // 4. State alias: state "Label" as Node
+  const stateRe = new RegExp(`\\bstate\\s+"([^"]+)"\\s+as\\s+${escaped}\\b`, 'm');
+  const stMatch = code.match(stateRe);
+  if (stMatch?.[1]?.trim()) {
+    return stMatch[1].trim();
+  }
+
+  // 5. Unquoted simple bracket: Node[Label]
+  const plainRe = new RegExp(`(?:^|[^A-Za-z0-9_-])${escaped}\\s*\\[([^\\]"]+)\\]`, 'm');
+  const plMatch = code.match(plainRe);
+  if (plMatch?.[1]?.trim()) {
+    return plMatch[1].split(/<br\s*\/?>/i)[0]!.trim();
+  }
+
+  return nodeId;
+}
+
+export function resolveProjectGraphHierarchy(
+  project: VfsProjectRoot
+): ProjectGraphHierarchy {
+  const byId = new Map<string, VfsGraphFile>();
+  const byPath = new Map<string, VfsGraphFile>();
+  for (const f of project.files) {
+    byId.set(f.id, f);
+    byPath.set(f.path, f);
+  }
+
+  const parentByFileId = new Map<string, VfsGraphFile>();
+  const childOrderHint = new Map<string, number>();
+  const branchesByParentId = new Map<string, ParentComponentBranch[]>();
+  const linkViaByChildId = new Map<
+    string,
+    { nodeId: string; componentLabel: string }
+  >();
+
+  const createsCycle = (parentId: string, childId: string): boolean => {
+    let cur: string | undefined = parentId;
+    const seen = new Set<string>();
+    while (cur) {
+      if (cur === childId) return true;
+      if (seen.has(cur)) return true;
+      seen.add(cur);
+      cur = parentByFileId.get(cur)?.id;
+    }
+    return false;
+  };
+
+  // Pass 1: Parent `guide.nodes[*].childPath` links (preserves top-to-bottom visual box order + component labels)
+  for (const parentFile of project.files) {
+    const head = getHeadVersion(parentFile);
+    const guide = head.guide;
+    if (!guide?.nodes) continue;
+    let idx = 0;
+    const branches: ParentComponentBranch[] = [];
+
+    for (const [nodeId, detail] of Object.entries(guide.nodes)) {
+      if (!detail.childPath) continue;
+      let normChild: string;
+      try {
+        normChild = normalizeRelativeGraphPath(detail.childPath);
+      } catch {
+        continue;
+      }
+      const childFile = byPath.get(normChild);
+      if (!childFile || childFile.id === parentFile.id) continue;
+
+      const componentLabel =
+        detail.label?.trim() || extractNodeLabelFromMermaid(head.code, nodeId);
+
+      branches.push({
+        nodeId,
+        componentLabel,
+        childFile,
+      });
+
+      if (!parentByFileId.has(childFile.id) && !createsCycle(parentFile.id, childFile.id)) {
+        parentByFileId.set(childFile.id, parentFile);
+        childOrderHint.set(`${parentFile.id}::${childFile.id}`, idx++);
+        linkViaByChildId.set(childFile.id, { nodeId, componentLabel });
+      }
+    }
+
+    if (branches.length > 0) {
+      branchesByParentId.set(parentFile.id, branches);
+    }
+  }
+
+  // Pass 2: Child `guide.parentPath` links (works even if parent has not listed childPath yet)
+  for (const childFile of project.files) {
+    if (parentByFileId.has(childFile.id)) continue;
+    const rawParent = getHeadVersion(childFile).guide?.parentPath;
+    if (!rawParent) continue;
+    let normParent: string;
+    try {
+      normParent = normalizeRelativeGraphPath(rawParent);
+    } catch {
+      continue;
+    }
+    const parentFile = byPath.get(normParent);
+    if (!parentFile || parentFile.id === childFile.id) continue;
+    if (!createsCycle(parentFile.id, childFile.id)) {
+      parentByFileId.set(childFile.id, parentFile);
+    }
+  }
+
+  const childrenByFileId = new Map<string, VfsGraphFile[]>();
+  for (const [childId, parentFile] of parentByFileId.entries()) {
+    const childFile = byId.get(childId);
+    if (!childFile) continue;
+    const list = childrenByFileId.get(parentFile.id) ?? [];
+    list.push(childFile);
+    childrenByFileId.set(parentFile.id, list);
+  }
+
+  for (const [parentId, list] of childrenByFileId.entries()) {
+    list.sort((a, b) => {
+      const oa = childOrderHint.get(`${parentId}::${a.id}`) ?? 9999;
+      const ob = childOrderHint.get(`${parentId}::${b.id}`) ?? 9999;
+      if (oa !== ob) return oa - ob;
+      const aName = a.path.split('/').pop() || a.path;
+      const bName = b.path.split('/').pop() || b.path;
+      return aName.localeCompare(bName);
+    });
+  }
+
+  const getAncestors = (fileId: string): VfsGraphFile[] => {
+    const chain: VfsGraphFile[] = [];
+    const seen = new Set<string>([fileId]);
+    let cur = parentByFileId.get(fileId);
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      chain.unshift(cur);
+      cur = parentByFileId.get(cur.id);
+    }
+    return chain;
+  };
+
+  const getBreadcrumbHops = (fileId: string): GraphBreadcrumbHop[] => {
+    const ancestors = getAncestors(fileId);
+    const self = byId.get(fileId);
+    if (!self || ancestors.length === 0) return [];
+
+    const fullPath = [...ancestors, self];
+    const hops: GraphBreadcrumbHop[] = [];
+    for (let i = 0; i < fullPath.length - 1; i++) {
+      const pFile = fullPath[i]!;
+      const cFile = fullPath[i + 1]!;
+      const via = linkViaByChildId.get(cFile.id) ?? null;
+      const siblingBranches = branchesByParentId.get(pFile.id) ?? [];
+      hops.push({
+        parentFile: pFile,
+        viaNodeId: via?.nodeId ?? null,
+        viaComponentLabel: via?.componentLabel ?? null,
+        siblingBranches,
+        childFile: cFile,
+      });
+    }
+    return hops;
+  };
+
+  const getRootForFile = (fileId: string): VfsGraphFile | null => {
+    const self = byId.get(fileId);
+    if (!self) return null;
+    const ancestors = getAncestors(fileId);
+    return ancestors[0] ?? self;
+  };
+
+  return {
+    parentByFileId,
+    childrenByFileId,
+    getAncestors,
+    getBreadcrumbHops,
+    getRootForFile,
+  };
+}
 
 export function buildExplorerSubtree(
   project: VfsProjectRoot,
   baseDir = ''
 ): ExplorerFolderNode {
+  const hierarchy = resolveProjectGraphHierarchy(project);
+
   const root: ExplorerFolderNode = {
     kind: 'folder',
     name: baseDir.split('/').pop() || project.projectLabel,
     path: baseDir,
     folders: [],
     files: [],
+    fileTree: [],
   };
 
   const folderMap = new Map<string, ExplorerFolderNode>();
@@ -1452,6 +1790,7 @@ export function buildExplorerSubtree(
           path: currentPath,
           folders: [],
           files: [],
+          fileTree: [],
         };
         folderMap.set(currentPath, node);
         parentNode.folders.push(node);
@@ -1470,11 +1809,41 @@ export function buildExplorerSubtree(
     }
   }
 
+  const buildFileTreeNode = (
+    file: VfsGraphFile,
+    seen = new Set<string>()
+  ): ExplorerFileTreeNode => {
+    const nextSeen = new Set(seen);
+    nextSeen.add(file.id);
+    const rawChildren = hierarchy.childrenByFileId.get(file.id) ?? [];
+    const childNodes = rawChildren
+      .filter((c) => !nextSeen.has(c.id))
+      .map((c) => buildFileTreeNode(c, nextSeen));
+    const parent = hierarchy.parentByFileId.get(file.id) ?? null;
+
+    return {
+      file,
+      children: childNodes,
+      isRootOverview: parent === null && childNodes.length > 0,
+      parentFileId: parent?.id ?? null,
+    };
+  };
+
   for (const file of project.files) {
     if (baseDir && !file.path.startsWith(prefix)) continue;
+
+    const parentGraph = hierarchy.parentByFileId.get(file.id);
+    // If this file's parent graph is also inside the current subtree, nest it under the parent graph!
+    const parentInSubtree =
+      parentGraph && (!baseDir || parentGraph.path.startsWith(prefix));
+    if (parentInSubtree) {
+      continue;
+    }
+
     const parentDir = parentDirOfPath(file.path);
     const folderNode = ensureFolderChain(parentDir);
     folderNode.files.push(file);
+    folderNode.fileTree.push(buildFileTreeNode(file));
   }
 
   const sortRecursive = (node: ExplorerFolderNode) => {
@@ -1482,6 +1851,15 @@ export function buildExplorerSubtree(
     node.files.sort((a, b) => {
       const aName = a.path.split('/').pop() || a.path;
       const bName = b.path.split('/').pop() || b.path;
+      return aName.localeCompare(bName);
+    });
+    // Sort parent overview graphs (with sub-graphs) ABOVE standalone files so the entry point is always #1!
+    node.fileTree.sort((a, b) => {
+      const aHasChildren = a.children.length > 0 ? 0 : 1;
+      const bHasChildren = b.children.length > 0 ? 0 : 1;
+      if (aHasChildren !== bHasChildren) return aHasChildren - bHasChildren;
+      const aName = a.file.path.split('/').pop() || a.file.path;
+      const bName = b.file.path.split('/').pop() || b.file.path;
       return aName.localeCompare(bName);
     });
     for (const sub of node.folders) {

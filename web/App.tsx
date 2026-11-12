@@ -88,6 +88,7 @@ export function App() {
                 <PreviewCanvas
                   viewportRef={ctrl.viewportRef}
                   chartKey={ctrl.chartKey}
+                  activeGraphTitle={ctrl.title}
                   renderedSvg={ctrl.renderedSvg}
                   hasActiveFile={Boolean(ctrl.activeFile)}
                   historicalVersion={
@@ -102,8 +103,10 @@ export function App() {
                   onChangeStepIndex={ctrl.setActiveStepIndex}
                   selectedNodeId={ctrl.selectedNodeId}
                   onSelectNode={ctrl.setSelectedNodeId}
-                  parentGraphTitle={ctrl.parentGraphFile?.title ?? null}
-                  onDrillBack={ctrl.handleDrillBack}
+                  breadcrumbHops={ctrl.breadcrumbHops}
+                  transitionKind={ctrl.transitionKind}
+                  onJumpToAncestor={ctrl.handleJumpToAncestor}
+                  onOpenGraphById={ctrl.handleOpenFile}
                   onDrillToPath={ctrl.handleDrillToPath}
                   onCopyFilePath={(fp) => {
                     navigator.clipboard.writeText(fp);

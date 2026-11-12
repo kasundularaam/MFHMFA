@@ -36,9 +36,12 @@ import {
   normalizeRelativeGraphPath,
 } from '../../src/shared/vfsPath.js';
 import {
+  buildExplorerSubtree,
   evaluateVfsLs,
   evaluateVfsRead,
+  findFileWithProject,
   movePathInProject,
+  resolveProjectGraphHierarchy,
   restoreGraphVersion,
   upsertGraphInVfs,
   type WorkspaceState,
@@ -519,5 +522,107 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
     expect(overviewAfterMv.guide?.nodes?.A?.childPath).toBe(
       'internals/chromium-pool.mmd'
     );
+  });
+
+  it('nests sub-graphs under their parent in Explorer and keeps parent focused regardless of agent render order', () => {
+    const items = {
+      parent: {
+        path: 'memory/how-memory-works.mmd',
+        title: 'How Memory Works',
+        code: 'flowchart TB\n  Server["Server"] --> Browser["Browser"]',
+        guide: {
+          gist: 'Main overview.',
+          nodes: {
+            Server: { summary: 'Stateless workers', childPath: 'memory/server-workers.mmd' },
+            Browser: { summary: 'Local storage', childPath: 'memory/browser-storage.mmd' },
+          },
+        },
+      },
+      childA: {
+        path: 'memory/browser-storage.mmd',
+        title: 'Browser Storage',
+        code: 'flowchart TB\n  Ring["5-Version Ring"]',
+        guide: { parentPath: 'memory/how-memory-works.mmd' },
+      },
+      childB: {
+        path: 'memory/server-workers.mmd',
+        title: 'Server Workers',
+        code: 'flowchart TB\n  Slot["Chromium Slot"]',
+        guide: { parentPath: 'memory/how-memory-works.mmd' },
+      },
+    } as const;
+
+    // Test ALL 6 possible agent render orders!
+    const permutations = [
+      ['parent', 'childA', 'childB'],
+      ['parent', 'childB', 'childA'],
+      ['childA', 'parent', 'childB'],
+      ['childB', 'parent', 'childA'],
+      ['childA', 'childB', 'parent'],
+      ['childB', 'childA', 'parent'],
+    ] as const;
+
+    for (const order of permutations) {
+      let ws: WorkspaceState = {
+        version: 4,
+        workspaceId: 'ws_order_test',
+        sidebarOpen: true,
+        sidebarWidth: 256,
+        openTabIds: [],
+        activeFileId: null,
+        projects: [],
+      };
+
+      order.forEach((key, i) => {
+        const spec = items[key];
+        ws = upsertGraphInVfs(ws, {
+          projectName: 'MFHMFA',
+          path: spec.path,
+          title: spec.title,
+          code: spec.code,
+          guide: spec.guide,
+          agentSlug: 'pi',
+          agentLabel: 'Pi',
+          agentSessionId: 'sess-order',
+          autoOpenTab: true,
+          autoFocus: true,
+          now: 1_720_000_000_000 + i * 1_000,
+        }).nextState;
+      });
+
+      // 1. Regardless of render order, ONLY the parent tab is open & focused!
+      const active = findFileWithProject(ws, ws.activeFileId);
+      expect(active?.file.path).toBe('memory/how-memory-works.mmd');
+      expect(ws.openTabIds.length).toBe(1);
+      expect(ws.openTabIds[0]).toBe(active?.file.id);
+
+      // 2. In Explorer `memory/`, `how-memory-works` is #1 at the root (NOT buried behind `browser-storage`),
+      //    with `[server-workers, browser-storage]` nested underneath in parent box order!
+      const proj = ws.projects[0]!;
+      const memFolder = buildExplorerSubtree(proj, '').folders.find(
+        (f) => f.name === 'memory'
+      )!;
+      expect(memFolder.fileTree.map((n) => n.file.path)).toEqual([
+        'memory/how-memory-works.mmd',
+      ]);
+      expect(memFolder.fileTree[0]!.children.map((c) => c.file.path)).toEqual([
+        'memory/server-workers.mmd',
+        'memory/browser-storage.mmd',
+      ]);
+
+      // 3. Breadcrumb hops carry the parent component label + sibling branches!
+      const hierarchy = resolveProjectGraphHierarchy(proj);
+      const childFileA = proj.files.find(
+        (f) => f.path === 'memory/browser-storage.mmd'
+      )!;
+      const hops = hierarchy.getBreadcrumbHops(childFileA.id);
+      expect(hops.length).toBe(1);
+      expect(hops[0]!.parentFile.title).toBe('How Memory Works');
+      expect(hops[0]!.viaComponentLabel).toBe('Browser');
+      expect(hops[0]!.siblingBranches.map((b) => b.componentLabel)).toEqual([
+        'Server',
+        'Browser',
+      ]);
+    }
   });
 });

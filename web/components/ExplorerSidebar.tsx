@@ -3,11 +3,13 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  CornerDownRight,
   FileCode,
   FilePlus2,
   Folder,
   FolderOpen,
   FolderPlus,
+  Layers,
   Pause,
   Pencil,
   Play,
@@ -19,9 +21,9 @@ import type { RelayConnectionState } from '../hooks/useStudioController';
 import {
   buildExplorerSubtree,
   getHeadVersion,
+  type ExplorerFileTreeNode,
   type ExplorerFolderNode,
   type StorageAllocationStats,
-  type VfsGraphFile,
   type VfsProjectRoot,
 } from '../services/workspaceStorage';
 
@@ -96,6 +98,7 @@ export function ExplorerSidebar({
   onNotifyToast,
 }: ExplorerSidebarProps) {
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set());
+  const [collapsedGraphs, setCollapsedGraphs] = useState<Set<string>>(() => new Set());
   const [agentsPaneOpen, setAgentsPaneOpen] = useState(true);
   const [inlinePrompt, setInlinePrompt] = useState<InlinePromptState | null>(null);
   const [draftValue, setDraftValue] = useState('');
@@ -114,6 +117,15 @@ export function ExplorerSidebar({
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleGraphChildren = (fileId: string) => {
+    setCollapsedGraphs((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
       return next;
     });
   };
@@ -198,18 +210,18 @@ export function ExplorerSidebar({
     </div>
   );
 
-  const renderFileRow = (
+  const renderFileTreeNode = (
     project: VfsProjectRoot,
-    file: VfsGraphFile,
-    depth: number
+    node: ExplorerFileTreeNode,
+    depth: number,
+    isChildGraph = false
   ) => {
+    const { file, children } = node;
+    const hasSubGraphs = children.length > 0;
+    const isGraphCollapsed = collapsedGraphs.has(file.id);
+
     const isRenaming =
       inlinePrompt?.kind === 'rename-file' && inlinePrompt.fileId === file.id;
-    if (isRenaming) {
-      return (
-        <div key={file.id}>{renderInlineInput(depth, 'graph-name.mmd')}</div>
-      );
-    }
 
     const head = getHeadVersion(file);
     const isActive = file.id === activeFileId;
@@ -218,38 +230,36 @@ export function ExplorerSidebar({
       ''
     );
 
+    const roleHint = hasSubGraphs
+      ? `Overview (${children.length} sub-graph${children.length === 1 ? '' : 's'})`
+      : isChildGraph
+        ? 'Sub-graph'
+        : 'Graph';
+
     return (
       <div
         key={file.id}
-        data-explorer-path={`${project.projectKey}/${file.path}`}
-        className={`tree-row tree-file-row ${isActive ? 'active' : ''}`}
-        style={{ paddingLeft: `${14 + depth * 13}px` }}
-        onClick={() => onOpenFile(file.id)}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          setInlinePrompt({
-            kind: 'rename-file',
-            projectKey: project.projectKey,
-            fileId: file.id,
-            oldPath: file.path,
-          });
-          setDraftValue(baseLabel);
-        }}
-        title={`${project.projectLabel}/${file.path} (v${file.currentVersion}, updated by ${head.authorLabel})`}
+        className={`tree-graph-branch ${hasSubGraphs ? 'has-subgraphs' : ''} ${
+          isChildGraph ? 'is-subgraph' : ''
+        }`}
       >
-        <FileCode size={13} className="tree-file-icon" />
-        <span className="tree-item-label">{baseLabel}</span>
-        {file.unread && <span className="tab-unread-dot" />}
-        <span className={`tree-author-badge author-${head.authorBadge}`}>
-          {head.authorBadge}
-        </span>
-
-        <div className="tree-row-actions" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            className="tree-action-btn"
-            title="Rename or move graph"
-            onClick={() => {
+        {isRenaming ? (
+          renderInlineInput(depth, 'graph-name.mmd')
+        ) : (
+          <div
+            data-explorer-path={`${project.projectKey}/${file.path}`}
+            data-explorer-role={
+              hasSubGraphs ? 'parent' : isChildGraph ? 'child' : 'standalone'
+            }
+            className={`tree-row tree-file-row ${isActive ? 'active' : ''} ${
+              hasSubGraphs ? 'parent-overview-row' : ''
+            } ${isChildGraph ? 'child-subgraph-row' : ''}`}
+            style={{
+              paddingLeft: `${(hasSubGraphs ? 8 : 14) + depth * 13}px`,
+            }}
+            onClick={() => onOpenFile(file.id)}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
               setInlinePrompt({
                 kind: 'rename-file',
                 projectKey: project.projectKey,
@@ -258,18 +268,78 @@ export function ExplorerSidebar({
               });
               setDraftValue(baseLabel);
             }}
+            title={`${roleHint}: ${project.projectLabel}/${file.path} (v${file.currentVersion}, updated by ${head.authorLabel})`}
           >
-            <Pencil size={11} />
-          </button>
-          <button
-            type="button"
-            className="tree-action-btn danger"
-            title="Delete graph"
-            onClick={() => onDeleteGraph(project.projectKey, file.id)}
-          >
-            <Trash2 size={11} />
-          </button>
-        </div>
+            {hasSubGraphs && (
+              <button
+                type="button"
+                className="tree-subgraph-toggle"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleGraphChildren(file.id);
+                }}
+                aria-label={
+                  isGraphCollapsed ? 'Expand sub-graphs' : 'Collapse sub-graphs'
+                }
+              >
+                {isGraphCollapsed ? (
+                  <ChevronRight size={11} className="tree-chevron" />
+                ) : (
+                  <ChevronDown size={11} className="tree-chevron" />
+                )}
+              </button>
+            )}
+
+            {hasSubGraphs ? (
+              <Layers size={13} className="tree-file-icon overview-icon" />
+            ) : isChildGraph ? (
+              <CornerDownRight size={12} className="tree-file-icon child-icon" />
+            ) : (
+              <FileCode size={13} className="tree-file-icon" />
+            )}
+
+            <span className="tree-item-label">{baseLabel}</span>
+            {file.unread && <span className="tab-unread-dot" />}
+            <span className={`tree-author-badge author-${head.authorBadge}`}>
+              {head.authorBadge}
+            </span>
+
+            <div className="tree-row-actions" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="tree-action-btn"
+                title="Rename or move graph"
+                onClick={() => {
+                  setInlinePrompt({
+                    kind: 'rename-file',
+                    projectKey: project.projectKey,
+                    fileId: file.id,
+                    oldPath: file.path,
+                  });
+                  setDraftValue(baseLabel);
+                }}
+              >
+                <Pencil size={11} />
+              </button>
+              <button
+                type="button"
+                className="tree-action-btn danger"
+                title="Delete graph"
+                onClick={() => onDeleteGraph(project.projectKey, file.id)}
+              >
+                <Trash2 size={11} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {hasSubGraphs && !isGraphCollapsed && (
+          <div className="tree-subgraph-children">
+            {children.map((childNode) =>
+              renderFileTreeNode(project, childNode, depth + 1, true)
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -374,7 +444,9 @@ export function ExplorerSidebar({
             {node.folders.map((sub) =>
               renderFolderNode(project, sub, depth + 1)
             )}
-            {node.files.map((f) => renderFileRow(project, f, depth + 1))}
+            {node.fileTree.map((fNode) =>
+              renderFileTreeNode(project, fNode, depth + 1, false)
+            )}
           </div>
         )}
       </div>
@@ -496,10 +568,12 @@ export function ExplorerSidebar({
                   {treeRoot.folders.map((folder) =>
                     renderFolderNode(project, folder, 1)
                   )}
-                  {treeRoot.files.map((file) => renderFileRow(project, file, 1))}
+                  {treeRoot.fileTree.map((fNode) =>
+                    renderFileTreeNode(project, fNode, 1, false)
+                  )}
 
                   {treeRoot.folders.length === 0 &&
-                    treeRoot.files.length === 0 &&
+                    treeRoot.fileTree.length === 0 &&
                     !(
                       inlinePrompt &&
                       (inlinePrompt.kind === 'new-file' ||

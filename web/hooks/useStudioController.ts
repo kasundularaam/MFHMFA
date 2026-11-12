@@ -49,11 +49,13 @@ import {
   normalizeWorkspaceConsistency,
   persistWorkspaceState,
   randomToken,
+  resolveProjectGraphHierarchy,
   restoreGraphVersion,
   SCRATCHPAD_PROJECT_KEY,
   toProjectKey,
   upsertGraphInVfs,
   WORKSPACE_ID_KEY,
+  type GraphBreadcrumbHop,
   type VfsGraphFile,
   type VfsProjectRoot,
   type WorkspaceState,
@@ -62,6 +64,7 @@ import type { AppearanceMode } from '../theme/comfortTheme';
 
 export type StudioPage = 'studio' | 'docs';
 export type StageMode = 'preview' | 'code';
+export type CanvasTransitionKind = 'crossfade' | 'dive-in' | 'zoom-out';
 export type RelayConnectionState = 'connecting' | 'connected' | 'paused' | 'reconnecting';
 
 const LOCAL_WORKSPACE_CHANNEL = 'local_workspace';
@@ -211,26 +214,76 @@ export function useStudioController() {
     }
   }, [activeGuide, activeStepIndex, selectedNodeId]);
 
-  const parentGraphEntry = useMemo(() => {
-    for (let i = drillStack.length - 1; i >= 0; i--) {
-      const candidateId = drillStack[i]!;
-      if (candidateId === activeFileIdVal) continue;
-      const found = findFileWithProject(workspace, candidateId);
-      if (found) return { file: found.file, fromStack: true };
-    }
-    if (activeGuide?.parentPath && activeProject) {
-      try {
-        const cleanParent = normalizeRelativeGraphPath(activeGuide.parentPath);
-        const match = activeProject.files.find(
-          (f) => f.path === cleanParent && f.id !== activeFileIdVal
-        );
-        if (match) return { file: match, fromStack: false };
-      } catch {
-        // ignore invalid parentPath
+  const projectHierarchy = useMemo(
+    () => (activeProject ? resolveProjectGraphHierarchy(activeProject) : null),
+    [activeProject]
+  );
+
+  const ancestorChain: VfsGraphFile[] = useMemo(() => {
+    if (!activeFileIdVal) return [];
+    const fromGraph = projectHierarchy?.getAncestors(activeFileIdVal) ?? [];
+    if (fromGraph.length > 0) return fromGraph;
+
+    const fallback: VfsGraphFile[] = [];
+    for (const sid of drillStack) {
+      if (sid === activeFileIdVal) break;
+      const found = findFileWithProject(workspace, sid);
+      if (found && !fallback.some((f) => f.id === found.file.id)) {
+        fallback.push(found.file);
       }
     }
-    return null;
-  }, [drillStack, activeFileIdVal, workspace, activeGuide, activeProject]);
+    return fallback;
+  }, [activeFileIdVal, projectHierarchy, drillStack, workspace]);
+
+  const breadcrumbHops: GraphBreadcrumbHop[] = useMemo(() => {
+    if (!activeFile) return [];
+    const fromGraph = projectHierarchy?.getBreadcrumbHops(activeFile.id) ?? [];
+    if (fromGraph.length > 0) return fromGraph;
+
+    if (ancestorChain.length === 0) return [];
+    const full = [...ancestorChain, activeFile];
+    const fallbackHops: GraphBreadcrumbHop[] = [];
+    for (let i = 0; i < full.length - 1; i++) {
+      fallbackHops.push({
+        parentFile: full[i]!,
+        viaNodeId: null,
+        viaComponentLabel: null,
+        siblingBranches: [],
+        childFile: full[i + 1]!,
+      });
+    }
+    return fallbackHops;
+  }, [activeFile, projectHierarchy, ancestorChain]);
+
+  const parentGraphEntry = useMemo(() => {
+    const immediateParent =
+      ancestorChain.length > 0 ? ancestorChain[ancestorChain.length - 1]! : null;
+    if (!immediateParent) return null;
+    const fromStack = drillStack.includes(immediateParent.id);
+    return { file: immediateParent, fromStack };
+  }, [ancestorChain, drillStack]);
+
+  const prevFileIdForTransitionRef = useRef<string | null>(activeFileIdVal);
+  const [transitionKind, setTransitionKind] =
+    useState<CanvasTransitionKind>('crossfade');
+
+  useLayoutEffect(() => {
+    const prevId = prevFileIdForTransitionRef.current;
+    if (prevId && activeFileIdVal && prevId !== activeFileIdVal) {
+      if (ancestorChain.some((a) => a.id === prevId)) {
+        setTransitionKind('dive-in');
+      } else if (
+        projectHierarchy
+          ?.getAncestors(prevId)
+          .some((a) => a.id === activeFileIdVal)
+      ) {
+        setTransitionKind('zoom-out');
+      } else {
+        setTransitionKind('crossfade');
+      }
+    }
+    prevFileIdForTransitionRef.current = activeFileIdVal;
+  }, [activeFileIdVal, ancestorChain, projectHierarchy]);
 
   const toggleAppearanceMode = useCallback(() => {
     setAppearanceMode((prev) => (prev === 'dark' ? 'light' : 'dark'));
@@ -1145,16 +1198,21 @@ export function useStudioController() {
     [activeFile, activeProject, handleOpenFile, notifyToast]
   );
 
-  const handleDrillBack = useCallback(() => {
-    if (!parentGraphEntry) return;
-    if (parentGraphEntry.fromStack) {
+  const handleJumpToAncestor = useCallback(
+    (ancestorFileId: string) => {
       setDrillStack((prev) => {
-        const idx = prev.lastIndexOf(parentGraphEntry.file.id);
+        const idx = prev.lastIndexOf(ancestorFileId);
         return idx >= 0 ? prev.slice(0, idx) : prev;
       });
-    }
-    handleOpenFile(parentGraphEntry.file.id);
-  }, [handleOpenFile, parentGraphEntry]);
+      handleOpenFile(ancestorFileId);
+    },
+    [handleOpenFile]
+  );
+
+  const handleDrillBack = useCallback(() => {
+    if (!parentGraphEntry) return;
+    handleJumpToAncestor(parentGraphEntry.file.id);
+  }, [handleJumpToAncestor, parentGraphEntry]);
 
   // Keyboard shortcuts: Ctrl/Cmd+B (Explorer), Ctrl/Cmd+E (Preview <-> Code), Alt+1..9 (Tabs),
   // plus Story Mode ArrowLeft/ArrowRight & Escape in Preview mode!
@@ -1460,8 +1518,12 @@ export function useStudioController() {
     selectedNodeId,
     setSelectedNodeId,
     parentGraphFile: parentGraphEntry?.file ?? null,
+    ancestorChain,
+    breadcrumbHops,
+    transitionKind,
     handleDrillToPath,
     handleDrillBack,
+    handleJumpToAncestor,
     setCode: handleChangeCode,
     renderedSvg,
     diagramType,

@@ -8,8 +8,10 @@ import {
 } from 'react';
 import {
   AlertCircle,
-  ArrowLeft,
   ArrowRight,
+  Box,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   FileCode2,
@@ -26,11 +28,14 @@ import type {
   DiagramComprehensionGuide,
   ParseErrorDetail,
 } from '../../src/shared/types';
+import type { CanvasTransitionKind } from '../hooks/useStudioController';
+import type { GraphBreadcrumbHop } from '../services/workspaceStorage';
 import { applySvgComprehensionState } from '../utils/svgComprehension';
 
 interface PreviewCanvasProps {
   viewportRef: RefObject<HTMLDivElement | null>;
   chartKey: string;
+  activeGraphTitle: string | null;
   renderedSvg: string;
   hasActiveFile: boolean;
   historicalVersion: number | null;
@@ -41,8 +46,10 @@ interface PreviewCanvasProps {
   onChangeStepIndex: (next: number | null) => void;
   selectedNodeId: string | null;
   onSelectNode: (nodeId: string | null) => void;
-  parentGraphTitle: string | null;
-  onDrillBack: () => void;
+  breadcrumbHops: GraphBreadcrumbHop[];
+  transitionKind: CanvasTransitionKind;
+  onJumpToAncestor: (fileId: string) => void;
+  onOpenGraphById: (fileId: string) => void;
   onDrillToPath: (targetPath: string) => void;
   onCopyFilePath: (filePath: string) => void;
   zoom: number;
@@ -58,11 +65,13 @@ interface FrozenLayer {
   svg: string;
   zoom: number;
   pan: { x: number; y: number };
+  mode: CanvasTransitionKind;
 }
 
 export function PreviewCanvas({
   viewportRef,
   chartKey,
+  activeGraphTitle,
   renderedSvg,
   hasActiveFile,
   historicalVersion,
@@ -73,8 +82,10 @@ export function PreviewCanvas({
   onChangeStepIndex,
   selectedNodeId,
   onSelectNode,
-  parentGraphTitle,
-  onDrillBack,
+  breadcrumbHops,
+  transitionKind,
+  onJumpToAncestor,
+  onOpenGraphById,
   onDrillToPath,
   onCopyFilePath,
   zoom,
@@ -88,6 +99,7 @@ export function PreviewCanvas({
   const [cameraGlide, setCameraGlide] = useState(false);
   const [outgoingLayer, setOutgoingLayer] = useState<FrozenLayer | null>(null);
   const [nodeLabels, setNodeLabels] = useState<Map<string, string>>(() => new Map());
+  const [openBranchHopIdx, setOpenBranchHopIdx] = useState<number | null>(null);
 
   const activeStageRef = useRef<HTMLDivElement | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,6 +150,17 @@ export function PreviewCanvas({
     []
   );
 
+  useEffect(() => {
+    setOpenBranchHopIdx(null);
+  }, [chartKey]);
+
+  useEffect(() => {
+    if (openBranchHopIdx === null) return undefined;
+    const onDocClick = () => setOpenBranchHopIdx(null);
+    window.addEventListener('click', onDocClick);
+    return () => window.removeEventListener('click', onDocClick);
+  }, [openBranchHopIdx]);
+
   // Cross-dissolve outgoing chart into incoming chart with zero blank frames
   useEffect(() => {
     const prev = prevSnapshotRef.current;
@@ -151,15 +174,16 @@ export function PreviewCanvas({
           svg: prev.svg,
           zoom: prev.zoom,
           pan: prev.pan,
+          mode: transitionKind,
         });
         fadeTimerRef.current = setTimeout(() => {
           setOutgoingLayer(null);
           fadeTimerRef.current = null;
-        }, 170);
+        }, 220);
       }
     }
     prevSnapshotRef.current = { chartKey, svg: renderedSvg, zoom, pan };
-  }, [chartKey, renderedSvg, zoom, pan]);
+  }, [chartKey, renderedSvg, zoom, pan, transitionKind]);
 
   // Apply Story Stepper spotlighting & clickable node affordances to active SVG DOM
   useLayoutEffect(() => {
@@ -252,7 +276,7 @@ export function PreviewCanvas({
       {/* Outgoing frozen layer during chart switch (prevents empty-canvas blink) */}
       {outgoingLayer && (
         <div
-          className="canvas-stage canvas-layer-out"
+          className={`canvas-stage canvas-layer-out mode-${outgoingLayer.mode}`}
           style={{
             transform: `translate(calc(-50% + ${outgoingLayer.pan.x}px), calc(-50% + ${outgoingLayer.pan.y}px)) scale(${outgoingLayer.zoom})`,
           }}
@@ -265,7 +289,7 @@ export function PreviewCanvas({
         <div
           ref={activeStageRef}
           className={`canvas-stage ${cameraGlide ? 'smooth-camera' : ''} ${
-            outgoingLayer ? 'canvas-layer-in' : ''
+            outgoingLayer ? `canvas-layer-in mode-${outgoingLayer.mode}` : ''
           }`}
           onTransitionEnd={() => setCameraGlide(false)}
           style={{
@@ -293,21 +317,108 @@ export function PreviewCanvas({
         </div>
       )}
 
-      {/* Top-Left Sub-Graph Zoom-Out Breadcrumb */}
-      {parentGraphTitle && (
-        <button
-          type="button"
-          className="floating-drillback-pill"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDrillBack();
-          }}
+      {/* Regular Component-Aware Hierarchy Breadcrumb */}
+      {breadcrumbHops.length > 0 && (
+        <nav
+          className="canvas-breadcrumb"
+          data-testid="canvas-breadcrumb"
+          aria-label="Diagram breadcrumb"
+          onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
-          title={`Zoom back out to ${parentGraphTitle}`}
         >
-          <ArrowLeft size={13} />
-          <span>Back to {parentGraphTitle}</span>
-        </button>
+          {breadcrumbHops.map((hop, idx) => {
+            const hasMultipleBranches = hop.siblingBranches.length > 1;
+            const isMenuOpen = openBranchHopIdx === idx;
+
+            return (
+              <span key={`${hop.parentFile.id}-${hop.childFile.id}`} className="crumb-hop-group">
+                <button
+                  type="button"
+                  className="crumb-link"
+                  onClick={() => onJumpToAncestor(hop.parentFile.id)}
+                  title={`Go to ${hop.parentFile.title}`}
+                >
+                  {hop.parentFile.title}
+                </button>
+                <span className="crumb-sep">/</span>
+
+                {hop.viaComponentLabel && (
+                  <>
+                    <span className="crumb-branch-wrap">
+                      {hasMultipleBranches ? (
+                        <button
+                          type="button"
+                          className={`crumb-component switchable ${
+                            isMenuOpen ? 'open' : ''
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenBranchHopIdx((prev) => (prev === idx ? null : idx));
+                          }}
+                          title={`Component in ${hop.parentFile.title} (${hop.siblingBranches.length} linked components)`}
+                        >
+                          <Box size={11} className="crumb-box-icon" />
+                          <span>{hop.viaComponentLabel}</span>
+                          <ChevronDown size={11} className="crumb-chevron" />
+                        </button>
+                      ) : (
+                        <span
+                          className="crumb-component"
+                          title={`Component in ${hop.parentFile.title}`}
+                        >
+                          <Box size={11} className="crumb-box-icon" />
+                          <span>{hop.viaComponentLabel}</span>
+                        </span>
+                      )}
+
+                      {hasMultipleBranches && isMenuOpen && (
+                        <div
+                          className="crumb-branch-menu"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="crumb-branch-menu-header">
+                            Components in {hop.parentFile.title}
+                          </div>
+                          {hop.siblingBranches.map((branch) => {
+                            const isCurrent = branch.childFile.id === hop.childFile.id;
+                            return (
+                              <button
+                                key={`${branch.nodeId}-${branch.childFile.id}`}
+                                type="button"
+                                className={`crumb-branch-item ${
+                                  isCurrent ? 'active' : ''
+                                }`}
+                                onClick={() => {
+                                  setOpenBranchHopIdx(null);
+                                  if (!isCurrent) {
+                                    onOpenGraphById(branch.childFile.id);
+                                  }
+                                }}
+                              >
+                                <Box size={11} className="crumb-box-icon" />
+                                <span className="crumb-branch-comp">
+                                  {branch.componentLabel}
+                                </span>
+                                <ArrowRight size={10} className="crumb-branch-arrow" />
+                                <span className="crumb-branch-target">
+                                  {branch.childFile.title}
+                                </span>
+                                {isCurrent && <Check size={11} className="crumb-branch-check" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </span>
+                    <span className="crumb-sep">/</span>
+                  </>
+                )}
+              </span>
+            );
+          })}
+
+          <span className="crumb-current">{activeGraphTitle || 'Sub-graph'}</span>
+        </nav>
       )}
 
       {historicalVersion !== null && (

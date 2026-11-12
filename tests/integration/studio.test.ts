@@ -649,29 +649,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           )
         );
 
-        // 1. Render child sub-graph first (`memory/browser-storage.mmd`)
-        const childRes = await pi.callTool({
-          name: 'mermaid_render',
-          arguments: {
-            path: 'memory/browser-storage.mmd',
-            title: 'Browser Storage Internals',
-            code: 'flowchart TB\n  Coalesce["90s Retry Merger"] --> Ring["5-Version Ring"] --> Store[("localStorage Key")]',
-            guide: {
-              gist: 'Combines quick retries and caps history at 5 versions per graph.',
-              parentPath: 'memory/overview.mmd',
-              nodes: {
-                Ring: {
-                  summary: 'Keeps only the latest 5 revisions using slice(-5).',
-                  example: 'v1..v6 -> v1 is dropped automatically',
-                  whatIf: 'Restoring an older version appends a new head revision.',
-                },
-              },
-            },
-          },
-        });
-        expect(childRes.isError).toBeFalsy();
-
-        // 2. Render parent overview (`memory/overview.mmd`) with Story Mode + Node Inspector + Drilldown
+        // 1. Render parent overview FIRST (`memory/overview.mmd`)
         const overviewRes = await pi.callTool({
           name: 'mermaid_render',
           arguments: {
@@ -707,12 +685,58 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         });
         expect(overviewRes.isError).toBeFalsy();
 
-        // Wait for overview dock to appear in browser
+        // 2. Render child sub-graph SECOND (`memory/browser-storage.mmd` — alphabetically before `overview`!):
+        //    Verify child does NOT steal focus or spam a tab, and nests under `overview` in Explorer!
+        const childRes = await pi.callTool({
+          name: 'mermaid_render',
+          arguments: {
+            path: 'memory/browser-storage.mmd',
+            title: 'Browser Storage Internals',
+            code: 'flowchart TB\n  Coalesce["90s Retry Merger"] --> Ring["5-Version Ring"] --> Store[("localStorage Key")]',
+            guide: {
+              gist: 'Combines quick retries and caps history at 5 versions per graph.',
+              parentPath: 'memory/overview.mmd',
+              nodes: {
+                Ring: {
+                  summary: 'Keeps only the latest 5 revisions using slice(-5).',
+                  example: 'v1..v6 -> v1 is dropped automatically',
+                  whatIf: 'Restoring an older version appends a new head revision.',
+                },
+              },
+            },
+          },
+        });
+        expect(childRes.isError).toBeFalsy();
+
+        // Verify:
+        // - Overview is STILL active (child did not steal focus!)
+        // - Only 1 editor tab is auto-opened
+        // - Explorer nests `browser-storage` (`child`) inside `.tree-subgraph-children` under `overview` (`parent`) with NO child-count pill
+        // - No zoom tags clutter SVG boxes
         await wsPage.waitForFunction(
-          () =>
-            document
-              .querySelector('[data-testid="comprehension-dock"]')
-              ?.textContent?.includes('Server holds zero diagrams'),
+          () => {
+            const parentRow = document.querySelector(
+              '[data-explorer-path="mfhmfa/memory/overview.mmd"]'
+            );
+            const childRow = document.querySelector(
+              '.tree-subgraph-children [data-explorer-path="mfhmfa/memory/browser-storage.mmd"]'
+            );
+            const zoomBadges = document.querySelectorAll('.canvas-stage svg .mfhmfa-zoom-badge');
+            const countPills = document.querySelectorAll('.tree-overview-pill');
+            const tabs = document.querySelectorAll('.editor-tab');
+            return (
+              parentRow?.getAttribute('data-explorer-role') === 'parent' &&
+              childRow?.getAttribute('data-explorer-role') === 'child' &&
+              tabs.length === 1 &&
+              zoomBadges.length === 0 &&
+              countPills.length === 0 &&
+              Boolean(
+                document
+                  .querySelector('[data-testid="comprehension-dock"]')
+                  ?.textContent?.includes('Server holds zero diagrams')
+              )
+            );
+          },
           { timeout: 10_000 }
         );
 
@@ -780,25 +804,31 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 5_000 }
         );
 
-        // 5. Click Zoom Into sub-graph -> navigates to `browser-storage.mmd` & shows Back breadcrumb!
+        // 5. Click Zoom Into in the component detail card -> dives into `browser-storage.mmd`
+        //    and renders the regular component-aware breadcrumb:
+        //    `System Memory Overview / Browser Local Storage / Browser Storage Internals`!
         await wsPage.click('.node-drilldown-btn');
         await wsPage.waitForFunction(
-          () =>
-            Boolean(
-              document
-                .querySelector('.floating-drillback-pill')
-                ?.textContent?.includes('Back to System Memory Overview')
-            ) &&
-            Boolean(
-              document
-                .querySelector('[data-testid="comprehension-dock"]')
-                ?.textContent?.includes('caps history at 5 versions')
-            ),
+          () => {
+            const crumbText =
+              document.querySelector('[data-testid="canvas-breadcrumb"]')?.textContent ||
+              '';
+            return (
+              crumbText.includes('System Memory Overview') &&
+              crumbText.includes('Browser Local Storage') &&
+              crumbText.includes('Browser Storage Internals') &&
+              Boolean(
+                document
+                  .querySelector('[data-testid="comprehension-dock"]')
+                  ?.textContent?.includes('caps history at 5 versions')
+              )
+            );
+          },
           { timeout: 5_000 }
         );
 
-        // Click Back breadcrumb -> zooms right back out to `overview.mmd`!
-        await wsPage.click('.floating-drillback-pill');
+        // Click `System Memory Overview` in the breadcrumb -> returns cleanly to `overview.mmd`!
+        await wsPage.click('[data-testid="canvas-breadcrumb"] .crumb-link');
         await wsPage.waitForFunction(
           () =>
             Boolean(
