@@ -428,21 +428,29 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           ),
         ]);
 
-        // Verify Connected Agents bottom sidebar pane displays all 3 live agents!
+        // Verify Connected Agents bottom sidebar pane is collapsed by default and shows 3 when expanded!
         await wsPage.waitForFunction(
           () => {
             const count = document.querySelector('.agents-count-pill')?.textContent?.trim();
+            const body = document.querySelector('.sidebar-agents-body');
+            return count === '3' && body === null;
+          },
+          { timeout: 10_000 }
+        );
+
+        await wsPage.click('.sidebar-agents-pane .sidebar-section-header');
+        await wsPage.waitForFunction(
+          () => {
             const names = Array.from(
               document.querySelectorAll('.sidebar-agent-name')
             ).map((el) => el.textContent?.trim());
             return (
-              count === '3' &&
               names.includes('Claude Code') &&
               names.includes('Pi') &&
               names.includes('Cursor')
             );
           },
-          { timeout: 10_000 }
+          { timeout: 5_000 }
         );
 
         // 3. Cursor writes a secret graph in Project B; Claude writes two graphs in Project A
@@ -582,11 +590,26 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           openTabsBefore
         );
 
-        // Verify right-edge view toggle icon switches Preview <-> Code!
-        const initialAria = await wsPage.evaluate(() =>
-          document.querySelector('.tabbar-view-toggle')?.getAttribute('aria-label')
-        );
-        expect(initialAria).toBe('Switch to Code view');
+        // Verify right-edge view toggle icon & Fit to screen button (only in Preview, right of Code button)
+        const previewBarCheck = await wsPage.evaluate(() => {
+          const actions = Array.from(
+            document.querySelectorAll('.tabbar-right-actions > button')
+          );
+          const viewIdx = actions.findIndex((b) =>
+            b.classList.contains('tabbar-view-toggle')
+          );
+          const fitIdx = actions.findIndex((b) =>
+            b.classList.contains('tabbar-fit-btn')
+          );
+          return {
+            aria: document.querySelector('.tabbar-view-toggle')?.getAttribute('aria-label'),
+            fitAfterView: viewIdx >= 0 && fitIdx === viewIdx + 1,
+            floatingZoomBars: document.querySelectorAll('.floating-zoom-bar').length,
+          };
+        });
+        expect(previewBarCheck.aria).toBe('Switch to Code view');
+        expect(previewBarCheck.fitAfterView).toBe(true);
+        expect(previewBarCheck.floatingZoomBars).toBe(0);
 
         await wsPage.evaluate(() => {
           (document.querySelector('.tabbar-view-toggle') as HTMLElement | null)?.click();
@@ -597,6 +620,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
             document
               .querySelector('.tabbar-view-toggle')
               ?.getAttribute('aria-label') === 'Switch to Preview' &&
+            document.querySelector('.tabbar-fit-btn') === null &&
             Boolean(document.querySelector('.codemirror-wrap')),
           { timeout: 5_000 }
         );

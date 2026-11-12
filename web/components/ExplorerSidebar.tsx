@@ -111,7 +111,7 @@ export function ExplorerSidebar({
 }: ExplorerSidebarProps) {
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set());
   const [collapsedGraphs, setCollapsedGraphs] = useState<Set<string>>(() => new Set());
-  const [agentsPaneOpen, setAgentsPaneOpen] = useState(true);
+  const [agentsPaneOpen, setAgentsPaneOpen] = useState(false);
   const [inlinePrompt, setInlinePrompt] = useState<InlinePromptState | null>(null);
   const [draftValue, setDraftValue] = useState('');
   const [activeMenu, setActiveMenu] = useState<ActiveRowMenu | null>(null);

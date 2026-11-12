@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Code2, Eye, History, Plus, RotateCcw, X } from 'lucide-react';
+import { Code2, Eye, History, Maximize2, Plus, RotateCcw, X } from 'lucide-react';
 import type { OpenTabEntry, StageMode } from '../hooks/useStudioController';
 import type { GraphVersionRecord, VfsGraphFile } from '../services/workspaceStorage';
 
@@ -16,6 +16,7 @@ interface TabBarProps {
   onSelectVersion: (version: number | null) => void;
   onRestoreVersion: (version: number) => void;
   onToggleStageMode: () => void;
+  onFitCanvas: () => void;
 }
 
 export function TabBar({
@@ -31,6 +32,7 @@ export function TabBar({
   onSelectVersion,
   onRestoreVersion,
   onToggleStageMode,
+  onFitCanvas,
 }: TabBarProps) {
   const stripRef = useRef<HTMLDivElement | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -224,6 +226,19 @@ export function TabBar({
             <span className="tabbar-error-dot" />
           )}
         </button>
+
+        {stageMode === 'preview' && (
+          <button
+            type="button"
+            className="icon-btn tabbar-fit-btn"
+            disabled={!activeFile}
+            onClick={onFitCanvas}
+            aria-label="Fit to screen"
+            title="Fit to screen"
+          >
+            <Maximize2 size={16} />
+          </button>
+        )}
       </div>
     </div>
   );

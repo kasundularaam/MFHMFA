@@ -77,6 +77,7 @@ export function App() {
               onToggleStageMode={() =>
                 ctrl.setStageMode((m) => (m === 'preview' ? 'code' : 'preview'))
               }
+              onFitCanvas={ctrl.handleFitCanvas}
             />
 
             <main className="single-stage">
@@ -108,13 +109,9 @@ export function App() {
                   }}
                   zoom={ctrl.zoom}
                   pan={ctrl.pan}
+                  fitTrigger={ctrl.fitTrigger}
                   onChangeZoom={ctrl.setZoom}
-                  onResetView={() => {
-                    ctrl.setZoom(1);
-                    ctrl.setPan({ x: 0, y: 0 });
-                  }}
                   onChangePan={ctrl.setPan}
-                  onFitCanvas={ctrl.handleFitCanvas}
                   onFlipToCode={() => ctrl.setStageMode('code')}
                 />
               ) : (

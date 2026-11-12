@@ -948,14 +948,15 @@ textarea {
 .tabbar-right-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   padding: 0 10px;
   border-left: 1px solid var(--border-line);
   background: var(--bg-bar);
   flex-shrink: 0;
 }
 
-.tabbar-view-toggle {
+.tabbar-view-toggle,
+.tabbar-fit-btn {
   position: relative;
   width: 32px;
   height: 32px;
@@ -1223,22 +1224,6 @@ textarea {
   background: var(--bg-elevated);
 }
 
-.floating-zoom-bar {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 8px;
-  background: var(--bg-popover);
-  border: 1px solid var(--border-line);
-  box-shadow: var(--shadow-menu);
-  z-index: 20;
-  transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out);
-}
-
 /* ============================================================================
    Comprehension Layer: SVG Spotlighting, Story Stepper & Node Inspector
    ============================================================================ */
@@ -1318,6 +1303,7 @@ textarea {
    VS Code-Style Stage Layout & Plain Text Breadcrumb
    ============================================================================ */
 .preview-stage-layout {
+  position: relative;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -1536,8 +1522,11 @@ textarea {
    VS Code-Style Docked Bottom Walkthrough Panel
    ============================================================================ */
 .walkthrough-panel {
-  position: relative;
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
   background: var(--bg-bar);
   border-top: 1px solid var(--border-line);
   user-select: text;

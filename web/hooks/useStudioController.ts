@@ -141,13 +141,14 @@ export function useStudioController() {
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [fitTrigger, setFitTrigger] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const bootstrappedRef = useRef(false);
   const renderCounterRef = useRef(0);
-  const skipNextCodeEffectRef = useRef(false);
+  const lastRenderedPairRef = useRef<{ code: string; mode: AppearanceMode } | null>(null);
   const needsFitOnPreviewRef = useRef(true);
 
   const workspaceRef = useRef(workspace);
@@ -359,11 +360,11 @@ export function useStudioController() {
       // Commit VFS state synchronously so concurrent SSE frames & `ls`/`read`/`mv` RPCs
       // always observe the latest workspace state immediately without race windows.
       workspaceRef.current = normalized;
-      skipNextCodeEffectRef.current = true;
       setSelectedVersion(versionOverride);
       setWorkspace(normalized);
 
       if (!found) {
+        lastRenderedPairRef.current = null;
         setRenderedSvg('');
         setParseError(null);
         setDimensions(null);
@@ -371,7 +372,9 @@ export function useStudioController() {
       }
 
       const targetVer = getVersionRecord(found.file, versionOverride);
-      const outcome = await renderMermaidClient(targetVer.code, appearanceRef.current);
+      const renderMode = appearanceRef.current;
+      lastRenderedPairRef.current = { code: targetVer.code, mode: renderMode };
+      const outcome = await renderMermaidClient(targetVer.code, renderMode);
       if (seq !== renderCounterRef.current) return;
 
       if (found.file.zoom !== null && versionOverride === null) {
@@ -1090,19 +1093,20 @@ export function useStudioController() {
 
   // Client Mermaid re-render on edits or Dark/Light theme toggle
   useEffect(() => {
-    if (!bootstrappedRef.current) return undefined;
-
-    if (skipNextCodeEffectRef.current) {
-      skipNextCodeEffectRef.current = false;
+    if (!bootstrappedRef.current || !activeFile) {
       return undefined;
     }
 
-    if (!activeFile) {
+    if (
+      lastRenderedPairRef.current?.code === code &&
+      lastRenderedPairRef.current?.mode === appearanceMode
+    ) {
       return undefined;
     }
 
     const cached = getCachedClientRender(code, appearanceMode);
     if (cached) {
+      lastRenderedPairRef.current = { code, mode: appearanceMode };
       setRenderedSvg(cached.svg);
       setDiagramType(cached.diagramType);
       setParseError(null);
@@ -1115,6 +1119,7 @@ export function useStudioController() {
       if (seq !== renderCounterRef.current) return;
 
       if (!code.trim()) {
+        lastRenderedPairRef.current = { code, mode: appearanceMode };
         setRenderedSvg('');
         setParseError({
           message: 'Diagram source is empty',
@@ -1130,6 +1135,7 @@ export function useStudioController() {
 
       const outcome = await renderMermaidClient(code, appearanceMode);
       if (seq !== renderCounterRef.current) return;
+      lastRenderedPairRef.current = { code, mode: appearanceMode };
 
       if (outcome.ok) {
         setRenderedSvg(outcome.svg);
@@ -1300,6 +1306,7 @@ export function useStudioController() {
   ]);
 
   const handleFitCanvas = useCallback(() => {
+    setFitTrigger((n) => n + 1);
     if (!dimensions) {
       setZoom(1);
       setPan({ x: 0, y: 0 });
@@ -1518,6 +1525,7 @@ export function useStudioController() {
     setZoom,
     pan,
     setPan,
+    fitTrigger,
     toast,
     toastVisible,
     viewportRef,

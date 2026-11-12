@@ -14,11 +14,8 @@ import {
   ChevronUp,
   FileCode2,
   Layers,
-  Maximize2,
   TriangleAlert,
   X,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
 import type {
   DiagramComprehensionGuide,
@@ -52,10 +49,9 @@ interface PreviewCanvasProps {
   onCopyFilePath: (filePath: string) => void;
   zoom: number;
   pan: { x: number; y: number };
+  fitTrigger: number;
   onChangeZoom: (updater: (prev: number) => number) => void;
-  onResetView: () => void;
   onChangePan: (pan: { x: number; y: number }) => void;
-  onFitCanvas: () => void;
   onFlipToCode: () => void;
 }
 
@@ -86,20 +82,21 @@ export function PreviewCanvas({
   onCopyFilePath,
   zoom,
   pan,
+  fitTrigger,
   onChangeZoom,
-  onResetView,
   onChangePan,
-  onFitCanvas,
   onFlipToCode,
 }: PreviewCanvasProps) {
   const [cameraGlide, setCameraGlide] = useState(false);
   const [outgoingLayer, setOutgoingLayer] = useState<FrozenLayer | null>(null);
   const [nodeLabels, setNodeLabels] = useState<Map<string, string>>(() => new Map());
   const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [panelBodyHeight, setPanelBodyHeight] = useState(78);
+  const [panelBodyHeight, setPanelBodyHeight] = useState(240);
 
+  const stageLayoutRef = useRef<HTMLDivElement | null>(null);
   const activeStageRef = useRef<HTMLDivElement | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevFitTriggerRef = useRef(fitTrigger);
 
   const prevSnapshotRef = useRef<{
     chartKey: string;
@@ -142,7 +139,13 @@ export function PreviewCanvas({
     []
   );
 
-  // Automatically expand the bottom panel if the user steps with keyboard arrows
+  useEffect(() => {
+    if (fitTrigger !== prevFitTriggerRef.current) {
+      prevFitTriggerRef.current = fitTrigger;
+      setCameraGlide(true);
+    }
+  }, [fitTrigger]);
+
   useEffect(() => {
     if (activeStepIndex !== null) {
       setPanelCollapsed(false);
@@ -194,7 +197,7 @@ export function PreviewCanvas({
   const isWalkthroughActive = Boolean(activeStep) || (!hasOverview && hasSteps);
 
   return (
-    <div className="preview-stage-layout">
+    <div ref={stageLayoutRef} className="preview-stage-layout">
       {/* VS Code-Style Plain Text Breadcrumb (root -> current file) */}
       {breadcrumbHops.length > 0 && (
         <nav
@@ -450,60 +453,9 @@ export function PreviewCanvas({
             </div>
           </aside>
         )}
-
-        <div className="floating-zoom-bar" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            className="btn ghost sm"
-            onClick={() => {
-              setCameraGlide(true);
-              onChangeZoom((z) => Number(Math.max(0.15, z - 0.14).toFixed(2)));
-            }}
-            title="Zoom out"
-            aria-label="Zoom out"
-          >
-            <ZoomOut size={15} />
-          </button>
-          <button
-            type="button"
-            className="btn ghost sm"
-            onClick={() => {
-              setCameraGlide(true);
-              onResetView();
-            }}
-            title="Reset zoom"
-            aria-label="Reset zoom"
-          >
-            {Math.round(zoom * 100)}%
-          </button>
-          <button
-            type="button"
-            className="btn ghost sm"
-            onClick={() => {
-              setCameraGlide(true);
-              onChangeZoom((z) => Number(Math.min(6, z + 0.14).toFixed(2)));
-            }}
-            title="Zoom in"
-            aria-label="Zoom in"
-          >
-            <ZoomIn size={15} />
-          </button>
-          <button
-            type="button"
-            className="btn ghost sm"
-            onClick={() => {
-              setCameraGlide(true);
-              onFitCanvas();
-            }}
-            title="Fit to screen"
-            aria-label="Fit to screen"
-          >
-            <Maximize2 size={15} />
-          </button>
-        </div>
       </div>
 
-      {/* VS Code-Style Docked Bottom Walkthrough Panel */}
+      {/* VS Code-Style Bottom Walkthrough Panel (overlaps canvas freely without shifting graph) */}
       {showBottomPanel && (
         <section
           className={`walkthrough-panel ${panelCollapsed ? 'collapsed' : ''}`}
@@ -517,8 +469,15 @@ export function PreviewCanvas({
                 e.preventDefault();
                 const startY = e.clientY;
                 const origH = panelBodyHeight;
+                const stageHeight =
+                  stageLayoutRef.current?.getBoundingClientRect().height ??
+                  window.innerHeight;
+                const maxBodyHeight = Math.max(240, stageHeight - 44);
                 const onMove = (ev: MouseEvent) => {
-                  const next = Math.min(240, Math.max(60, origH + (startY - ev.clientY)));
+                  const next = Math.min(
+                    maxBodyHeight,
+                    Math.max(32, origH + (startY - ev.clientY))
+                  );
                   setPanelBodyHeight(Math.round(next));
                 };
                 const onUp = () => {
