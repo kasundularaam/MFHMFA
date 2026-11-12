@@ -45,7 +45,17 @@ claude mcp add --transport http mfhmfa "${pairedMcpUrl}"`;
     "arguments": {
       "project": "Order Service",
       "path": "checkout/order-pipeline.mmd",
-      "code": "flowchart LR\\n  Cart[\\"Cart\\"] --> Pay[\\"Stripe\\"] --> Ship[\\"Fulfill\\"]"
+      "code": "flowchart LR\\n  Cart[\\"Cart\\"] --> Pay[\\"Payment\\"] --> Ship[\\"Fulfill\\"]",
+      "guide": {
+        "gist": "Orders enter fulfillment only after payment succeeds.",
+        "steps": [
+          {
+            "title": "1. Authorize payment",
+            "caption": "Cart submits order total to Payment before fulfillment.",
+            "focusNodes": ["Cart", "Pay"]
+          }
+        ]
+      }
     }
   }'`;
 
@@ -62,70 +72,93 @@ docker compose up -d --build
           <div className="docs-nav-heading">Contents</div>
           <ul>
             <li>
-              <a href="#doc-overview">1. Overview</a>
+              <a href="#doc-why">1. Why MFHMFA Exists</a>
             </li>
             <li>
-              <a href="#doc-mcp">2. MCP Configuration</a>
+              <a href="#doc-how">2. How Comprehension Works</a>
             </li>
             <li>
-              <a href="#doc-sync">3. Browser Sync &amp; Links</a>
+              <a href="#doc-mcp">3. MCP Setup</a>
             </li>
             <li>
-              <a href="#doc-tools">4. MCP Tools &amp; Resources</a>
+              <a href="#doc-vfs">4. Zero-Storage Browser VFS</a>
             </li>
             <li>
-              <a href="#doc-http">5. HTTP Tool API</a>
+              <a href="#doc-tools">5. MCP Tools &amp; Guide Schema</a>
             </li>
             <li>
-              <a href="#doc-selfhost">6. Self-Hosting</a>
+              <a href="#doc-http">6. HTTP Tool API</a>
             </li>
             <li>
-              <a href="#doc-keys">7. Shortcuts</a>
+              <a href="#doc-selfhost">7. Self-Hosting</a>
+            </li>
+            <li>
+              <a href="#doc-keys">8. Shortcuts</a>
             </li>
           </ul>
         </nav>
 
         <article className="docs-body">
-          <h1 id="doc-overview">MFHMFA Documentation</h1>
+          <h1 id="doc-why">MFHMFA — Why, What &amp; How</h1>
           <p>
             <strong>MFHMFA</strong> (<em>Mermaid For Humans, Mermaid For Agents</em>) is a
-            zero-storage Mermaid workspace, headless Chromium validator/renderer, and Model Context
-            Protocol (MCP) server. The server stores <strong>zero diagrams</strong> in memory or on
-            disk — all workspace state lives locally in your browser&apos;s{' '}
-            <code>localStorage</code>.
+            zero-server-storage <strong>Codebase Comprehension Studio</strong> and Model Context
+            Protocol (MCP) server.
           </p>
           <p>
-            When an AI coding agent connects over MCP, MFHMFA identifies the agent (e.g.{' '}
-            <strong>Claude Code</strong>, <strong>Pi</strong>, <strong>Cursor</strong>,{' '}
-            <strong>Antigravity</strong>) and the project workspace, allocates a dedicated space in
-            your browser&apos;s <code>localStorage</code>, and streams rendered diagrams straight
-            into Chrome-style Project &amp; Agent tab groups.
+            AI coding agents can write thousands of lines of code in minutes, creating a new
+            bottleneck: <strong>builders often own systems they cannot mentally simulate.</strong>{' '}
+            Standard static diagrams fail at comprehension in two predictable ways:
           </p>
           <ul>
             <li>
-              Public instance:{' '}
-              <a href="https://mfhmfa.kasun.si" target="_blank" rel="noopener noreferrer">
-                https://mfhmfa.kasun.si
-              </a>
+              <strong>Too Technical (Jargon Overload):</strong> 15 boxes stuffed with framework
+              buzzwords and variable names that exceed human working memory (~4–7 novel items).
             </li>
             <li>
-              Hosted Streamable HTTP MCP: <code>https://mfhmfa.kasun.si/mcp</code>
+              <strong>Too Abstract (Toy Metaphors):</strong> Vague simplified boxes that hide
+              causality, data sizes, and what breaks when a component fails.
+            </li>
+          </ul>
+          <p>
+            MFHMFA pairs Mermaid&apos;s clean visual layout with interactive comprehension layers
+            grounded in cognitive science—while storing <strong>zero diagrams on the server</strong>{' '}
+            (everything lives in your browser&apos;s <code>localStorage</code>).
+          </p>
+
+          <h2 id="doc-how">2. How Comprehension Works in Studio</h2>
+          <ul>
+            <li>
+              <strong>4–7 Boxes per View + Sub-Graph Zoom (Working Memory Law):</strong> Agents keep
+              each diagram concise (2–5 plain words per box) and link deeper subsystems via{' '}
+              <code>childPath</code>. Double-click any dashed box (or click{' '}
+              <em>Zoom into&hellip;</em>) to drill into its child <code>.mmd</code> graph, and use
+              the top-left breadcrumb to zoom back out.
             </li>
             <li>
-              Source repository:{' '}
-              <a
-                href="https://github.com/kasundularaam/MFHMFA"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                github.com/kasundularaam/MFHMFA
-              </a>
+              <strong>Story Mode Stepper (Segmenting &amp; Signaling):</strong> Click{' '}
+              <strong>Walk Through</strong> (or press <code>&larr;</code> / <code>&rarr;</code>) to
+              follow one concrete flow step-by-step while inactive nodes and arrows dim out.
+            </li>
+            <li>
+              <strong>Clickable Node Inspector (Dual Coding &amp; Counterfactuals):</strong> Click
+              any outlined box to inspect its plain mechanism, a{' '}
+              <strong>Concrete Example</strong> (real sizes, counts, or timings),{' '}
+              <strong>What Breaks If&hellip;</strong> failure behavior, and repository{' '}
+              <strong>Source Files</strong>.
+            </li>
+            <li>
+              <strong>2x Retina Agent Vision + Cognitive Linter:</strong> Every{' '}
+              <code>mermaid_render</code> call validates syntax, renders a 2x Retina PNG for the
+              agent to inspect visually, checks layout &amp; cognitive load diagnostics, coalesces
+              rapid retries into one clean revision, and streams the finished graph live to this
+              browser tab.
             </li>
           </ul>
 
-          <h2 id="doc-mcp">2. MCP Configuration</h2>
+          <h2 id="doc-mcp">3. MCP Setup</h2>
           <p>
-            This browser has a local workspace token stored in <code>localStorage</code>:{' '}
+            This browser holds a private workspace token in <code>localStorage</code>:{' '}
             <code>{workspaceId}</code>{' '}
             <button
               type="button"
@@ -135,10 +168,9 @@ docker compose up -d --build
             >
               [rotate]
             </button>
-            . Including <code>?workspace={workspaceId}</code> in your MCP URL pairs your terminal
-            agent with this browser&apos;s SSE channel so finalized diagrams stream directly into
-            your <code>localStorage</code> Explorer (keep a Studio tab open while your agent works
-            — MFHMFA stores 0 diagrams on the server).
+            . Pairing your coding agent with <code>?workspace={workspaceId}</code> connects it to
+            this browser&apos;s live stream (keep a Studio tab open while your agent works—the
+            server stores nothing).
           </p>
 
           <h3>mcp.json (Cursor, Antigravity, Windsurf, Claude Desktop)</h3>
@@ -156,54 +188,43 @@ docker compose up -d --build
             Legacy SSE MCP clients are also supported at <code>{baseUrl}/mcp/sse</code>.
           </p>
 
-          <h2 id="doc-sync">3. VS Code Explorer, VFS &amp; Immutable History</h2>
+          <h2 id="doc-vfs">4. Zero-Storage Browser VFS &amp; History</h2>
           <p>
-            Visiting the Studio initializes a Virtual Diagram Filesystem (
-            <code>mfhmfa-workspace-v4</code>) in your browser <code>localStorage</code> while the
-            server acts strictly as a zero-storage 2-way SSE bridge:
+            All project trees, <code>.mmd</code> files, and comprehension guides live locally under{' '}
+            <code>mfhmfa-workspace-v4</code> in your browser&apos;s <code>localStorage</code>:
           </p>
           <ul>
             <li>
-              <strong>Jailed Project Working Directory</strong> — Each MCP session is bound to its
-              working project (resolved via MCP <code>roots/list</code>, Stdio <code>cwd</code>, or{' '}
-              <code>?project=...</code>). Agents can only list, read, render, and move paths inside
-              their own working project, while you see all projects side-by-side in the Left
-              Explorer.
+              <strong>Jailed Project Working Directory:</strong> Each MCP session is locked to its
+              own project root (discovered via MCP <code>roots/list</code>, Stdio <code>cwd</code>,
+              or <code>?project=...</code>). Agents cannot read or overwrite other projects.
             </li>
             <li>
-              <strong>Cross-Agent Collaboration (<code>ls</code> &amp; <code>read</code>)</strong>{' '}
-              — Multiple agents (e.g. <em>Claude Code</em> and <em>Pi</em>) working in the same
-              project share subfolders (<code>architecture/</code>, <code>auth/</code>,{' '}
-              <code>db/</code>), inspect each other&apos;s graphs via <code>mermaid_ls</code> and{' '}
-              <code>mermaid_read</code>, and display author badges (<code>claude</code>,{' '}
-              <code>pi</code>, <code>you</code>) in the Explorer tree.
+              <strong>Multi-Agent Collaboration:</strong> Multiple agents (e.g.{' '}
+              <em>Claude Code</em> and <em>Pi</em>) working on the same repo share subfolders, read
+              each other&apos;s graphs via <code>mermaid_ls</code> and <code>mermaid_read</code>,
+              and show author badges in the Explorer.
             </li>
             <li>
-              <strong>Last-5 Immutable Revisions</strong> — Every graph maintains an immutable ring
-              buffer of its last 5 versions. Use the <code>vN</code> history menu on the right side
-              of the tab bar to inspect or restore earlier revisions. Only humans can delete graphs
-              or folders.
+              <strong>Smart Coalescing &amp; Last-5 Ring Buffer:</strong> Rapid retries by the same
+              agent within 90s merge into the head revision so layout fixes never clutter history.
+              Distinct updates keep an immutable 5-version ring buffer (inspect or restore from the{' '}
+              <code>vN</code> menu). Only humans can delete files or folders.
             </li>
             <li>
-              <strong>Story Mode, Node Inspector &amp; Sub-Graph Zoom</strong> — Agents can attach
-              an interactive comprehension <code>guide</code> (<code>gist</code>,{' '}
-              <code>steps</code>, <code>nodes</code>) to any graph so you can step through one
-              concrete trace at a time, click boxes for examples &amp; failure modes, and drill down
-              into linked child <code>.mmd</code> files.
+              <strong>Stateless Permalinks (<code>#z=...</code>):</strong> Share a deflate-compressed
+              snapshot—including Story Mode steps and Node Inspector cards—directly in a URL hash
+              with zero server database.
             </li>
           </ul>
 
-          <h2 id="doc-tools">4. MCP Tools &amp; Resources</h2>
-          <p>
-            All tools are stateless and safe to call concurrently. Headless Chromium slots run in
-            isolated browser contexts and recycle automatically.
-          </p>
+          <h2 id="doc-tools">5. MCP Tools &amp; Guide Schema</h2>
           <table className="plain-table">
             <thead>
               <tr>
                 <th>Tool</th>
                 <th>Arguments</th>
-                <th>Description</th>
+                <th>Purpose</th>
               </tr>
             </thead>
             <tbody>
@@ -215,8 +236,8 @@ docker compose up -d --build
                   <code>path?</code>, <code>project?</code>
                 </td>
                 <td>
-                  Lists subfolders and <code>.mmd</code> graphs inside the agent&apos;s jailed
-                  project working directory with diagram type, version, and author badge.
+                  Lists subfolders and <code>.mmd</code> files in the jailed project directory with
+                  diagram type, version, step count, and author badge.
                 </td>
               </tr>
               <tr>
@@ -227,8 +248,8 @@ docker compose up -d --build
                   <code>path</code>, <code>version?</code>
                 </td>
                 <td>
-                  Reads the <code>.mmd</code> source of an existing graph (latest head or any of
-                  the last 5 immutable revisions) + revision history.
+                  Reads the <code>.mmd</code> source, attached comprehension <code>guide</code>, and
+                  5-version history of an existing graph.
                 </td>
               </tr>
               <tr>
@@ -237,15 +258,14 @@ docker compose up -d --build
                 </td>
                 <td>
                   <code>code</code>, <code>path?</code>, <code>title?</code>,{' '}
-                  <code>guide?</code>, <code>project?</code>, <code>theme?</code>,{' '}
-                  <code>look?</code>, <code>scale?</code>, <code>outputPath?</code>
+                  <code>guide?</code>, <code>theme?</code>, <code>look?</code>,{' '}
+                  <code>scale?</code>, <code>outputPath?</code>
                 </td>
                 <td>
-                  Creates parent folders, streams Mermaid code + optional interactive{' '}
-                  <code>guide</code> (Story Mode <code>steps</code>, clickable <code>nodes</code>{' '}
-                  inspector &amp; <code>childPath</code> zoom) into browser{' '}
-                  <code>localStorage</code>, validates syntax, and returns a 2x Retina PNG +
-                  layout/cognitive diagnostics.
+                  Validates syntax, streams Mermaid + optional <code>guide</code> (<code>gist</code>
+                  , <code>steps</code>, <code>nodes</code>, <code>parentPath</code>) into browser{' '}
+                  <code>localStorage</code>, and returns a 2x Retina PNG + layout/cognitive
+                  diagnostics.
                 </td>
               </tr>
               <tr>
@@ -256,8 +276,8 @@ docker compose up -d --build
                   <code>from</code>, <code>to</code>
                 </td>
                 <td>
-                  Moves or renames a graph or subfolder inside the working project while preserving
-                  its 5-version history. (No <code>rm</code> tool is exposed to agents.)
+                  Moves or renames a graph or folder while preserving history and rewriting any{' '}
+                  <code>childPath</code> / <code>parentPath</code> links.
                 </td>
               </tr>
               <tr>
@@ -268,9 +288,8 @@ docker compose up -d --build
                   <code>code</code>
                 </td>
                 <td>
-                  Syntax check and static linting. Returns diagram type, 1-indexed line/column
-                  pointer, source snippet, and targeted fix hints (unquoted brackets, lowercase{' '}
-                  <code>end</code> IDs, unmatched <code>subgraph</code> blocks).
+                  Checks syntax and static lint rules (including dense box label warnings); returns
+                  line/column snippets and targeted fix hints.
                 </td>
               </tr>
               <tr>
@@ -278,9 +297,7 @@ docker compose up -d --build
                   <code>mermaid_export</code>
                 </td>
                 <td>
-                  <code>code</code>, <code>outputPath</code>, <code>format?</code>,{' '}
-                  <code>title?</code>, <code>theme?</code>, <code>look?</code>,{' '}
-                  <code>scale?</code>
+                  <code>code</code>, <code>outputPath</code>, <code>format?</code>
                 </td>
                 <td>
                   Renders and writes diagram output to disk as <code>.png</code>,{' '}
@@ -295,9 +312,10 @@ docker compose up -d --build
                   <code>topic?</code>
                 </td>
                 <td>
-                  Escaping and layout rules for <code>pitfalls</code>, <code>flowchart</code>,{' '}
-                  <code>sequence</code>, <code>er</code>, <code>state</code>, <code>class</code>,{' '}
-                  <code>mindmap</code>, <code>gantt</code>, or <code>all</code>.
+                  Comprehension rules (<code>comprehension</code>) plus escaping and layout guides (
+                  <code>pitfalls</code>, <code>flowchart</code>, <code>sequence</code>,{' '}
+                  <code>er</code>, <code>state</code>, <code>class</code>, <code>mindmap</code>,{' '}
+                  <code>gantt</code>, or <code>all</code>).
                 </td>
               </tr>
               <tr>
@@ -305,41 +323,47 @@ docker compose up -d --build
                   <code>mermaid_list_templates</code>
                 </td>
                 <td>—</td>
-                <td>Returns starter Mermaid templates across 11 diagram categories.</td>
+                <td>Returns curated starter Mermaid templates across 11 diagram categories.</td>
               </tr>
             </tbody>
           </table>
 
           <p>
-            <strong>MCP Resources:</strong> <code>mermaid://guides/pitfalls</code>,{' '}
-            <code>mermaid://templates</code>, <code>mermaid://templates/&#123;id&#125;</code>.
-            <br />
-            <strong>MCP Prompt:</strong> <code>design-and-verify-diagram</code>.
+            <strong>Source &amp; Philosophy:</strong>{' '}
+            <a
+              href="https://github.com/kasundularaam/MFHMFA"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              github.com/kasundularaam/MFHMFA
+            </a>{' '}
+            (see <code>PHILOSOPHY.md</code>).
           </p>
 
-          <h2 id="doc-http">5. HTTP Tool API</h2>
+          <h2 id="doc-http">6. HTTP Tool API</h2>
           <p>
-            For custom OpenAI / Anthropic / Gemini function-calling loops without an MCP client,
-            fetch JSON schemas from <code>GET {baseUrl}/api/tools/schemas</code> and dispatch
-            calls via <code>POST {baseUrl}/api/tools/call</code>:
+            For direct OpenAI / Anthropic / Gemini function-calling without an MCP client, fetch
+            schemas from <code>GET {baseUrl}/api/tools/schemas</code> and invoke tools via{' '}
+            <code>POST {baseUrl}/api/tools/call</code>:
           </p>
           <PlainPre code={restCallSnippet} />
 
           <p>Additional direct HTTP endpoints:</p>
           <ul>
             <li>
-              <code>POST /api/validate</code> — JSON body <code>&#123; &quot;code&quot;: &quot;...&quot; &#125;</code>
+              <code>POST /api/validate</code> — JSON body{' '}
+              <code>&#123; &quot;code&quot;: &quot;...&quot; &#125;</code>
             </li>
             <li>
               <code>POST /api/render</code> — Stateless SVG + base64 PNG render
             </li>
             <li>
-              <code>GET /api/status</code> — Server health, Chromium pool telemetry, and active
-              MCP session counts
+              <code>GET /api/status</code> — Server health, Chromium pool telemetry, and active MCP
+              session counts
             </li>
           </ul>
 
-          <h2 id="doc-selfhost">6. Self-Hosting</h2>
+          <h2 id="doc-selfhost">7. Self-Hosting</h2>
           <p>Run the full stack (Web Studio + HTTP API + MCP Server + Chromium) in Docker:</p>
           <PlainPre code={dockerSnippet} />
 
@@ -387,25 +411,24 @@ docker compose up -d --build
             </tbody>
           </table>
 
-          <h2 id="doc-keys">7. Shortcuts</h2>
+          <h2 id="doc-keys">8. Shortcuts</h2>
           <ul>
             <li>
               <code>Ctrl/Cmd + B</code> — Toggle Left Explorer sidebar
             </li>
             <li>
-              <code>Ctrl/Cmd + E</code> — Toggle between Preview and Code view (or click the icon
-              at the right edge of the tab bar)
+              <code>Ctrl/Cmd + E</code> — Toggle between Preview and Code view
+            </li>
+            <li>
+              <code>&larr;</code> / <code>&rarr;</code> (in Preview) — Step backward / forward
+              through Story Mode (<code>Esc</code> closes Inspector or returns to Overview)
+            </li>
+            <li>
+              Click / Double-click outlined box — Open Node Inspector card / Zoom into linked child
+              sub-graph
             </li>
             <li>
               <code>Alt + 1..9</code> — Switch to open tab 1–9
-            </li>
-            <li>
-              <code>&larr;</code> / <code>&rarr;</code> (in Preview) — Step through Story Mode
-              walkthrough frames (<code>Esc</code> exits back to Overview)
-            </li>
-            <li>
-              Click / Double-click outlined diagram box — Open Node Inspector card / Zoom into
-              linked child sub-graph
             </li>
             <li>Double-click item in Explorer — Rename graph</li>
             <li>Middle-click open tab — Close tab (keeps graph in Explorer)</li>
