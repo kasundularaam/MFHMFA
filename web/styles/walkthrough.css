@@ -130,6 +130,40 @@
   gap: 3px;
 }
 
+.walkthrough-flow-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-line);
+}
+
+.walkthrough-flow-pill {
+  height: 22px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+
+.walkthrough-flow-pill:hover {
+  color: var(--text-primary);
+}
+
+.walkthrough-flow-pill.active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
 .walkthrough-step-counter {
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
@@ -192,6 +226,79 @@
   margin: 0;
   font-size: 13.5px;
   line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.story-step-trace {
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.story-step-check {
+  margin-top: 8px;
+  padding: 8px 11px;
+  border-radius: 7px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.story-check-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.story-check-question {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.story-check-icon {
+  color: var(--tab-accent);
+  flex-shrink: 0;
+}
+
+.story-check-toggle {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border-line);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out);
+}
+
+.story-check-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.story-check-answer {
+  padding-top: 6px;
+  border-top: 1px solid var(--border-line);
+  font-size: 12.5px;
+  line-height: 1.5;
   color: var(--text-secondary);
 }
 

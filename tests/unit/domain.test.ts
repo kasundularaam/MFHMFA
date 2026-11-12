@@ -8,6 +8,7 @@ import {
   inferSuggestion,
   parseMermaidError,
 } from '../../src/domain/diagnostics.js';
+import { buildLearningPlaybookDocument, LEARNING_MODES } from '../../src/domain/playbooks.js';
 import type { RenderEnginePort } from '../../src/domain/ports.js';
 import { StatelessWorkspaceRelay } from '../../src/infrastructure/ephemeral/workspaceRelay.js';
 import { getOpenAiToolSchemas } from '../../src/interfaces/tools/toolRegistry.js';
@@ -17,6 +18,8 @@ import {
   normalizeProjectName,
 } from '../../src/shared/agentIdentity.js';
 import {
+  resolveGuideFlows,
+  resolveNodeRefs,
   sanitizeComprehensionGuide,
   serializeGuideCanonical,
   summarizeComprehensionGuide,
@@ -144,8 +147,15 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
     expect(set.has('id-19')).toBe(true);
 
     const schemas = getOpenAiToolSchemas();
-    expect(schemas.length).toBe(8);
-    const renderSchema = schemas.find((s) => s.function.name === 'mermaid_render');
+    expect(schemas.map((s) => s.function.name)).toEqual([
+      'get_playbook',
+      'render_view',
+      'list_views',
+      'read_view',
+      'move_view',
+      'export_view',
+    ]);
+    const renderSchema = schemas.find((s) => s.function.name === 'render_view');
     expect(renderSchema).toBeDefined();
     expect(renderSchema!.function.parameters).toHaveProperty('properties');
     expect((renderSchema!.function.parameters as { required?: string[] }).required).toContain(
@@ -632,5 +642,100 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
         'Browser',
       ]);
     }
+  });
+
+  it('builds mode-specific learning playbooks and sanitizes flows, traces, checks, terms & refs', () => {
+    for (const mode of LEARNING_MODES) {
+      const doc = buildLearningPlaybookDocument({
+        mode,
+        syntaxTopic: 'sequence',
+        lsResult: {
+          project: 'FlashAttention Study',
+          cwd: '/',
+          entries: [],
+          treeText:
+            'FlashAttention Study/\n  overview.mmd  (flowchart-v2, v1, by pi, 2 flows / 4 steps)',
+          viewerFocus: {
+            activePath: 'overview.mmd',
+            viewingVersion: 1,
+            activeFlowId: 'paper-method',
+            activeFlowLabel: "Paper's Method",
+            activeStepIndex: 1,
+            activeStepTitle: '2. Tile into SRAM',
+            selectedNodeId: 'SRAM',
+          },
+        },
+      });
+      expect(doc).toContain(`Learning Playbook: \`${mode}\``);
+      expect(doc).toContain('Universal Comprehension Rules');
+      expect(doc).toContain('Mermaid Syntax Essentials');
+      expect(doc).toContain('Sequence Diagram');
+      expect(doc).toContain('selected box `SRAM`');
+    }
+
+    const richGuide = sanitizeComprehensionGuide({
+      gist: 'Avoid slow HBM round-trips by tiling Q/K/V inside fast on-chip SRAM.',
+      flows: [
+        {
+          label: 'Baseline Bottleneck',
+          steps: [
+            {
+              title: '1. Materialize full N x N matrix',
+              caption: 'Writes full attention matrix back to slow HBM.',
+              focusNodes: ['QKV', 'HBM'],
+              trace: '[4096 x 64] -> [4096 x 4096] written to HBM',
+            },
+          ],
+        },
+        {
+          label: 'Baseline Bottleneck',
+          steps: [
+            {
+              title: '1. Online softmax tiling',
+              caption: 'Computes blockwise rescaled softmax inside SRAM.',
+              focusNodes: ['QKV', 'SRAM'],
+              trace: '[128 x 64] tile -> 0 intermediate HBM writes',
+              check: {
+                question: 'How does online softmax combine two blocks without full N?',
+                answer: 'By tracking running max m(x) and rescaling factor exp(m_old - m_new).',
+              },
+            },
+          ],
+        },
+      ],
+      nodes: {
+        SRAM: {
+          label: 'Fast On-Chip Tile',
+          term: 'Eq. 4: Blockwise Online Softmax (SRAM)',
+          summary: 'Fuses matmul, mask, softmax, and value accumulation in one CUDA kernel.',
+          example: '20 MB SRAM @ 19 TB/s vs 40 GB HBM @ 1.5 TB/s',
+          whatIf:
+            'If head_dim exceeds shared memory capacity, register spilling slows kernels.',
+          refs: ['§3.1', 'Algorithm 1'],
+          files: ['csrc/flash_attn/flash_fwd_kernel.h'],
+        },
+      },
+    });
+
+    expect(richGuide?.flows?.map((f) => f.id)).toEqual([
+      'baseline-bottleneck',
+      'baseline-bottleneck-2',
+    ]);
+    expect(resolveGuideFlows(richGuide).length).toBe(2);
+    expect(richGuide?.flows?.[1]?.steps[0]?.trace).toContain('0 intermediate HBM writes');
+    expect(richGuide?.flows?.[1]?.steps[0]?.check?.answer).toContain('running max');
+    expect(richGuide?.nodes?.SRAM?.term).toBe('Eq. 4: Blockwise Online Softmax (SRAM)');
+    expect(resolveNodeRefs(richGuide?.nodes?.SRAM)).toEqual([
+      '§3.1',
+      'Algorithm 1',
+      'csrc/flash_attn/flash_fwd_kernel.h',
+    ]);
+    expect(summarizeComprehensionGuide(richGuide)).toMatchObject({
+      hasGuide: true,
+      hasGist: true,
+      flowCount: 2,
+      stepCount: 2,
+      documentedNodeCount: 1,
+    });
   });
 });

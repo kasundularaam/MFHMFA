@@ -1,6 +1,7 @@
 export type MermaidTheme = 'default' | 'neutral' | 'dark' | 'forest' | 'base';
 export type MermaidLook = 'classic' | 'handDrawn';
 export type CallerSource = 'mcp-stdio' | 'mcp-http' | 'rest-tool' | 'web';
+export type LearningMode = 'concept' | 'paper' | 'codebase' | 'bug' | 'tradeoff';
 
 export interface ParseErrorDetail {
   message: string;
@@ -40,11 +41,21 @@ export interface DiagramDimensions {
  */
 export interface DiagramNodeDetail {
   label?: string;
+  term?: string;
   summary: string;
   example?: string;
   whatIf?: string;
+  refs?: string[];
   files?: string[];
   childPath?: string;
+}
+
+/**
+ * Active retrieval / micro-prediction prompt inside a walkthrough step.
+ */
+export interface DiagramStepCheck {
+  question: string;
+  answer: string;
 }
 
 /**
@@ -54,6 +65,18 @@ export interface DiagramWalkthroughStep {
   title: string;
   caption: string;
   focusNodes: string[];
+  trace?: string;
+  check?: DiagramStepCheck;
+}
+
+/**
+ * Named walkthrough scenario for contrasting paths on the same map
+ * (e.g. "Happy Path" vs. "Crash & Retry", or "Expected" vs. "Bug Trace").
+ */
+export interface DiagramWalkthroughFlow {
+  id: string;
+  label: string;
+  steps: DiagramWalkthroughStep[];
 }
 
 /**
@@ -62,6 +85,7 @@ export interface DiagramWalkthroughStep {
 export interface DiagramComprehensionGuide {
   gist?: string;
   steps?: DiagramWalkthroughStep[];
+  flows?: DiagramWalkthroughFlow[];
   nodes?: Record<string, DiagramNodeDetail>;
   parentPath?: string;
 }
@@ -146,6 +170,16 @@ export interface DiagramRelayPayload {
   timestamp: number;
 }
 
+export interface ViewerFocusContext {
+  activePath: string;
+  viewingVersion: number;
+  activeFlowId?: string | null;
+  activeFlowLabel?: string | null;
+  activeStepIndex?: number | null;
+  activeStepTitle?: string | null;
+  selectedNodeId?: string | null;
+}
+
 export interface VfsLsEntry {
   name: string;
   path: string;
@@ -154,6 +188,7 @@ export interface VfsLsEntry {
   currentVersion?: number;
   author?: string;
   updatedAt?: number;
+  flowCount?: number;
   stepCount?: number;
   nodeNoteCount?: number;
 }
@@ -163,6 +198,7 @@ export interface VfsLsResult {
   cwd: string;
   entries: VfsLsEntry[];
   treeText: string;
+  viewerFocus?: ViewerFocusContext | null;
 }
 
 export interface VfsRevisionSummary {

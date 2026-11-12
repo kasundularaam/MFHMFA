@@ -108,19 +108,19 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
       const toolsList = await mcpClient.listTools();
       const toolNames = toolsList.tools.map((t) => t.name).sort();
       expect(toolNames).toEqual([
-        'mermaid_export',
-        'mermaid_list_templates',
-        'mermaid_ls',
-        'mermaid_mv',
-        'mermaid_read',
-        'mermaid_render',
-        'mermaid_syntax_guide',
-        'mermaid_validate',
+        'export_view',
+        'get_playbook',
+        'list_views',
+        'move_view',
+        'read_view',
+        'render_view',
       ]);
       expect(toolNames).not.toContain('mermaid_rm');
+      expect(toolNames).not.toContain('delete_view');
 
+      // Soft guidance: rendering BEFORE calling get_playbook and without a guide succeeds cleanly with coachingTips
       const renderRes = await mcpClient.callTool({
-        name: 'mermaid_render',
+        name: 'render_view',
         arguments: {
           path: 'payments/checkout-flow',
           code: 'flowchart LR\n  Client(["Checkout UI"]) --> API["Payments API"]\n  API --> Ledger[("Ledger")]',
@@ -152,6 +152,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         syncedToBrowser: boolean;
         syncStatus: string;
         presentationRule: string;
+        coachingTips?: string[];
       };
       expect(meta.valid).toBe(true);
       expect(meta.agent).toBe('Claude Code');
@@ -161,8 +162,35 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
       expect(meta.syncStatus).toBe('synced_live');
       expect(meta.studioUrl).toBeUndefined();
       expect(meta.presentationRule).toContain(
-        'do NOT output raw Mermaid source code or any URLs'
+        'without outputting raw Mermaid source code or any URLs'
       );
+      expect(meta.coachingTips?.length).toBe(2);
+      expect(meta.coachingTips?.[0]).toContain('get_playbook');
+
+      // Calling get_playbook loads mode-specific pedagogy and clears coachingTips when a guide is attached
+      const pbRes = await mcpClient.callTool({
+        name: 'get_playbook',
+        arguments: { mode: 'paper', syntax: 'flowchart' },
+      });
+      expect(pbRes.isError).toBeFalsy();
+      const pbText = (pbRes.content as Array<{ text?: string }>)[0]?.text ?? '';
+      expect(pbText).toContain('Learning Playbook: `paper`');
+
+      const guidedRes = await mcpClient.callTool({
+        name: 'render_view',
+        arguments: {
+          path: 'payments/checkout-flow',
+          code: 'flowchart LR\n  Client(["Checkout UI"]) --> API["Payments API"]',
+          guide: {
+            gist: 'Checkout UI submits payment intents to the Payments API.',
+          },
+          returnImage: false,
+        },
+      });
+      const guidedMeta = JSON.parse(
+        (guidedRes.content as Array<{ text?: string }>)[0]?.text ?? '{}'
+      ) as { coachingTips?: string[] };
+      expect(guidedMeta.coachingTips).toBeUndefined();
 
       await readUntil('payments/checkout-flow.mmd');
       expect(started.service.getRelayStats().storedDiagrams).toBe(0);
@@ -249,7 +277,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         clients.flatMap((client, cIdx) =>
           workloads.map(async (w, wIdx) => {
             const res = await client.callTool({
-              name: 'mermaid_render',
+              name: 'render_view',
               arguments: {
                 ...w.args,
                 path: `${w.args.path}-c${cIdx}-w${wIdx}.mmd`,
@@ -303,7 +331,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
     await stdioClient.connect(stdioTransport);
 
     const previewRes = await stdioClient.callTool({
-      name: 'mermaid_render',
+      name: 'render_view',
       arguments: {
         path: 'schema/agent-er.mmd',
         code: 'erDiagram\n  AGENT ||--o{ DIAGRAM : renders',
@@ -333,16 +361,19 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
 
   it('supports OpenAI/Anthropic REST tool schemas and stateless mermaid_export', async () => {
     const schemaResp = await fetch(`${started.baseUrl}/api/tools/schemas`);
-    const schemaJson = (await schemaResp.json()) as { tools: unknown[] };
+    const schemaJson = (await schemaResp.json()) as {
+      tools: Array<{ function: { name: string } }>;
+    };
     expect(Array.isArray(schemaJson.tools)).toBe(true);
-    expect(schemaJson.tools.length).toBe(8);
+    expect(schemaJson.tools.length).toBe(6);
+    expect(schemaJson.tools.map((t) => t.function.name)).toContain('get_playbook');
 
     const outSvg = path.join(tempDir, 'exported-arch.svg');
     const callResp = await fetch(`${started.baseUrl}/api/tools/call`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: 'mermaid_export',
+        name: 'export_view',
         arguments: {
           code: 'mindmap\n  root((Stateless))\n    MCP\n    REST\n    Web',
           outputPath: outSvg,
@@ -551,7 +582,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
 
         // 3. Cursor writes a secret graph in Project B; Claude writes two graphs in Project A
         await cursor.callTool({
-          name: 'mermaid_render',
+          name: 'render_view',
           arguments: {
             path: 'internal/secret-b.mmd',
             code: 'flowchart LR\n  B1["ProjectBSecretNode"] --> B2["Vault"]',
@@ -559,7 +590,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         });
 
         await claude.callTool({
-          name: 'mermaid_render',
+          name: 'render_view',
           arguments: {
             path: 'architecture/system-overview.mmd',
             code: 'flowchart LR\n  Web["Frontend"] --> GW["API Gateway"]',
@@ -567,17 +598,17 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         });
 
         await claude.callTool({
-          name: 'mermaid_render',
+          name: 'render_view',
           arguments: {
             path: 'auth/oauth-flow.mmd',
             code: 'sequenceDiagram\n  User->>GW: ClaudeOAuthV1',
           },
         });
 
-        // 4. Pi calls `mermaid_ls` -> sees Claude's folders & graphs in Project A,
+        // 4. Pi calls `list_views` -> sees Claude's folders & graphs in Project A,
         //    and CANNOT see Project B even if passing `project: "Project B"` or `path: "../Project B"`!
         const piLsRes = await pi.callTool({
-          name: 'mermaid_ls',
+          name: 'list_views',
           arguments: { project: 'Project B' }, // Should be ignored because Pi is jailed to Project A!
         });
         expect(piLsRes.isError).toBeFalsy();
@@ -590,14 +621,14 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         expect(piLsJson.treeText).not.toContain('secret-b.mmd');
 
         const escapeAttempt = await pi.callTool({
-          name: 'mermaid_ls',
+          name: 'list_views',
           arguments: { path: '../../Project-B' },
         });
         expect(escapeAttempt.isError).toBe(true);
 
         // 5. Pi reads Claude's `auth/oauth-flow.mmd`, updates it to v2, and creates `auth/session-er.mmd`!
         const piReadV1 = await pi.callTool({
-          name: 'mermaid_read',
+          name: 'read_view',
           arguments: { path: 'auth/oauth-flow' },
         });
         const readV1Payload = JSON.parse(
@@ -608,7 +639,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         expect(readV1Payload.author).toBe('claude');
 
         await pi.callTool({
-          name: 'mermaid_render',
+          name: 'render_view',
           arguments: {
             path: 'auth/oauth-flow.mmd',
             code: 'sequenceDiagram\n  User->>GW: PiRefinedOAuthV2',
@@ -616,16 +647,16 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         });
 
         await pi.callTool({
-          name: 'mermaid_render',
+          name: 'render_view',
           arguments: {
             path: 'auth/draft-er.mmd',
             code: 'erDiagram\n  USER ||--o{ SESSION : PiSessionRel',
           },
         });
 
-        // 6. Pi moves `auth/draft-er.mmd` -> `database/session-er.mmd` via `mermaid_mv`!
+        // 6. Pi moves `auth/draft-er.mmd` -> `database/session-er.mmd` via `move_view`!
         const mvRes = await pi.callTool({
-          name: 'mermaid_mv',
+          name: 'move_view',
           arguments: {
             from: 'auth/draft-er.mmd',
             to: 'database/session-er.mmd',
@@ -635,7 +666,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
 
         // Verify immutable history: Claude can still read v1 while head is v2 (by pi)!
         const claudeReadHistorical = await claude.callTool({
-          name: 'mermaid_read',
+          name: 'read_view',
           arguments: { path: 'auth/oauth-flow.mmd', version: 1 },
         });
         const histPayload = JSON.parse(
@@ -820,7 +851,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
 
         // 1. Render parent overview FIRST (`memory/overview.mmd`)
         const overviewRes = await pi.callTool({
-          name: 'mermaid_render',
+          name: 'render_view',
           arguments: {
             path: 'memory/overview.mmd',
             title: 'System Memory Overview',
@@ -860,7 +891,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         // 2. Render child sub-graph SECOND (`memory/browser-storage.mmd` — alphabetically before `overview`!):
         //    Verify child does NOT steal focus or spam a tab, and nests under `overview` in Explorer!
         const childRes = await pi.callTool({
-          name: 'mermaid_render',
+          name: 'render_view',
           arguments: {
             path: 'memory/browser-storage.mmd',
             title: 'Browser Storage Internals',
@@ -1017,9 +1048,9 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 5_000 }
         );
 
-        // 6. Verify `mermaid_read` returns full `guide` from browser localStorage & server still stores 0!
+        // 6. Verify `read_view` returns full `guide` from browser IndexedDB & server still stores 0!
         const readBack = await pi.callTool({
-          name: 'mermaid_read',
+          name: 'read_view',
           arguments: { path: 'memory/overview.mmd' },
         });
         const readJson = JSON.parse(
@@ -1027,6 +1058,170 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         ) as { guide?: { steps?: unknown[]; nodes?: Record<string, unknown> } };
         expect(readJson.guide?.steps?.length).toBe(2);
         expect(Boolean(readJson.guide?.nodes?.Browser)).toBe(true);
+
+        // 7. Render multi-scenario learning view with contrasting `flows`, `trace`, `check`, `term`, `refs`
+        //    and verify two-way live `viewerFocus` over `get_playbook` / `list_views`!
+        const conceptRes = await pi.callTool({
+          name: 'render_view',
+          arguments: {
+            path: 'concepts/wal-durability.mmd',
+            title: 'Write-Ahead Log Durability',
+            code: 'flowchart LR\n  Client(["Client"]) --> Log["Fast Append Log"] --> Table[("B-Tree Pages")]',
+            guide: {
+              gist: 'Random page writes corrupt on crash unless an append-only log records intent first.',
+              flows: [
+                {
+                  id: 'normal-write',
+                  label: 'Normal Write',
+                  steps: [
+                    {
+                      title: '1. Append sequentially',
+                      caption:
+                        'Sequential log append flushes to disk before touching B-Tree pages.',
+                      focusNodes: ['Client', 'Log'],
+                      trace: 'LSN=42 | fsync(wal, 128B) -> ACK in 0.4ms',
+                      check: {
+                        question: 'If power fails right after ACK, is data safe?',
+                        answer:
+                          'Yes — recovery replays LSN=42 from the sequential log on boot.',
+                      },
+                    },
+                  ],
+                },
+                {
+                  id: 'crash-recovery',
+                  label: 'Crash Recovery',
+                  steps: [
+                    {
+                      title: '1. Replay committed log entries',
+                      caption:
+                        'On restart, unapplied WAL records redo page updates idempotently.',
+                      focusNodes: ['Log', 'Table'],
+                      trace: 'PageLSN(41) < LogLSN(42) -> Redo apply LSN=42',
+                    },
+                  ],
+                },
+              ],
+              nodes: {
+                Log: {
+                  label: 'Fast Append Log',
+                  term: 'Write-Ahead Log (WAL / ARIES Redo Log)',
+                  summary:
+                    'Sequential append-only file flushed to disk before acknowledging commits.',
+                  example: '128 B record -> 1 sequential fsync',
+                  whatIf:
+                    'Without checkpoints, log grows unbounded and boot replay takes minutes.',
+                  refs: ['ARIES Paper §3', 'storage/wal.rs'],
+                },
+              },
+            },
+          },
+        });
+        expect(conceptRes.isError).toBeFalsy();
+
+        await wsPage.waitForFunction(
+          () =>
+            Boolean(
+              document
+                .querySelector('[data-testid="comprehension-dock"]')
+                ?.textContent?.includes('Random page writes corrupt on crash')
+            ),
+          { timeout: 5_000 }
+        );
+
+        // Start walkthrough -> verify scenario pills, step trace, and prediction check toggle!
+        await wsPage.click('[data-testid="story-start-btn"]');
+        await wsPage.waitForFunction(
+          () =>
+            document.querySelectorAll('[data-testid="flow-selector"] button').length === 2 &&
+            Boolean(
+              document
+                .querySelector('[data-testid="story-step-trace"]')
+                ?.textContent?.includes('LSN=42')
+            ) &&
+            document.querySelector('[data-testid="story-check-answer"]') === null,
+          { timeout: 5_000 }
+        );
+
+        await wsPage.click('[data-testid="story-check-toggle"]');
+        await wsPage.waitForFunction(
+          () =>
+            Boolean(
+              document
+                .querySelector('[data-testid="story-check-answer"]')
+                ?.textContent?.includes('replays LSN=42')
+            ),
+          { timeout: 5_000 }
+        );
+
+        // Switch to second contrasting flow ("Crash Recovery") and click `Log` box!
+        await wsPage.click('[data-flow-id="crash-recovery"]');
+        await wsPage.waitForFunction(
+          () =>
+            Boolean(
+              document
+                .querySelector('[data-testid="story-step-trace"]')
+                ?.textContent?.includes('PageLSN(41) < LogLSN(42)')
+            ),
+          { timeout: 5_000 }
+        );
+
+        await wsPage.evaluate(() => {
+          const el = document.querySelector(
+            '.canvas-stage svg [data-mfhmfa-node="Log"]'
+          ) as HTMLElement | null;
+          el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        await wsPage.waitForFunction(
+          () => {
+            const termTxt =
+              document.querySelector('[data-testid="node-inspector-term"]')?.textContent || '';
+            const cardTxt =
+              document.querySelector('[data-testid="node-inspector-card"]')?.textContent || '';
+            return (
+              termTxt.includes('Write-Ahead Log (WAL') &&
+              cardTxt.includes('ARIES Paper §3') &&
+              cardTxt.includes('References')
+            );
+          },
+          { timeout: 5_000 }
+        );
+
+        // Verify `get_playbook` and `list_views` report the human's live Studio selection (`viewerFocus`)!
+        const liveLs = await pi.callTool({
+          name: 'list_views',
+          arguments: {},
+        });
+        const liveLsJson = JSON.parse(
+          (liveLs.content as Array<{ text?: string }>)[0]?.text ?? '{}'
+        ) as {
+          viewerFocus?: {
+            activePath: string;
+            activeFlowId?: string | null;
+            activeFlowLabel?: string | null;
+            activeStepIndex?: number | null;
+            selectedNodeId?: string | null;
+          };
+        };
+        expect(liveLsJson.viewerFocus).toMatchObject({
+          activePath: 'concepts/wal-durability.mmd',
+          activeFlowId: 'crash-recovery',
+          activeFlowLabel: 'Crash Recovery',
+          activeStepIndex: 0,
+          selectedNodeId: 'Log',
+        });
+
+        const livePlaybook = await pi.callTool({
+          name: 'get_playbook',
+          arguments: { mode: 'concept' },
+        });
+        const livePlaybookText =
+          (livePlaybook.content as Array<{ text?: string }>)[0]?.text ?? '';
+        expect(livePlaybookText).toContain('concepts/wal-durability.mmd');
+        expect(livePlaybookText).toContain('flow "Crash Recovery"');
+        expect(livePlaybookText).toContain('selected box `Log`');
+
         expect(started.service.getRelayStats().storedDiagrams).toBe(0);
       } finally {
         await pi.close().catch(() => {});

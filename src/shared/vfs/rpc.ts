@@ -1,4 +1,5 @@
 import { normalizeProjectName } from '../agentIdentity.js';
+import { countGuideSteps } from '../comprehension.js';
 import type { VfsLsEntry, VfsLsResult, VfsReadResult } from '../types.js';
 import { normalizeRelativeDirPath, normalizeRelativeGraphPath } from '../vfsPath.js';
 import { buildExplorerSubtree } from './hierarchy.js';
@@ -76,7 +77,8 @@ export function evaluateVfsLs(
     ...sortedFiles.map((f) => {
       const head = getHeadVersion(f);
       const baseName = f.path.split('/').pop() || f.path;
-      const stepCount = head.guide?.steps?.length ?? 0;
+      const flowCount = head.guide?.flows?.length ?? 0;
+      const stepCount = countGuideSteps(head.guide);
       const nodeNoteCount = head.guide?.nodes ? Object.keys(head.guide.nodes).length : 0;
       return {
         name: baseName,
@@ -86,6 +88,7 @@ export function evaluateVfsLs(
         currentVersion: f.currentVersion,
         author: head.authorBadge,
         updatedAt: head.createdAt,
+        ...(flowCount > 0 ? { flowCount } : {}),
         ...(stepCount > 0 ? { stepCount } : {}),
         ...(nodeNoteCount > 0 ? { nodeNoteCount } : {}),
       };
@@ -103,8 +106,14 @@ export function evaluateVfsLs(
     const head = getHeadVersion(f);
     const baseName = f.path.split('/').pop() || f.path;
     const typeNote = f.diagramType ? `${f.diagramType}, ` : '';
-    const stepCount = head.guide?.steps?.length ?? 0;
-    const guideNote = stepCount > 0 ? `, ${stepCount} steps` : '';
+    const flowCount = head.guide?.flows?.length ?? 0;
+    const stepCount = countGuideSteps(head.guide);
+    const guideNote =
+      flowCount > 1
+        ? `, ${flowCount} flows / ${stepCount} steps`
+        : stepCount > 0
+          ? `, ${stepCount} steps`
+          : '';
     const prefixGlyph = isNestedChild ? '↳ ' : '';
     treeLines.push(
       `${indent}${prefixGlyph}${baseName}  (${typeNote}v${f.currentVersion}, by ${head.authorBadge}${guideNote})`
@@ -150,7 +159,7 @@ export function evaluateVfsRead(
 
   if (!proj || !file) {
     throw new Error(
-      `ENOENT: Graph "${filePath}" not found in working directory "${cleanProject}". Call \`mermaid_ls\` to see available paths.`
+      `ENOENT: Graph "${filePath}" not found in working directory "${cleanProject}". Call \`list_views\` to see available paths.`
     );
   }
 

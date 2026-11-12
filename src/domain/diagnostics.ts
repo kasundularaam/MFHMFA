@@ -230,7 +230,7 @@ export function analyzeStaticWarnings(code: string): LintWarning[] {
             code: 'DENSE_NODE_LABEL',
             message: `Node label crams ${words.length} words into one box, overloading visual scanning (Dual Coding Principle).`,
             suggestion:
-              'Keep box labels to 2–6 plain words and attach detailed mechanics, examples, and "what-if" failure cases via `guide.nodes` in `mermaid_render`.',
+              'Keep box labels to 2–6 plain words and attach detailed mechanics, examples, and "what-if" failure cases via `guide.nodes` in `render_view`.',
           });
           break;
         }
@@ -322,7 +322,7 @@ export function computeLayoutDiagnostics(
 
   if (metrics && metrics.nodeCount > 8) {
     notes.push(
-      `Cognitive load notice: ${metrics.nodeCount} nodes exceeds the ~4–7 chunk human working-memory sweet spot. For codebase comprehension, prefer 4–7 concise boxes on the overview and link deeper subsystems via \`guide.nodes[nodeId].childPath\`.`
+      `Cognitive load notice: ${metrics.nodeCount} nodes exceeds the ~4–7 chunk human working-memory sweet spot. Prefer 4–7 concise boxes per view and link deeper parts via \`guide.nodes[nodeId].childPath\`.`
     );
   }
 

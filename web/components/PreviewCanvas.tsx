@@ -6,12 +6,18 @@ import {
   ChevronRight,
   ChevronUp,
   FileCode2,
+  HelpCircle,
   Layers,
   TriangleAlert,
   X,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import type { DiagramComprehensionGuide, ParseErrorDetail } from '../../src/shared/types';
+import { resolveGuideFlows, resolveNodeRefs } from '../../src/shared/comprehension';
+import type {
+  DiagramComprehensionGuide,
+  DiagramWalkthroughStep,
+  ParseErrorDetail,
+} from '../../src/shared/types';
 import type { GraphBreadcrumbHop } from '../../src/shared/vfs';
 import { graphTitleFromPath } from '../../src/shared/vfsPath';
 import { useCanvasViewport } from '../hooks/useCanvasViewport';
@@ -28,6 +34,8 @@ interface PreviewCanvasProps {
   onExitHistoricalVersion?: () => void;
   parseError: ParseErrorDetail | null;
   guide?: DiagramComprehensionGuide;
+  activeFlowId: string | null;
+  onChangeFlowId: (flowId: string | null) => void;
   activeStepIndex: number | null;
   onChangeStepIndex: (next: number | null) => void;
   selectedNodeId: string | null;
@@ -56,6 +64,8 @@ export function PreviewCanvas({
   onExitHistoricalVersion,
   parseError,
   guide,
+  activeFlowId,
+  onChangeFlowId,
   activeStepIndex,
   onChangeStepIndex,
   selectedNodeId,
@@ -78,6 +88,7 @@ export function PreviewCanvas({
   const [nodeLabels, setNodeLabels] = useState<Map<string, string>>(() => new Map());
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [panelBodyHeight, setPanelBodyHeight] = useState(240);
+  const [revealedCheckKey, setRevealedCheckKey] = useState<string | null>(null);
 
   const stageLayoutRef = useRef<HTMLDivElement | null>(null);
   const activeStageRef = useRef<HTMLDivElement | null>(null);
@@ -117,12 +128,24 @@ export function PreviewCanvas({
     setPanelBodyHeight(Math.round(next));
   });
 
-  const steps = guide?.steps ?? [];
+  const flows = resolveGuideFlows(guide);
+  const currentFlow =
+    (activeFlowId && flows.find((f) => f.id === activeFlowId)) || flows[0] || null;
+  const steps = currentFlow?.steps ?? [];
+  const hasOverview = Boolean(guide?.gist);
+  const hasSteps = steps.length > 0;
+
+  const effectiveStepIndex =
+    activeStepIndex !== null ? activeStepIndex : !hasOverview && hasSteps ? 0 : null;
+
   const activeStep =
-    activeStepIndex !== null && steps[activeStepIndex] ? steps[activeStepIndex]! : null;
+    effectiveStepIndex !== null && steps[effectiveStepIndex]
+      ? steps[effectiveStepIndex]!
+      : null;
 
   const selectedDetail =
     selectedNodeId && guide?.nodes?.[selectedNodeId] ? guide.nodes[selectedNodeId]! : null;
+  const selectedRefs = resolveNodeRefs(selectedDetail ?? undefined);
 
   useEffect(
     () => () => {
@@ -184,10 +207,50 @@ export function PreviewCanvas({
     return nodeLabels.get(nodeId) || nodeId;
   };
 
-  const hasOverview = Boolean(guide?.gist);
-  const hasSteps = steps.length > 0;
   const showBottomPanel = hasActiveFile && Boolean(renderedSvg) && (hasOverview || hasSteps);
-  const isWalkthroughActive = Boolean(activeStep) || (!hasOverview && hasSteps);
+  const isWalkthroughActive = Boolean(activeStep);
+
+  const renderStepDetail = (step: DiagramWalkthroughStep, stepIdx: number) => {
+    const checkKey = `${chartKey}::${currentFlow?.id ?? 'default'}::${stepIdx}`;
+    const isCheckRevealed = revealedCheckKey === checkKey;
+
+    return (
+      <div className="walkthrough-step-content">
+        <div className="story-step-title">{step.title}</div>
+        <p className="story-step-caption">{step.caption}</p>
+
+        {step.trace && (
+          <div className="story-step-trace" data-testid="story-step-trace">
+            {step.trace}
+          </div>
+        )}
+
+        {step.check && (
+          <div className="story-step-check" data-testid="story-step-check">
+            <div className="story-check-header">
+              <div className="story-check-question">
+                <HelpCircle size={14} className="story-check-icon" />
+                <span>{step.check.question}</span>
+              </div>
+              <button
+                type="button"
+                className="story-check-toggle"
+                data-testid="story-check-toggle"
+                onClick={() => setRevealedCheckKey(isCheckRevealed ? null : checkKey)}
+              >
+                {isCheckRevealed ? 'Hide answer' : 'Reveal answer'}
+              </button>
+            </div>
+            {isCheckRevealed && (
+              <div className="story-check-answer" data-testid="story-check-answer">
+                {step.check.answer}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div ref={stageLayoutRef} className="preview-stage-layout">
@@ -341,6 +404,11 @@ export function PreviewCanvas({
             <div className="node-inspector-header">
               <div className="node-inspector-title-wrap">
                 <h3 className="node-inspector-title">{resolveDisplayLabel(selectedNodeId)}</h3>
+                {selectedDetail.term && (
+                  <div className="node-inspector-term" data-testid="node-inspector-term">
+                    {selectedDetail.term}
+                  </div>
+                )}
               </div>
               <button
                 type="button"
@@ -373,20 +441,22 @@ export function PreviewCanvas({
                 </div>
               )}
 
-              {selectedDetail.files && selectedDetail.files.length > 0 && (
+              {selectedRefs.length > 0 && (
                 <div className="node-inspector-section">
-                  <div className="node-inspector-label">Files</div>
+                  <div className="node-inspector-label">
+                    {selectedDetail.refs?.length ? 'References' : 'Files'}
+                  </div>
                   <div className="node-inspector-files">
-                    {selectedDetail.files.map((fp) => (
+                    {selectedRefs.map((refItem) => (
                       <button
-                        key={fp}
+                        key={refItem}
                         type="button"
                         className="node-file-chip"
-                        onClick={() => onCopyFilePath(fp)}
-                        title="Copy path"
+                        onClick={() => onCopyFilePath(refItem)}
+                        title="Copy reference"
                       >
                         <FileCode2 size={14} />
-                        <span>{fp}</span>
+                        <span>{refItem}</span>
                       </button>
                     ))}
                   </div>
@@ -480,16 +550,45 @@ export function PreviewCanvas({
 
               {isWalkthroughActive && hasSteps && (
                 <div className="walkthrough-step-controls">
+                  {flows.length > 1 && (
+                    <div
+                      className="walkthrough-flow-pills"
+                      data-testid="flow-selector"
+                      role="tablist"
+                      aria-label="Scenarios"
+                    >
+                      {flows.map((flow) => {
+                        const isFlowSelected = currentFlow?.id === flow.id;
+                        return (
+                          <button
+                            key={flow.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={isFlowSelected}
+                            data-flow-id={flow.id}
+                            className={`walkthrough-flow-pill ${isFlowSelected ? 'active' : ''}`}
+                            onClick={() => {
+                              setPanelCollapsed(false);
+                              onChangeFlowId(flow.id);
+                            }}
+                          >
+                            {flow.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   <span className="walkthrough-step-counter">
-                    Step {(activeStepIndex ?? 0) + 1} / {steps.length}
+                    Step {(effectiveStepIndex ?? 0) + 1} / {steps.length}
                   </span>
                   <button
                     type="button"
                     className="panel-icon-btn"
-                    disabled={(activeStepIndex ?? 0) <= 0}
+                    disabled={(effectiveStepIndex ?? 0) <= 0}
                     onClick={() => {
                       setPanelCollapsed(false);
-                      onChangeStepIndex(Math.max(0, (activeStepIndex ?? 0) - 1));
+                      onChangeStepIndex(Math.max(0, (effectiveStepIndex ?? 0) - 1));
                     }}
                     title="Previous step (Left arrow)"
                     aria-label="Previous step"
@@ -499,13 +598,15 @@ export function PreviewCanvas({
                   <button
                     type="button"
                     className="panel-icon-btn"
-                    disabled={activeStepIndex !== null && activeStepIndex >= steps.length - 1}
+                    disabled={
+                      effectiveStepIndex !== null && effectiveStepIndex >= steps.length - 1
+                    }
                     onClick={() => {
                       setPanelCollapsed(false);
                       onChangeStepIndex(
-                        activeStepIndex === null
+                        effectiveStepIndex === null
                           ? 0
-                          : Math.min(steps.length - 1, activeStepIndex + 1)
+                          : Math.min(steps.length - 1, effectiveStepIndex + 1)
                       );
                     }}
                     title="Next step (Right arrow)"
@@ -531,15 +632,7 @@ export function PreviewCanvas({
           {!panelCollapsed && (
             <div className="walkthrough-body" style={{ height: `${panelBodyHeight}px` }}>
               {activeStep ? (
-                <div className="walkthrough-step-content">
-                  <div className="story-step-title">{activeStep.title}</div>
-                  <p className="story-step-caption">{activeStep.caption}</p>
-                </div>
-              ) : !hasOverview && steps[0] ? (
-                <div className="walkthrough-step-content">
-                  <div className="story-step-title">{steps[0].title}</div>
-                  <p className="story-step-caption">{steps[0].caption}</p>
-                </div>
+                renderStepDetail(activeStep, effectiveStepIndex ?? 0)
               ) : (
                 <p className="walkthrough-gist">{guide?.gist}</p>
               )}

@@ -10,8 +10,16 @@ import {
   ComprehensionGuideToolSchema,
   summarizeComprehensionGuide,
 } from '../../shared/comprehension.js';
-import { MermaidLookSchema, MermaidThemeSchema } from '../../shared/protocolSchemas.js';
-import type { CallerSource, DiagramComprehensionGuide } from '../../shared/types.js';
+import {
+  LearningModeSchema,
+  MermaidLookSchema,
+  MermaidThemeSchema,
+} from '../../shared/protocolSchemas.js';
+import type {
+  CallerSource,
+  DiagramComprehensionGuide,
+  LearningMode,
+} from '../../shared/types.js';
 
 export interface ActiveCallerMetadata {
   sessionId: string | null;
@@ -26,6 +34,8 @@ export interface ToolCallContext {
   getCallerMeta?: () => ActiveCallerMetadata;
   ensureCallerProject?: () => Promise<string | null>;
   onProjectDiscovered?: (project: string) => void;
+  hasLoadedPlaybook?: () => boolean;
+  markPlaybookLoaded?: (mode: LearningMode) => void;
   relayBridge?: StatelessRenderInput['relayBridge'];
   vfsBridge?: VfsRpcBridgeFn;
 }
@@ -132,16 +142,19 @@ async function resolveJailedProject(
 
 export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
   defineTool({
-    name: 'mermaid_ls',
-    title: 'List Project Diagram Directories & Graphs (ls)',
+    name: 'get_playbook',
+    title: 'Load Learning Playbook & Live Workspace Context',
     description:
-      "List subdirectories and `.mmd` Mermaid graph files inside your current project working directory (stored in the user's browser IndexedDB). Shows directory tree, diagram types, version counts, and which coding agent (`pi`, `claude`, `you`) last updated each graph.",
+      'Call this FIRST whenever helping a user understand, learn, explain, or debug a topic. Loads the tailored cognitive-science teaching blueprint for `mode` (`concept`, `paper`, `codebase`, `bug`, or `tradeoff`), Mermaid escaping rules, existing workspace views, and what view/step/box the user currently has selected in Studio.',
     zodShape: {
-      path: z
+      mode: LearningModeSchema.describe(
+        'Topic category: "concept" (algorithms/tech/mental models), "paper" (research papers/math/ML), "codebase" (repos/execution flows), "bug" (root-cause/incidents), or "tradeoff" (architecture/design options).'
+      ),
+      syntax: z
         .string()
         .optional()
         .describe(
-          'Relative directory path inside your project working directory (defaults to `"/"` project root, e.g. `"auth"` or `"architecture/core"`).'
+          'Optional Mermaid diagram syntax reference if needed (flowchart, sequence, state, er, class, mindmap, gantt).'
         ),
       project: z
         .string()
@@ -153,77 +166,39 @@ export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
     annotations: { readOnlyHint: true, idempotentHint: true },
     execute: async (args, service, ctx) => {
       const project = await resolveJailedProject(args.project, ctx);
-      const out = await service.vfsLs({
+      ctx.markPlaybookLoaded?.(args.mode);
+      const out = await service.getPlaybook({
+        mode: args.mode,
+        syntaxTopic: args.syntax,
         workspaceToken: ctx.getWorkspaceToken?.(),
         project,
-        dirPath: args.path,
         vfsBridge: ctx.vfsBridge,
       });
       return {
         ok: true,
         payload: out,
+        textOverride: out.playbook,
       };
     },
   }),
 
   defineTool({
-    name: 'mermaid_read',
-    title: 'Read Diagram Source & Revision History (read)',
+    name: 'render_view',
+    title: 'Render Interactive Visual Learning View',
     description:
-      'Read the `.mmd` Mermaid source code, comprehension `guide`, and 5-version immutable revision history of an existing graph inside your project working directory (including diagrams created by other coding agents or edited by the human).',
-    zodShape: {
-      path: z
-        .string()
-        .describe(
-          'Relative file path inside your project working directory (e.g. `"auth/oauth-flow.mmd"` or `"auth/oauth-flow"`).'
-        ),
-      version: z
-        .number()
-        .int()
-        .min(1)
-        .optional()
-        .describe('Optional specific version number to inspect (defaults to latest version).'),
-      project: z
-        .string()
-        .optional()
-        .describe(
-          'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
-        ),
-    },
-    annotations: { readOnlyHint: true, idempotentHint: true },
-    execute: async (args, service, ctx) => {
-      const project = await resolveJailedProject(args.project, ctx);
-      const out = await service.vfsRead({
-        workspaceToken: ctx.getWorkspaceToken?.(),
-        project,
-        filePath: args.path,
-        version: args.version,
-        vfsBridge: ctx.vfsBridge,
-      });
-      return {
-        ok: true,
-        payload: out,
-      };
-    },
-  }),
-
-  defineTool({
-    name: 'mermaid_render',
-    title: 'Write, Validate, Render & Visually Inspect Mermaid Graph',
-    description:
-      'Write or update a Mermaid graph at `path` inside your project working directory (auto-creating folders and coalescing rapid iterative refinements by the same agent into a single clean revision), attach an optional interactive `guide` (`gist`, `steps` Story Mode walkthrough, `nodes` clickable inspector cards & `childPath` sub-graph zoom), validate syntax, and receive a 2x Retina PNG (`image/png`) + layout/comprehension diagnostics. Keep each graph to ~4–7 concise plain-English boxes (2–5 words per box) and place detailed mechanics, concrete examples, and "what-if" edge cases in `guide`. IMPORTANT: Never output raw ```mermaid``` code or URLs in chat unless explicitly asked — visually verify the PNG until clean, ensure `syncedToBrowser` is true, and simply tell the user their graphs are ready on MFHMFA.',
+      "Write or update an interactive `.mmd` learning view at `path` (4–7 plain-English boxes per view + `guide` with `gist`, `steps` or contrasting `flows`, `nodes` inspector cards, and optional `childPath` sub-views). Validates syntax, returns a 2x Retina PNG + layout/cognitive diagnostics for visual self-verification, and streams live to the user's open Studio tab. Never output raw ```mermaid``` code or URLs in chat unless asked.",
     zodShape: {
       code: z.string().describe('Raw Mermaid diagram source code (without ```mermaid fences).'),
       path: z
         .string()
         .optional()
         .describe(
-          'Relative `.mmd` path inside your project working directory (e.g. `"architecture/system-overview.mmd"`, `"auth/oauth-flow"`). Auto-creates parent folders; re-rendering the same `path` appends a new immutable version.'
+          'Relative `.mmd` path inside the project workspace (e.g. `"overview.mmd"`, `"raft/leader-election.mmd"`). Rapid retries at the same path coalesce into 1 version.'
         ),
       title: z
         .string()
         .optional()
-        .describe('Optional human-readable graph title (defaults to file name of `path`).'),
+        .describe('Optional human-readable view title (defaults to file name of `path`).'),
       guide: ComprehensionGuideToolSchema.optional(),
       project: z
         .string()
@@ -293,10 +268,22 @@ export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
       const presentationRule = !res.valid
         ? undefined
         : syncedToBrowser
-          ? "Synced live to the user's MFHMFA Studio browser tab. Once you have visually verified the PNG and layoutDiagnostics, reply concisely that their diagram is ready on MFHMFA — do NOT output raw Mermaid source code or any URLs unless the user explicitly asks for raw code."
+          ? "Synced live to the user's MFHMFA Studio browser tab. Visually verify the PNG and layoutDiagnostics, then reply concisely without outputting raw Mermaid source code or any URLs unless explicitly asked."
           : workspaceToken
-            ? 'No MFHMFA Studio browser tab is currently open for this workspace (MFHMFA stores 0 diagrams on the server — 100% browser IndexedDB). Ask the user to open MFHMFA Studio in their browser and tell you when ready so you can push the finalized diagram live. Do NOT output raw Mermaid source code or URLs unless explicitly asked.'
-            : 'No ?workspace=ws_... token is configured on this MCP connection, so MFHMFA cannot route diagrams to the user\'s browser tab. Ask the user to copy their paired MCP URL from MFHMFA Studio ("Copy MCP URL" in the sidebar or Docs) and reconnect. Do NOT output raw Mermaid source code or URLs unless explicitly asked.';
+            ? 'No MFHMFA Studio browser tab is currently open for this workspace (MFHMFA stores 0 diagrams on the server). Ask the user to open MFHMFA Studio in their browser so you can stream the view live. Do NOT output raw Mermaid source code or URLs unless explicitly asked.'
+            : 'No ?workspace=ws_... token is configured on this MCP connection. Ask the user to copy their paired MCP URL from MFHMFA Studio ("Copy MCP URL") and reconnect. Do NOT output raw Mermaid source code or URLs unless explicitly asked.';
+
+      const coachingTips: string[] = [];
+      if (ctx.hasLoadedPlaybook && !ctx.hasLoadedPlaybook()) {
+        coachingTips.push(
+          'Soft tip: Call `get_playbook` with `mode` ("concept" | "paper" | "codebase" | "bug" | "tradeoff") to load the tailored teaching blueprint and check the user\'s live Studio focus.'
+        );
+      }
+      if (res.valid && !res.guide) {
+        coachingTips.push(
+          'Soft tip: Attach `guide: { gist, steps (or flows), nodes }` on `render_view` so the user gets interactive walkthroughs, concrete data traces, and clickable component cards instead of a static chart.'
+        );
+      }
 
       return {
         ok: res.valid,
@@ -310,6 +297,7 @@ export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
           syncedToBrowser,
           syncStatus,
           ...(presentationRule ? { presentationRule } : {}),
+          ...(coachingTips.length > 0 ? { coachingTips } : {}),
           diagramType: res.diagramType,
           theme: res.theme,
           look: res.look,
@@ -330,10 +318,86 @@ export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
   }),
 
   defineTool({
-    name: 'mermaid_mv',
-    title: 'Move or Rename Diagram / Subfolder (mv)',
+    name: 'list_views',
+    title: 'List Workspace Folders, Views & User Focus',
     description:
-      'Move or rename an existing `.mmd` graph or subfolder within your project working directory while preserving its immutable 5-version history and updating linked `childPath` / `parentPath` references.',
+      "List folders and `.mmd` learning views inside your project workspace (stored in the user's browser IndexedDB), plus `viewerFocus` showing which view, walkthrough step, or box the user currently has selected in Studio.",
+    zodShape: {
+      path: z
+        .string()
+        .optional()
+        .describe(
+          'Relative directory path inside your project workspace (defaults to `"/"` project root).'
+        ),
+      project: z
+        .string()
+        .optional()
+        .describe(
+          'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
+        ),
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+    execute: async (args, service, ctx) => {
+      const project = await resolveJailedProject(args.project, ctx);
+      const out = await service.vfsLs({
+        workspaceToken: ctx.getWorkspaceToken?.(),
+        project,
+        dirPath: args.path,
+        vfsBridge: ctx.vfsBridge,
+      });
+      return {
+        ok: true,
+        payload: out,
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'read_view',
+    title: 'Read View Source, Guide & Version History',
+    description:
+      'Read the `.mmd` Mermaid source, attached comprehension `guide`, and 5-version immutable revision history of an existing view inside your project workspace.',
+    zodShape: {
+      path: z
+        .string()
+        .describe(
+          'Relative `.mmd` path inside your project workspace (e.g. `"overview.mmd"` or `"auth/oauth-flow"`).'
+        ),
+      version: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe('Optional specific version number to inspect (defaults to latest version).'),
+      project: z
+        .string()
+        .optional()
+        .describe(
+          'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
+        ),
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+    execute: async (args, service, ctx) => {
+      const project = await resolveJailedProject(args.project, ctx);
+      const out = await service.vfsRead({
+        workspaceToken: ctx.getWorkspaceToken?.(),
+        project,
+        filePath: args.path,
+        version: args.version,
+        vfsBridge: ctx.vfsBridge,
+      });
+      return {
+        ok: true,
+        payload: out,
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'move_view',
+    title: 'Move or Rename View / Folder',
+    description:
+      'Move or rename an existing `.mmd` view or subfolder within your project workspace while preserving 5-version history and updating `childPath` / `parentPath` links.',
     zodShape: {
       from: z
         .string()
@@ -341,7 +405,7 @@ export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
       to: z
         .string()
         .describe(
-          'Destination relative file or folder path (e.g. `"auth/login-flow.mmd"` or `"architecture/auth"`).'
+          'Destination relative file or folder path (e.g. `"auth/login-flow.mmd"` or `"core/auth"`).'
         ),
       project: z
         .string()
@@ -368,25 +432,10 @@ export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
   }),
 
   defineTool({
-    name: 'mermaid_validate',
-    title: 'Validate Mermaid Syntax',
+    name: 'export_view',
+    title: 'Export View to Local Disk File',
     description:
-      'Fast stateless syntax validation and static linting for Mermaid diagram code. Returns diagram type, exact 1-indexed line/column error snippet, and actionable fix suggestions.',
-    zodShape: {
-      code: z.string().describe('Raw Mermaid diagram source code (without ```mermaid fences).'),
-    },
-    annotations: { readOnlyHint: true, idempotentHint: true },
-    execute: async ({ code }, service, ctx) => {
-      const res = await service.validate(code, ctx.source);
-      return { ok: res.valid, payload: res };
-    },
-  }),
-
-  defineTool({
-    name: 'mermaid_export',
-    title: 'Export Mermaid Diagram to Local Disk File',
-    description:
-      'Statelessly validate, render, and export raw Mermaid `code` directly to a local filesystem path (`.png`, `.svg`, `.mmd`, or `.md`) when running locally.',
+      'Render and write raw Mermaid `code` to a local filesystem path (`.png`, `.svg`, `.mmd`, or `.md`) when running locally and the user explicitly asks to save a file to disk.',
     zodShape: {
       code: z.string().describe('Raw Mermaid diagram source code.'),
       outputPath: z.string().describe('Destination file path (.png, .svg, .mmd, or .md).'),
@@ -407,34 +456,16 @@ export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
       return { ok: true, payload: out };
     },
   }),
-
-  defineTool({
-    name: 'mermaid_syntax_guide',
-    title: 'Get Mermaid Syntax & Escaping Guide',
-    description:
-      'Retrieve concise Mermaid syntax examples, comprehension guidelines, and escaping rules (comprehension, pitfalls, flowchart, sequence, er, state, class, mindmap, gantt, all).',
-    zodShape: {
-      topic: z.string().optional().describe('Guide topic.'),
-    },
-    annotations: { readOnlyHint: true, idempotentHint: true },
-    execute: async ({ topic }, service, ctx) => {
-      const guide = service.syntaxGuide(topic, ctx.source);
-      return { ok: true, payload: { guide }, textOverride: guide };
-    },
-  }),
-
-  defineTool({
-    name: 'mermaid_list_templates',
-    title: 'List Starter Mermaid Templates',
-    description: 'Return curated starter Mermaid templates across 11 diagram categories.',
-    zodShape: {},
-    annotations: { readOnlyHint: true, idempotentHint: true },
-    execute: async (_args, service) => ({
-      ok: true,
-      payload: { templates: service.listTemplates() },
-    }),
-  }),
 ];
+
+const LEGACY_REST_TOOL_ALIASES: Record<string, string> = {
+  mermaid_playbook: 'get_playbook',
+  mermaid_render: 'render_view',
+  mermaid_ls: 'list_views',
+  mermaid_read: 'read_view',
+  mermaid_mv: 'move_view',
+  mermaid_export: 'export_view',
+};
 
 export function getOpenAiToolSchemas() {
   return AGENT_TOOLS.map((tool) => ({
@@ -453,13 +484,26 @@ export async function dispatchNamedTool(
   service: StudioService,
   sourceOrCtx: CallerSource | ToolCallContext
 ): Promise<ToolExecutionOutput> {
-  const tool = AGENT_TOOLS.find((t) => t.name === name);
+  const ctx: ToolCallContext =
+    typeof sourceOrCtx === 'string' ? { source: sourceOrCtx } : sourceOrCtx;
+
+  if (name === 'mermaid_syntax_guide') {
+    const topic =
+      rawArgs &&
+      typeof rawArgs === 'object' &&
+      typeof (rawArgs as { topic?: unknown }).topic === 'string'
+        ? (rawArgs as { topic: string }).topic
+        : undefined;
+    const guide = service.syntaxGuide(topic, ctx.source);
+    return { ok: true, payload: { guide }, textOverride: guide };
+  }
+
+  const resolvedName = LEGACY_REST_TOOL_ALIASES[name] ?? name;
+  const tool = AGENT_TOOLS.find((t) => t.name === resolvedName);
   if (!tool) {
     throw new Error(
       `Unknown tool "${name}". Fetch GET /api/tools/schemas for available tools.`
     );
   }
-  const ctx: ToolCallContext =
-    typeof sourceOrCtx === 'string' ? { source: sourceOrCtx } : sourceOrCtx;
   return tool.parseAndExecute(rawArgs, service, ctx);
 }

@@ -1,5 +1,7 @@
 import { produce } from 'immer';
 import { create } from 'zustand';
+import { normalizeProjectName } from '../../src/shared/agentIdentity';
+import { resolveGuideFlows } from '../../src/shared/comprehension';
 import { randomToken } from '../../src/shared/strings';
 import type {
   AgentSessionInfo,
@@ -17,11 +19,13 @@ import {
   evaluateVfsLs,
   evaluateVfsRead,
   findFileWithProject,
+  getVersionRecord,
   movePathInProject,
   NEW_TAB_STARTER,
   normalizeWorkspaceConsistency,
   restoreGraphVersion,
   SCRATCHPAD_PROJECT_KEY,
+  toProjectKey,
   upsertGraphInVfs,
   type VfsGraphFile,
   type VfsProjectRoot,
@@ -475,9 +479,35 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
   },
 
   executeVfsRpc: (query) => {
-    const { workspace } = get();
+    const { workspace, selectedVersion } = get();
     if (query.op === 'ls') {
-      return evaluateVfsLs(workspace, query.project, query.dirPath);
+      const lsRes = evaluateVfsLs(workspace, query.project, query.dirPath);
+      const targetProjKey = toProjectKey(normalizeProjectName(query.project) || 'General');
+      const activeEntry = findFileWithProject(workspace, workspace.activeFileId);
+      if (activeEntry && activeEntry.project.projectKey === targetProjKey) {
+        const ui = useUiStore.getState();
+        const ver = getVersionRecord(activeEntry.file, selectedVersion);
+        const flows = resolveGuideFlows(ver.guide);
+        const curFlow =
+          (ui.activeFlowId && flows.find((f) => f.id === ui.activeFlowId)) || flows[0] || null;
+        const curStep =
+          ui.activeStepIndex !== null && curFlow?.steps[ui.activeStepIndex]
+            ? curFlow.steps[ui.activeStepIndex]!
+            : null;
+        return {
+          ...lsRes,
+          viewerFocus: {
+            activePath: activeEntry.file.path,
+            viewingVersion: ver.version,
+            activeFlowId: curFlow?.id ?? null,
+            activeFlowLabel: flows.length > 1 ? (curFlow?.label ?? null) : null,
+            activeStepIndex: ui.activeStepIndex,
+            activeStepTitle: curStep?.title ?? null,
+            selectedNodeId: ui.selectedNodeId,
+          },
+        };
+      }
+      return lsRes;
     }
     if (query.op === 'read') {
       return evaluateVfsRead(workspace, query.project, query.filePath, query.version);

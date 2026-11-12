@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { resolveGuideFlows } from '../src/shared/comprehension';
 import { slugify } from '../src/shared/strings';
 import {
   findFileWithProject,
@@ -80,6 +81,7 @@ export function App() {
   const page = useUiStore((s) => s.page);
   const stageMode = useUiStore((s) => s.stageMode);
   const serverStatus = useUiStore((s) => s.serverStatus);
+  const activeFlowId = useUiStore((s) => s.activeFlowId);
   const activeStepIndex = useUiStore((s) => s.activeStepIndex);
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
   const drillStack = useUiStore((s) => s.drillStack);
@@ -94,6 +96,7 @@ export function App() {
   const toggleAppearanceMode = useUiStore((s) => s.toggleAppearanceMode);
   const setPage = useUiStore((s) => s.setPage);
   const setStageMode = useUiStore((s) => s.setStageMode);
+  const setActiveFlowId = useUiStore((s) => s.setActiveFlowId);
   const setActiveStepIndex = useUiStore((s) => s.setActiveStepIndex);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
 
@@ -155,16 +158,31 @@ export function App() {
     return counts;
   }, [connectedAgents]);
 
-  // Clamp step index & node selection safely if a live update alters the active guide
+  // Clamp flow, step index & node selection safely if a live update alters the active guide
   useEffect(() => {
-    const stepLen = activeGuide?.steps?.length ?? 0;
+    const flows = resolveGuideFlows(activeGuide);
+    if (activeFlowId !== null && !flows.some((f) => f.id === activeFlowId)) {
+      setActiveFlowId(flows[0]?.id ?? null);
+      return;
+    }
+    const curFlow =
+      (activeFlowId && flows.find((f) => f.id === activeFlowId)) || flows[0] || null;
+    const stepLen = curFlow?.steps.length ?? 0;
     if (activeStepIndex !== null && (stepLen === 0 || activeStepIndex >= stepLen)) {
       setActiveStepIndex(stepLen > 0 ? stepLen - 1 : null);
     }
     if (selectedNodeId && !activeGuide?.nodes?.[selectedNodeId]) {
       setSelectedNodeId(null);
     }
-  }, [activeGuide, activeStepIndex, selectedNodeId, setActiveStepIndex, setSelectedNodeId]);
+  }, [
+    activeFlowId,
+    activeGuide,
+    activeStepIndex,
+    selectedNodeId,
+    setActiveFlowId,
+    setActiveStepIndex,
+    setSelectedNodeId,
+  ]);
 
   const projectHierarchy = useMemo(
     () => (activeProject ? resolveProjectGraphHierarchy(activeProject) : null),
@@ -407,6 +425,8 @@ export function App() {
                   onExitHistoricalVersion={() => selectVersion(null)}
                   parseError={parseError}
                   guide={activeGuide}
+                  activeFlowId={activeFlowId}
+                  onChangeFlowId={setActiveFlowId}
                   activeStepIndex={activeStepIndex}
                   onChangeStepIndex={(next) => setActiveStepIndex(next)}
                   selectedNodeId={selectedNodeId}

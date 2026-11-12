@@ -31,19 +31,15 @@ export function createMermaidMcpServer(
     },
     {
       instructions: [
-        "MFHMFA (Mermaid For Humans, Mermaid For Agents) is a zero-server-storage Codebase Comprehension Studio & Virtual Diagram Filesystem (VFS) stored 100% in the user's browser IndexedDB plus a headless 2x Retina PNG validation/rendering engine.",
-        'Follow these Comprehension & VFS rules:',
-        '1. Call `mermaid_ls` to inspect existing folders and `.mmd` graphs in this project (and `mermaid_read` before updating an existing graph).',
-        '2. DESIGN FOR HUMAN WORKING MEMORY (4–7 Boxes per View): Keep each `.mmd` graph to ~4–7 core boxes with concise 2–5 word plain-English labels (never cram raw code identifiers, unexplained buzzwords, or forced metaphors inside boxes). For deeper subsystems, render clean child `.mmd` files and link them via `guide.nodes[nodeId].childPath` (setting `guide.parentPath` on child graphs).',
-        '3. ATTACH INTERACTIVE COMPREHENSION LAYERS (`guide` on `mermaid_render`): When explaining systems or flows, populate `guide.gist` (1-sentence takeaway), `guide.steps` (3–6 ordered Story Mode frames tracing one concrete request/item step-by-step via `focusNodes`), and `guide.nodes` (clickable inspector cards with plain `summary`, concrete `example` with real sizes/timings, `whatIf` failure/boundary behavior, `files`, and optional `childPath`).',
-        '4. Visually inspect the returned 2x Retina PNG (`image/png`) and `layoutDiagnostics`, re-rendering the same `path` until accurate, legible, and overlap-free (rapid retries by the same agent coalesce automatically into a single clean revision).',
-        '5. Check `syncedToBrowser` in `mermaid_render`: if `syncStatus` is `"browser_tab_closed"` or `"workspace_not_paired"`, ask the user to open MFHMFA Studio in their browser (or pair `?workspace=ws_...`) so you can push the finalized diagram live.',
-        '6. STRICT RESPONSE RULE: Never output raw ```mermaid``` code blocks or any URLs/links in terminal/chat unless the user explicitly asks for raw code. Once visually verified and synced, concisely tell the user their interactive graphs are ready on MFHMFA (mentioning they can step through Story Mode or click boxes to inspect/zoom in).',
-        'If validation fails, check `error.line`, `error.snippet`, and `error.suggestion` (wrap labels containing (), [], or {} in double quotes ["..."], and avoid lowercase `end` as a node ID).',
+        'Interactive visual learning tool: use MFHMFA whenever helping the user understand, explain, learn, or debug a concept, research paper, codebase, bug, or design tradeoff. Call `get_playbook` first to load the mode guide.',
+        '1. Call `get_playbook` with `mode` ("concept" | "paper" | "codebase" | "bug" | "tradeoff") to load the tailored cognitive-science teaching blueprint, workspace views, and the user\'s live Studio selection.',
+        '2. Build clean 4–7 box views via `render_view` with an interactive `guide` (`gist`, `steps` or contrasting `flows`, `nodes`, optional `childPath`), visually inspect the returned 2x PNG + `layoutDiagnostics`, and iterate at the same `path` until clean.',
+        '3. Never output raw ```mermaid``` code blocks or URLs in chat unless explicitly asked — once `syncedToBrowser` is true, summarize concisely and let the user step through the interactive view in MFHMFA Studio.',
       ].join(' '),
     }
   );
 
+  let loadedPlaybook = false;
   let resolvedRootsProject: string | null = null;
   let inflightRootsProbe: Promise<string | null> | null = null;
 
@@ -75,6 +71,11 @@ export function createMermaidMcpServer(
 
   const enrichedCtx: ToolCallContext = {
     ...ctx,
+    hasLoadedPlaybook: () => (ctx.hasLoadedPlaybook ? ctx.hasLoadedPlaybook() : loadedPlaybook),
+    markPlaybookLoaded: (mode) => {
+      loadedPlaybook = true;
+      ctx.markPlaybookLoaded?.(mode);
+    },
     ensureCallerProject: async () => {
       if (ctx.ensureCallerProject) {
         const fromParent = await ctx.ensureCallerProject();
@@ -250,11 +251,11 @@ export function createMermaidMcpServer(
               `Create a clear, publication-grade Mermaid diagram${diagramType ? ` (${diagramType})` : ''} for:`,
               goal,
               '',
-              'Follow this project-scoped VFS workflow:',
-              '1. Call `mermaid_ls` to see existing folders and `.mmd` graphs in this project (and `mermaid_read` if updating an existing graph).',
-              '2. Keep each view to ~4–7 concise boxes (2–5 plain words per box) and pass `guide: { gist, steps, nodes }` on `mermaid_render` so the user can step through Story Mode, click boxes for concrete examples & "what-if" edge cases, and drill down via `childPath` into child `.mmd` files.',
-              '3. Visually inspect the returned 2x Retina PNG image and `layoutDiagnostics`, re-running `mermaid_render` at the same `path` until layout and legibility are clean (rapid retries coalesce automatically into one clean revision).',
-              '4. Do NOT output raw ```mermaid``` code blocks or any URLs in chat — once `syncedToBrowser` is true, simply inform the user their graphs are ready on MFHMFA.',
+              'Follow this interactive comprehension workflow:',
+              '1. Call `get_playbook` with the appropriate `mode` ("concept" | "paper" | "codebase" | "bug" | "tradeoff") to load the teaching blueprint and inspect existing workspace views.',
+              '2. Keep each view to ~4–7 concise boxes (2–5 plain words per box) and pass `guide: { gist, steps (or flows), nodes }` on `render_view` so the user can step through flows, see concrete traces, click boxes for details, and zoom into `childPath` sub-views.',
+              '3. Visually inspect the returned 2x Retina PNG image and `layoutDiagnostics`, re-running `render_view` at the same `path` until layout and legibility are clean.',
+              '4. Do NOT output raw ```mermaid``` code blocks or any URLs in chat — once `syncedToBrowser` is true, concisely inform the user their views are ready on MFHMFA.',
             ].join('\n'),
           },
         },

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { resolveGuideFlows } from '../../src/shared/comprehension';
 import type { DiagramComprehensionGuide } from '../../src/shared/types';
 import { useUiStore } from '../store/uiStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -6,6 +7,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 export function useStudioShortcuts(activeGuide: DiagramComprehensionGuide | undefined): void {
   const page = useUiStore((s) => s.page);
   const stageMode = useUiStore((s) => s.stageMode);
+  const activeFlowId = useUiStore((s) => s.activeFlowId);
   const activeStepIndex = useUiStore((s) => s.activeStepIndex);
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
 
@@ -47,7 +49,10 @@ export function useStudioShortcuts(activeGuide: DiagramComprehensionGuide | unde
       );
       if (inEditable || stageMode !== 'preview') return;
 
-      const stepTotal = activeGuide?.steps?.length ?? 0;
+      const flows = resolveGuideFlows(activeGuide);
+      const currentFlow =
+        (activeFlowId && flows.find((f) => f.id === activeFlowId)) || flows[0] || null;
+      const stepTotal = currentFlow?.steps.length ?? 0;
 
       if (e.key === 'Escape') {
         if (selectedNodeId !== null) {
@@ -84,5 +89,5 @@ export function useStudioShortcuts(activeGuide: DiagramComprehensionGuide | unde
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeGuide, activeStepIndex, page, selectedNodeId, stageMode]);
+  }, [activeFlowId, activeGuide, activeStepIndex, page, selectedNodeId, stageMode]);
 }

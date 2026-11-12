@@ -14,6 +14,8 @@ export const MermaidThemeSchema = z.enum(['default', 'neutral', 'dark', 'forest'
 
 export const MermaidLookSchema = z.enum(['classic', 'handDrawn']);
 
+export const LearningModeSchema = z.enum(['concept', 'paper', 'codebase', 'bug', 'tradeoff']);
+
 export const CallerSourceSchema = z.enum(['mcp-stdio', 'mcp-http', 'rest-tool', 'web']);
 
 export const AgentStatusKindSchema = z.enum(['connected', 'active', 'disconnected']);
@@ -105,6 +107,16 @@ export const VfsRpcRequestSchema: z.ZodType<VfsRpcRequest> = z.discriminatedUnio
   }),
 ]);
 
+const ViewerFocusContextSchema = z.object({
+  activePath: z.string(),
+  viewingVersion: z.number(),
+  activeFlowId: z.string().nullable().optional(),
+  activeFlowLabel: z.string().nullable().optional(),
+  activeStepIndex: z.number().nullable().optional(),
+  activeStepTitle: z.string().nullable().optional(),
+  selectedNodeId: z.string().nullable().optional(),
+});
+
 const VfsLsEntrySchema = z.object({
   name: z.string(),
   path: z.string(),
@@ -113,6 +125,7 @@ const VfsLsEntrySchema = z.object({
   currentVersion: z.number().optional(),
   author: z.string().optional(),
   updatedAt: z.number().optional(),
+  flowCount: z.number().optional(),
   stepCount: z.number().optional(),
   nodeNoteCount: z.number().optional(),
 });
@@ -122,6 +135,7 @@ const VfsLsResultSchema = z.object({
   cwd: z.string(),
   entries: z.array(VfsLsEntrySchema),
   treeText: z.string(),
+  viewerFocus: ViewerFocusContextSchema.nullable().optional(),
 });
 
 const VfsReadResultSchema = z.object({

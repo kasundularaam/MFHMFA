@@ -27,6 +27,7 @@ export interface UiStoreState {
   stageMode: StageMode;
   serverStatus: ServerStatus | null;
 
+  activeFlowId: string | null;
   activeStepIndex: number | null;
   selectedNodeId: string | null;
   drillStack: string[];
@@ -49,6 +50,7 @@ export interface UiStoreState {
   setStageMode: (updater: StageMode | ((prev: StageMode) => StageMode)) => void;
   setServerStatus: (status: ServerStatus | null) => void;
 
+  setActiveFlowId: (flowId: string | null) => void;
   setActiveStepIndex: (
     updater: number | null | ((prev: number | null) => number | null)
   ) => void;
@@ -81,6 +83,7 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
   stageMode: 'preview',
   serverStatus: null,
 
+  activeFlowId: null,
   activeStepIndex: null,
   selectedNodeId: null,
   drillStack: [],
@@ -118,6 +121,12 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
 
   setServerStatus: (serverStatus) => set({ serverStatus }),
 
+  setActiveFlowId: (activeFlowId) =>
+    set((s) => ({
+      activeFlowId,
+      activeStepIndex: activeFlowId !== s.activeFlowId ? 0 : s.activeStepIndex,
+    })),
+
   setActiveStepIndex: (updater) =>
     set((s) => ({
       activeStepIndex: typeof updater === 'function' ? updater(s.activeStepIndex) : updater,
@@ -125,7 +134,8 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
 
   setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
 
-  resetComprehensionSelection: () => set({ activeStepIndex: null, selectedNodeId: null }),
+  resetComprehensionSelection: () =>
+    set({ activeFlowId: null, activeStepIndex: null, selectedNodeId: null }),
 
   pushDrillOrigin: (fileId) =>
     set((s) => ({

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveBaseUrl } from '../config/env.js';
 import { getSyntaxGuide, MERMAID_TEMPLATES } from '../domain/catalog.js';
+import { buildLearningPlaybookDocument } from '../domain/playbooks.js';
 import type {
   RenderEnginePort,
   WorkspaceEventListener,
@@ -19,6 +20,7 @@ import type {
   CallerSource,
   DiagramComprehensionGuide,
   DiagramRelayPayload,
+  LearningMode,
   MermaidLook,
   MermaidTemplate,
   MermaidTheme,
@@ -392,6 +394,63 @@ export class StudioService {
 
   syntaxGuide(topic?: string, _source?: CallerSource): string {
     return getSyntaxGuide(topic);
+  }
+
+  async getPlaybook(params: {
+    mode: LearningMode;
+    syntaxTopic?: string;
+    workspaceToken?: string | null;
+    project?: string | null;
+    vfsBridge?: VfsRpcBridgeFn;
+  }): Promise<{
+    mode: LearningMode;
+    project: string;
+    workspaceStatus: 'connected' | 'browser_tab_closed' | 'workspace_not_paired';
+    workspace: VfsLsResult | null;
+    playbook: string;
+  }> {
+    const project = normalizeProjectName(params.project) || 'General';
+    const cleanToken = sanitizeWorkspaceToken(params.workspaceToken);
+
+    let workspace: VfsLsResult | null = null;
+    let workspaceStatus: 'connected' | 'browser_tab_closed' | 'workspace_not_paired' =
+      cleanToken || params.vfsBridge ? 'browser_tab_closed' : 'workspace_not_paired';
+    let syncNote: string | undefined;
+
+    if (cleanToken || params.vfsBridge) {
+      try {
+        workspace = await this.vfsLs({
+          workspaceToken: cleanToken,
+          project,
+          dirPath: '/',
+          vfsBridge: params.vfsBridge,
+        });
+        workspaceStatus = 'connected';
+      } catch (err: unknown) {
+        syncNote =
+          err instanceof Error
+            ? err.message
+            : 'Studio browser tab is not currently open for this workspace.';
+      }
+    } else {
+      syncNote =
+        'No ?workspace=ws_... token is paired yet. Ask the user to copy their paired MCP URL from MFHMFA Studio ("Copy MCP URL") so live browser sync and VFS queries work.';
+    }
+
+    const playbook = buildLearningPlaybookDocument({
+      mode: params.mode,
+      syntaxTopic: params.syntaxTopic,
+      lsResult: workspace,
+      syncNote,
+    });
+
+    return {
+      mode: params.mode,
+      project: workspace?.project ?? project,
+      workspaceStatus,
+      workspace,
+      playbook,
+    };
   }
 }
 
