@@ -1,14 +1,41 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import {
+  RootsListChangedNotificationSchema,
+  type CallToolResult,
+} from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { StudioService } from '../../application/studioService.js';
 import { APP_NAME, APP_VERSION } from '../../config/env.js';
+import { extractProjectFromRoots } from '../../shared/agentIdentity.js';
 import type { CallerSource } from '../../shared/types.js';
 import { AGENT_TOOLS, type ToolCallContext } from '../tools/toolRegistry.js';
 
+export interface McpServerLifecycleHooks {
+  onClientInitialized?: (client: { name: string | null; version: string | null }) => void;
+  onRootsResolved?: (project: string) => void;
+}
+
+function withRaceTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    timer.unref?.();
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 export function createMermaidMcpServer(
   service: StudioService,
-  sourceOrCtx: CallerSource | ToolCallContext = 'mcp-stdio'
+  sourceOrCtx: CallerSource | ToolCallContext = 'mcp-stdio',
+  hooks?: McpServerLifecycleHooks
 ): McpServer {
   const ctx: ToolCallContext =
     typeof sourceOrCtx === 'string' ? { source: sourceOrCtx } : sourceOrCtx;
@@ -20,17 +47,88 @@ export function createMermaidMcpServer(
     },
     {
       instructions: [
-        'MFHMFA (Mermaid For Humans, Mermaid For Agents) is a stateless Mermaid validation, rendering, and visual inspection engine.',
-        'Workflow tip: Call `mermaid_render` to validate syntax AND receive a 2x Retina PNG image (`image/png`), layout diagnostics, and interactive browser links (`studioUrl` and `liveUrl`).',
-        'Multi-graph best practice: Prefer multiple clean, focused diagrams over one overcrowded chart. Give each distinct diagram a clear `title` (e.g. "System Overview", "Auth Sequence", "ER Schema") — each distinct `title` opens as its own VS Code tab in the user\'s browser automatically, while re-rendering the same `title` updates that tab in place!',
-        'Share `liveUrl` (or `studioUrl`) so users who do not already have the Studio open can open all tabs from this session in one click.',
-        'All tools are stateless and safe to invoke in parallel.',
+        'MFHMFA (Mermaid For Humans, Mermaid For Agents) provides a project-scoped Virtual Diagram Filesystem (VFS) backed by the user\'s browser localStorage (0 server storage) plus a headless 2x Retina PNG validation/rendering engine.',
+        'Treat diagrams just like source files inside your current project working directory:',
+        '1. Call `mermaid_ls` to inspect existing folders and `.mmd` graphs in this project (including graphs created by other coding agents or edited by the user).',
+        '2. Call `mermaid_read` to read an existing `.mmd` graph before updating or building related diagrams.',
+        '3. Call `mermaid_render` with a clean relative `path` (e.g. `"architecture/system-overview.mmd"`, `"auth/oauth-flow.mmd"`, `"db/er-schema.mmd"`) — parent folders are created automatically, each save appends an immutable revision (last 5 kept), and you receive a 2x Retina PNG (`image/png`) + `layoutDiagnostics` for visual verification.',
+        '4. Use `mermaid_mv` to reorganize or rename graphs/folders within your project working directory (only humans can delete graphs).',
         'If validation fails, check `error.line`, `error.snippet`, and `error.suggestion` (wrap labels containing (), [], or {} in double quotes ["..."], and avoid lowercase `end` as a node ID).',
       ].join(' '),
-
     }
   );
 
+  let resolvedRootsProject: string | null = null;
+  let inflightRootsProbe: Promise<string | null> | null = null;
+
+  const probeClientRoots = (): Promise<string | null> => {
+    if (resolvedRootsProject) return Promise.resolve(resolvedRootsProject);
+    const caps = server.server.getClientCapabilities();
+    if (!caps?.roots) return Promise.resolve(null);
+
+    if (!inflightRootsProbe) {
+      inflightRootsProbe = (async () => {
+        try {
+          const result = await withRaceTimeout(server.server.listRoots(), 1200);
+          const project = extractProjectFromRoots(result?.roots);
+          if (project) {
+            resolvedRootsProject = project;
+            hooks?.onRootsResolved?.(project);
+            return project;
+          }
+        } catch {
+          // Client does not have an active reverse request channel or rejected roots/list
+        } finally {
+          inflightRootsProbe = null;
+        }
+        return null;
+      })();
+    }
+    return inflightRootsProbe;
+  };
+
+  const enrichedCtx: ToolCallContext = {
+    ...ctx,
+    ensureCallerProject: async () => {
+      if (ctx.ensureCallerProject) {
+        const fromParent = await ctx.ensureCallerProject();
+        if (fromParent) return fromParent;
+      }
+      return probeClientRoots();
+    },
+  };
+
+  server.server.oninitialized = () => {
+    const cv = server.server.getClientVersion();
+    hooks?.onClientInitialized?.({
+      name: cv?.name ?? null,
+      version: cv?.version ?? null,
+    });
+
+    const caps = server.server.getClientCapabilities();
+    if (caps?.roots) {
+      const t1 = setTimeout(async () => {
+        const found = await probeClientRoots();
+        if (!found) {
+          const t2 = setTimeout(() => {
+            probeClientRoots().catch(() => {});
+          }, 260);
+          t2.unref?.();
+        }
+      }, 45);
+      t1.unref?.();
+
+      if (caps.roots.listChanged) {
+        server.server.setNotificationHandler(
+          RootsListChangedNotificationSchema,
+          async () => {
+            resolvedRootsProject = null;
+            await probeClientRoots();
+          }
+        );
+      }
+    }
+  };
 
   for (const tool of AGENT_TOOLS) {
     server.registerTool(
@@ -43,7 +141,7 @@ export function createMermaidMcpServer(
       },
       async (args: Record<string, unknown>): Promise<CallToolResult> => {
         try {
-          const out = await tool.execute(args, service, ctx);
+          const out = await tool.execute(args, service, enrichedCtx);
 
           const content: CallToolResult['content'] = [
             {
@@ -171,12 +269,11 @@ export function createMermaidMcpServer(
               `Create a clear, publication-grade Mermaid diagram${diagramType ? ` (${diagramType})` : ''} for:`,
               goal,
               '',
-              'Follow this stateless workflow:',
-              '1. Call `mermaid_syntax_guide` if unsure about syntax rules.',
-              '2. Call `mermaid_render` with double-quoted node labels (`Node["Label (detail)"]`).',
+              'Follow this project-scoped VFS workflow:',
+              '1. Call `mermaid_ls` to see existing folders and `.mmd` graphs in this project (and `mermaid_read` if updating an existing graph).',
+              '2. Call `mermaid_render` with a descriptive relative `path` (e.g. `"architecture/overview.mmd"`) and double-quoted node labels (`Node["Label (detail)"]`).',
               '3. Visually inspect the returned 2x Retina PNG image and `layoutDiagnostics`.',
-              '4. Re-run `mermaid_render` with refined layout if aspect ratio or legibility can be improved, and share the returned `studioUrl` (and `liveUrl` if iterating) with the user.',
-
+              '4. Re-run `mermaid_render` at the same `path` if aspect ratio or legibility can be improved (immutable history preserves the last 5 revisions).',
             ].join('\n'),
           },
         },

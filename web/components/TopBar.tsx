@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   BookOpen,
@@ -7,15 +7,10 @@ import {
   FileCode2,
   Link2,
   Moon,
-  Radio,
+  PanelLeft,
   Sun,
 } from 'lucide-react';
-import type {
-  LiveConnectionState,
-  StageMode,
-  StudioPage,
-  ViewMode,
-} from '../hooks/useStudioController';
+import type { StudioPage } from '../hooks/useStudioController';
 import type { AppearanceMode } from '../theme/comfortTheme';
 import { BrandLogo } from './BrandLogo';
 
@@ -24,20 +19,15 @@ const DEFAULT_GITHUB_URL = 'https://github.com/kasundularaam/MFHMFA';
 interface TopBarProps {
   page: StudioPage;
   onChangePage: (page: StudioPage) => void;
-  stageMode: StageMode;
-  onChangeStageMode: (mode: StageMode) => void;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
   appearanceMode: AppearanceMode;
   onToggleAppearance: () => void;
-  viewMode: ViewMode;
-  linkedLiveToken: string | null;
-  liveState: LiveConnectionState;
-  hasBufferedLiveUpdate: boolean;
+  connectedAgentCount: number;
+  activeBreadcrumb: string | null;
   onBrandClick: () => void;
-  onToggleLivePause: () => void;
-  onWatchLive: () => void;
   onCopyPermalink: () => void;
   repoUrl?: string;
-  hasError: boolean;
   onExportPng: () => void;
   onExportSvg: () => void;
   onCopyCode: () => void;
@@ -46,46 +36,54 @@ interface TopBarProps {
 export function TopBar({
   page,
   onChangePage,
-  stageMode,
-  onChangeStageMode,
+  sidebarOpen,
+  onToggleSidebar,
   appearanceMode,
   onToggleAppearance,
-  viewMode,
-  linkedLiveToken,
-  liveState,
-  hasBufferedLiveUpdate,
+  connectedAgentCount,
+  activeBreadcrumb,
   onBrandClick,
-  onToggleLivePause,
-  onWatchLive,
   onCopyPermalink,
   repoUrl,
-  hasError,
   onExportPng,
   onExportSvg,
   onCopyCode,
 }: TopBarProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const brandInteractive = page === 'docs' || viewMode !== 'scratchpad';
-  const showLiveBadge =
-    viewMode === 'live' ||
-    (viewMode === 'scratchpad' && (liveState === 'connected' || liveState === 'paused'));
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return undefined;
+    const onDocClick = () => setExportMenuOpen(false);
+    window.addEventListener('click', onDocClick);
+    return () => window.removeEventListener('click', onDocClick);
+  }, [exportMenuOpen]);
 
   return (
-    <header className="topbar" onClick={() => menuOpen && setMenuOpen(false)}>
+    <header className="topbar">
       <div className="topbar-left">
+        {page === 'studio' && (
+          <button
+            type="button"
+            className={`icon-btn ${sidebarOpen ? 'active' : ''}`}
+            onClick={onToggleSidebar}
+            title="Toggle Explorer Sidebar (Ctrl+B)"
+            aria-label="Toggle Explorer Sidebar"
+          >
+            <PanelLeft size={15} />
+          </button>
+        )}
+
         <button
           className="brand-lockup"
           onClick={onBrandClick}
-          style={{ cursor: brandInteractive ? 'pointer' : 'default' }}
+          style={{ cursor: page === 'docs' ? 'pointer' : 'default' }}
           title={
             page === 'docs'
               ? 'Back to Studio'
-              : viewMode !== 'scratchpad'
-                ? 'Return to local workspace'
-                : 'MFHMFA — Mermaid For Humans, Mermaid For Agents'
+              : 'MFHMFA — Mermaid For Humans, Mermaid For Agents'
           }
         >
-          <BrandLogo height={19} className="brand-logo" />
+          <BrandLogo height={18} className="brand-logo" />
         </button>
 
         {page === 'docs' ? (
@@ -93,71 +91,26 @@ export function TopBar({
             <ArrowLeft size={13} /> Studio
           </button>
         ) : (
-          <>
-            {showLiveBadge && (
-              <button
-                className={`live-pill ${liveState === 'paused' ? 'paused' : 'active'}`}
-                onClick={onToggleLivePause}
-                title={
-                  liveState === 'paused'
-                    ? 'Click to resume auto-opening agent tabs'
-                    : 'Auto-syncing agent diagrams into tabs — click to pause'
-                }
-              >
-                <span
-                  className={`live-dot ${
-                    liveState === 'connected'
-                      ? 'online'
-                      : liveState === 'paused'
-                        ? 'paused'
-                        : 'connecting'
-                  }`}
-                />
-                <span>
-                  {liveState === 'paused'
-                    ? hasBufferedLiveUpdate
-                      ? 'Update ready · Resume'
-                      : 'Paused · Resume'
-                    : liveState === 'connected'
-                      ? 'Live'
-                      : 'Connecting…'}
-                </span>
-              </button>
-            )}
-
-            {viewMode === 'snapshot' && linkedLiveToken && (
-              <button
-                className="btn ghost sm"
-                onClick={onWatchLive}
-                title="Follow real-time updates from this AI agent session"
-              >
-                <Radio size={12} /> Watch Live
-              </button>
-            )}
-          </>
+          !sidebarOpen &&
+          connectedAgentCount > 0 && (
+            <button
+              type="button"
+              className="live-pill active"
+              onClick={onToggleSidebar}
+              title="Open Explorer to view connected coding agents"
+            >
+              <span className="live-dot online" />
+              <span>{connectedAgentCount} MCP</span>
+            </button>
+          )
         )}
       </div>
 
       <div className="topbar-center">
         {page === 'studio' ? (
-          <div className="segmented-track" title="Switch view (Ctrl+E)">
-            <span
-              className={`segmented-thumb ${stageMode === 'code' ? 'right' : ''}`}
-            />
-            <button
-              className={`segmented-btn ${stageMode === 'preview' ? 'active' : ''}`}
-              onClick={() => onChangeStageMode('preview')}
-            >
-              Preview
-            </button>
-            <button
-              className={`segmented-btn ${stageMode === 'code' ? 'active' : ''}`}
-              onClick={() => onChangeStageMode('code')}
-            >
-              Code
-              {hasError && <span className="error-dot" />}
-            </button>
-          </div>
+          activeBreadcrumb && (
+            <span className="topbar-breadcrumb">{activeBreadcrumb}</span>
+          )
         ) : (
           <span style={{ fontWeight: 550, fontSize: 13 }}>Docs</span>
         )}
@@ -167,7 +120,7 @@ export function TopBar({
         <button
           className="icon-btn"
           onClick={onCopyPermalink}
-          title="Copy Shareable Permalink (all open tabs)"
+          title="Copy Stateless #z= Permalink"
         >
           <Link2 size={15} />
         </button>
@@ -175,17 +128,17 @@ export function TopBar({
         <div className="dropdown-wrap" onClick={(e) => e.stopPropagation()}>
           <button
             className="icon-btn"
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={() => setExportMenuOpen((v) => !v)}
             title="Download / Export"
           >
             <Download size={15} />
           </button>
-          {menuOpen && (
+          {exportMenuOpen && (
             <div className="dropdown-menu">
               <button
                 className="dropdown-item"
                 onClick={() => {
-                  setMenuOpen(false);
+                  setExportMenuOpen(false);
                   onExportPng();
                 }}
               >
@@ -194,7 +147,7 @@ export function TopBar({
               <button
                 className="dropdown-item"
                 onClick={() => {
-                  setMenuOpen(false);
+                  setExportMenuOpen(false);
                   onExportSvg();
                 }}
               >
@@ -203,7 +156,7 @@ export function TopBar({
               <button
                 className="dropdown-item"
                 onClick={() => {
-                  setMenuOpen(false);
+                  setExportMenuOpen(false);
                   onCopyPermalink();
                 }}
               >
@@ -212,7 +165,7 @@ export function TopBar({
               <button
                 className="dropdown-item"
                 onClick={() => {
-                  setMenuOpen(false);
+                  setExportMenuOpen(false);
                   onCopyCode();
                 }}
               >

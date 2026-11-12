@@ -11,24 +11,22 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     look: 'classic',
     code: `flowchart TB
     subgraph Agents["AI Coding Agents"]
-        A1["Claude / Pi Agent"]
-        A2["Cursor / Antigravity"]
-        A3["Custom REST Tool Agent"]
+        A1["Claude Code · Project A"]
+        A2["Pi · Project A"]
+        A3["Cursor · Project B"]
     end
 
-    subgraph Studio["MFHMFA Stateless Engine"]
+    subgraph Engine["MFHMFA Zero-Storage Engine"]
         MCP["MCP Server<br/>(Stdio + Streamable HTTP)"]
-        API["REST & Tool API"]
-        ENG["Parallel Chromium Pool<br/>(Parse + SVG + Retina PNG)"]
-        HUB["Bounded Ephemeral Hub<br/>(/p/:id LRU + /live/:token SSE)"]
+        POOL["Parallel Chromium Pool<br/>(Parse + SVG + 2x Retina PNG)"]
+        RELAY["Pass-Through SSE Relay<br/>(0 Stored Diagrams)"]
     end
 
-    UI["Interactive Browser Studio<br/>(Pan / Zoom / Edit / #z= Permalink)"]
+    UI["Browser LocalStorage Studio<br/>(Chrome Project & Agent Tab Groups)"]
 
-    A1 & A2 <-->|"validate / render / PNG vision"| MCP
-    A3 <-->|"JSON + PNG"| API
-    MCP & API --> ENG & HUB
-    HUB ==>|"studioUrl & liveUrl"| UI`,
+    A1 & A2 & A3 <-->|"mermaid_render (PNG Vision)"| MCP
+    MCP --> POOL & RELAY
+    RELAY ==>|"Allocates Project / Agent Space"| UI`,
 
   },
   {
@@ -172,7 +170,7 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
 
     class StudioService {
         +engine: RenderEnginePort
-        +previewHub: PreviewHubPort
+        +relay: WorkspaceRelayPort
         +validate(code: string) Promise~ValidationResult~
         +render(code: string, opts: StatelessRenderInput) Promise~StatelessRenderResult~
     }

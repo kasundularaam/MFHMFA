@@ -4,75 +4,87 @@ import path from 'node:path';
 import { resolveBaseUrl } from '../config/env.js';
 import { getSyntaxGuide, MERMAID_TEMPLATES } from '../domain/catalog.js';
 import type {
-  LiveSnapshotListener,
-  PreviewHubPort,
   RenderEnginePort,
+  WorkspaceEventListener,
+  WorkspaceRelayPort,
 } from '../domain/ports.js';
 import {
-  InMemoryPreviewHub,
-  sanitizeLiveChannel,
-} from '../infrastructure/ephemeral/previewHub.js';
+  StatelessWorkspaceRelay,
+  sanitizeWorkspaceToken,
+} from '../infrastructure/ephemeral/workspaceRelay.js';
+import {
+  normalizeAgentIdentity,
+  normalizeProjectName,
+} from '../shared/agentIdentity.js';
+import { buildPermalinkUrl } from '../shared/permalink.js';
 import type {
+  AgentSessionInfo,
   CallerSource,
+  DiagramRelayPayload,
   MermaidLook,
   MermaidTemplate,
   MermaidTheme,
-  PreviewHubStats,
-  PreviewSnapshot,
+  RelayStats,
   RenderEngineStats,
   RenderOptions,
   RenderedDiagram,
   ValidationResult,
+  VfsLsResult,
+  VfsMoveResult,
+  VfsReadResult,
+  VfsRpcQuery,
+  VfsRpcReply,
+  WorkspaceRelayEvent,
 } from '../shared/types.js';
+import {
+  graphTitleFromPath,
+  inferPathFromTitle,
+  normalizeRelativeDirPath,
+  normalizeRelativeGraphPath,
+} from '../shared/vfsPath.js';
 
-export interface PreviewBridgeResult {
-  previewId?: string | null;
-  studioUrl: string;
-  liveUrl: string | null;
-}
+export type VfsRpcBridgeFn = (
+  query: VfsRpcQuery
+) => Promise<VfsLsResult | VfsReadResult | VfsMoveResult>;
 
 export interface StatelessRenderInput extends RenderOptions {
+  path?: string;
   title?: string;
-  tabId?: string;
+  project?: string | null;
+  agentName?: string | null;
+  agentSessionId?: string | null;
   outputPath?: string;
   source?: CallerSource;
-  requestBaseUrl?: string;
-  liveToken?: string | null;
+  requestBaseUrl?: string | (() => string | undefined);
   workspaceToken?: string | null;
-  previewBridge?: (params: {
-    code: string;
-    title: string;
-    tabId?: string;
-    diagramType: string | null;
-    theme: MermaidTheme;
-    look: MermaidLook;
-  }) => Promise<PreviewBridgeResult>;
+  relayBridge?: (diagram: DiagramRelayPayload) => Promise<number>;
 }
-
 
 export interface StatelessRenderResult extends RenderedDiagram {
   renderId: string;
+  path: string;
   title: string;
+  project: string;
+  agent: string;
   outputPath: string | null;
-  previewId: string | null;
   studioUrl: string | null;
-  liveUrl: string | null;
+  syncedSubscribers: number;
 }
 
 export type ExportFormat = 'png' | 'svg' | 'mmd' | 'md';
 
 export class StudioService {
   public readonly engine: RenderEnginePort;
-  public readonly previewHub: PreviewHubPort;
+  public readonly relay: WorkspaceRelayPort;
   public baseUrl: string;
 
   constructor(deps: {
     engine: RenderEnginePort;
-    previewHub?: PreviewHubPort;
+    relay?: WorkspaceRelayPort;
     baseUrl?: string;
   }) {
     this.engine = deps.engine;
-    this.previewHub = deps.previewHub ?? new InMemoryPreviewHub();
+    this.relay = deps.relay ?? new StatelessWorkspaceRelay();
     this.baseUrl = resolveBaseUrl(deps.baseUrl);
   }
 
@@ -80,68 +92,118 @@ export class StudioService {
     return this.engine.getStats ? this.engine.getStats() : null;
   }
 
-  getPreviewStats(): PreviewHubStats {
-    return this.previewHub.getStats();
+  getRelayStats(): RelayStats {
+    return this.relay.getStats();
   }
 
-  registerPreview(params: {
-    code: string;
-    title?: string;
-    tabId?: string;
-    diagramType?: string | null;
-    theme?: MermaidTheme;
-    look?: MermaidLook;
-    liveToken?: string | null;
-    workspaceToken?: string | null;
-    requestBaseUrl?: string;
-  }): {
-    snapshot: PreviewSnapshot;
-    studioUrl: string;
-    liveUrl: string | null;
-  } {
-    const cleanBase = (params.requestBaseUrl || this.baseUrl).replace(/\/+$/, '');
-    const title = params.title?.trim() || inferDiagramTitle(params.code, params.diagramType ?? null);
-    const snapshot = this.previewHub.saveSnapshot({
-      title,
-      tabId: params.tabId ?? null,
-      code: params.code,
-      diagramType: params.diagramType ?? null,
-      theme: params.theme ?? 'default',
-      look: params.look ?? 'classic',
-      liveToken: sanitizeLiveChannel(params.liveToken),
-      workspaceToken: sanitizeLiveChannel(params.workspaceToken),
-    });
-
-    return {
-      snapshot,
-      studioUrl: `${cleanBase}/p/${snapshot.id}`,
-      liveUrl: snapshot.liveToken ? `${cleanBase}/live/${snapshot.liveToken}` : null,
-    };
+  publishEvent(workspaceToken: string, event: WorkspaceRelayEvent): number {
+    const clean = sanitizeWorkspaceToken(workspaceToken);
+    if (!clean) return 0;
+    return this.relay.publish(clean, event);
   }
 
-  getPreview(id: string): PreviewSnapshot | null {
-    return this.previewHub.getSnapshot(id);
+  publishAgentStatus(
+    workspaceToken: string | null | undefined,
+    agent: AgentSessionInfo
+  ): number {
+    const clean = sanitizeWorkspaceToken(workspaceToken);
+    if (!clean) return 0;
+    return this.relay.publish(clean, { type: 'agent_status', agent });
   }
 
-  getLiveLatest(token: string): PreviewSnapshot | null {
-    return this.previewHub.getLiveLatest(token);
-  }
-
-  getChannelTabs(token: string): PreviewSnapshot[] {
-    return this.previewHub.getChannelTabs(token);
-  }
-
-
-  subscribeLive(
+  subscribeWorkspace(
     token: string,
-    listener: LiveSnapshotListener,
+    listener: WorkspaceEventListener,
     onClose?: () => void
   ): (() => void) | null {
-    return this.previewHub.subscribeLive(token, listener, onClose);
+    return this.relay.subscribe(token, listener, onClose);
   }
 
-  getLiveSubscriberCount(token: string): number {
-    return this.previewHub.getSubscriberCount(token);
+  getWorkspaceSubscriberCount(token: string): number {
+    return this.relay.getSubscriberCount(token);
+  }
+
+  resolveVfsReply(workspaceToken: string, reply: VfsRpcReply): boolean {
+    return this.relay.resolveVfsReply(workspaceToken, reply);
+  }
+
+  async queryVfs(
+    workspaceToken: string | null | undefined,
+    query: VfsRpcQuery,
+    vfsBridge?: VfsRpcBridgeFn
+  ): Promise<VfsLsResult | VfsReadResult | VfsMoveResult> {
+    if (vfsBridge) {
+      return vfsBridge(query);
+    }
+    return this.relay.requestVfs(workspaceToken ?? '', query);
+  }
+
+  async vfsLs(params: {
+    workspaceToken: string | null | undefined;
+    project: string;
+    dirPath?: string;
+    vfsBridge?: VfsRpcBridgeFn;
+  }): Promise<VfsLsResult> {
+    const project = normalizeProjectName(params.project) || 'General';
+    const dirPath = normalizeRelativeDirPath(params.dirPath);
+    const out = await this.queryVfs(
+      params.workspaceToken,
+      { op: 'ls', project, dirPath },
+      params.vfsBridge
+    );
+    return out as VfsLsResult;
+  }
+
+  async vfsRead(params: {
+    workspaceToken: string | null | undefined;
+    project: string;
+    filePath: string;
+    version?: number;
+    vfsBridge?: VfsRpcBridgeFn;
+  }): Promise<VfsReadResult> {
+    const project = normalizeProjectName(params.project) || 'General';
+    const filePath = normalizeRelativeGraphPath(params.filePath);
+    const out = await this.queryVfs(
+      params.workspaceToken,
+      {
+        op: 'read',
+        project,
+        filePath,
+        ...(typeof params.version === 'number' ? { version: params.version } : {}),
+      },
+      params.vfsBridge
+    );
+    return out as VfsReadResult;
+  }
+
+  async vfsMove(params: {
+    workspaceToken: string | null | undefined;
+    project: string;
+    fromPath: string;
+    toPath: string;
+    vfsBridge?: VfsRpcBridgeFn;
+  }): Promise<VfsMoveResult> {
+    const project = normalizeProjectName(params.project) || 'General';
+    // Validate both paths against `..` traversal while preserving dir vs `.mmd` intent
+    const fromHasExt = /\.(mmd|mermaid)$/i.test(params.fromPath.trim());
+    const toHasExt = /\.(mmd|mermaid)$/i.test(params.toPath.trim());
+    const fromClean = fromHasExt
+      ? normalizeRelativeGraphPath(params.fromPath)
+      : normalizeRelativeDirPath(params.fromPath);
+    const toClean = toHasExt
+      ? normalizeRelativeGraphPath(params.toPath)
+      : normalizeRelativeDirPath(params.toPath);
+
+    if (!fromClean || !toClean) {
+      throw new Error('Both `from` and `to` paths within the working directory are required.');
+    }
+
+    const out = await this.queryVfs(
+      params.workspaceToken,
+      { op: 'mv', project, fromPath: fromClean, toPath: toClean },
+      params.vfsBridge
+    );
+    return out as VfsMoveResult;
   }
 
   async validate(code: string, _source?: CallerSource): Promise<ValidationResult> {
@@ -149,6 +211,11 @@ export class StudioService {
   }
 
   async render(code: string, options: StatelessRenderInput = {}): Promise<StatelessRenderResult> {
+    // Validate relative path early so traversal errors surface cleanly before rendering
+    const explicitRelPath = options.path?.trim()
+      ? normalizeRelativeGraphPath(options.path)
+      : null;
+
     const res = await this.engine.render(code, options);
     const hash = crypto
       .createHash('sha1')
@@ -156,7 +223,14 @@ export class StudioService {
       .digest('hex')
       .slice(0, 10);
     const renderId = `render-${hash}-${crypto.randomBytes(2).toString('hex')}`;
-    const title = options.title?.trim() || inferDiagramTitle(code, res.diagramType);
+
+    const inferredTitle = inferDiagramTitle(code, res.diagramType);
+    const relPath =
+      explicitRelPath ??
+      inferPathFromTitle(options.title?.trim() || inferredTitle);
+    const title = options.title?.trim() || graphTitleFromPath(relPath);
+    const agent = normalizeAgentIdentity(options.agentName, options.source);
+    const project = normalizeProjectName(options.project) || 'General';
 
     let savedOutputPath: string | null = null;
 
@@ -172,50 +246,62 @@ export class StudioService {
       }
     }
 
-    let previewId: string | null = null;
     let studioUrl: string | null = null;
-    let liveUrl: string | null = null;
+    let syncedSubscribers = 0;
 
     if (res.valid) {
-      if (options.previewBridge) {
-        const bridged = await options.previewBridge({
-          code,
-          title,
-          tabId: options.tabId,
-          diagramType: res.diagramType,
-          theme: res.theme,
-          look: res.look,
-        });
-        previewId = bridged.previewId ?? null;
-        studioUrl = bridged.studioUrl;
-        liveUrl = bridged.liveUrl;
-      } else {
-        const registered = this.registerPreview({
-          code,
-          title,
-          tabId: options.tabId,
-          diagramType: res.diagramType,
-          theme: res.theme,
-          look: res.look,
-          liveToken: options.liveToken,
-          workspaceToken: options.workspaceToken,
-          requestBaseUrl: options.requestBaseUrl,
-        });
-        previewId = registered.snapshot.id;
-        studioUrl = registered.studioUrl;
-        liveUrl = registered.liveUrl;
-      }
-    }
+      const diagramPayload: DiagramRelayPayload = {
+        renderId,
+        path: relPath,
+        title,
+        code,
+        diagramType: res.diagramType,
+        theme: res.theme,
+        look: res.look,
+        project,
+        agentSessionId: options.agentSessionId ?? null,
+        agentSlug: agent.slug,
+        agentLabel: agent.label,
+        agentShortLabel: agent.shortLabel,
+        timestamp: Date.now(),
+      };
 
+      if (options.relayBridge) {
+        syncedSubscribers = await options.relayBridge(diagramPayload);
+      } else {
+        const cleanWs = sanitizeWorkspaceToken(options.workspaceToken);
+        if (cleanWs && options.source !== 'web') {
+          syncedSubscribers = this.relay.publish(cleanWs, {
+            type: 'diagram',
+            diagram: diagramPayload,
+          });
+        }
+      }
+
+      const rawBase =
+        typeof options.requestBaseUrl === 'function'
+          ? options.requestBaseUrl()
+          : options.requestBaseUrl;
+      const cleanBase = (rawBase || this.baseUrl).replace(/\/+$/, '');
+      studioUrl = await buildPermalinkUrl(cleanBase, {
+        code,
+        title,
+        path: relPath,
+        project,
+        agent: agent.label,
+      });
+    }
 
     return {
       ...res,
       renderId,
+      path: relPath,
       title,
+      project,
+      agent: agent.label,
       outputPath: savedOutputPath,
-      previewId,
       studioUrl,
-      liveUrl,
+      syncedSubscribers,
     };
   }
 

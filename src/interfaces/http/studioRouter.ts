@@ -10,9 +10,15 @@ import {
   resolveRequestBaseUrl,
   resolveVisibleProjectRoot,
 } from '../../config/env.js';
-import { sanitizeLiveChannel } from '../../infrastructure/ephemeral/previewHub.js';
+import { sanitizeWorkspaceToken } from '../../infrastructure/ephemeral/workspaceRelay.js';
+import { normalizeProjectName } from '../../shared/agentIdentity.js';
 import { dispatchNamedTool, getOpenAiToolSchemas } from '../tools/toolRegistry.js';
 
+function firstString(val: unknown): string | null {
+  if (typeof val === 'string') return val;
+  if (Array.isArray(val) && typeof val[0] === 'string') return val[0];
+  return null;
+}
 
 export function createStudioRouter(
   service: StudioService,
@@ -27,15 +33,15 @@ export function createStudioRouter(
     res.json({
       ok: true,
       stateless: true,
+      serverStorage: 'none',
       name: APP_NAME,
       version: APP_VERSION,
       repoUrl: GITHUB_REPO_URL,
       baseUrl: service.baseUrl,
       mcpHttpSessions: getMcpSessionCount(),
       engine: service.getEngineStats(),
-      previews: service.getPreviewStats(),
+      relay: service.getRelayStats(),
       connections: {
-
         mcpStreamableHttp: `${service.baseUrl}/mcp`,
         mcpLegacySse: `${service.baseUrl}/mcp/sse`,
         mcpStdioCommand: 'npx',
@@ -68,21 +74,30 @@ export function createStudioRouter(
       const name = String(req.body?.name ?? '');
       const args = req.body?.arguments ?? {};
       const reqBaseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
-      const headerWs = req.headers['x-mfhmfa-workspace'];
       const explicitWs =
-        sanitizeLiveChannel(req.query.workspace) ??
-        sanitizeLiveChannel(Array.isArray(headerWs) ? headerWs[0] : headerWs);
+        sanitizeWorkspaceToken(firstString(req.query.workspace)) ??
+        sanitizeWorkspaceToken(firstString(req.query.ws)) ??
+        sanitizeWorkspaceToken(firstString(req.headers['x-mfhmfa-workspace']));
       const workspaceToken =
         explicitWs ??
         (isLocalRequestHost(req.headers) ? LOCAL_WORKSPACE_CHANNEL : null);
+      const explicitProject =
+        normalizeProjectName(firstString(req.query.project)) ??
+        normalizeProjectName(firstString(req.headers['x-mfhmfa-project']));
+      const explicitAgent =
+        firstString(req.headers['x-mfhmfa-agent']) ??
+        firstString(req.headers['user-agent']);
 
       const out = await dispatchNamedTool(name, args, service, {
         source: 'rest-tool',
         getBaseUrl: () => reqBaseUrl,
         getWorkspaceToken: () => workspaceToken,
+        getCallerMeta: () => ({
+          sessionId: null,
+          agentName: explicitAgent,
+          project: explicitProject,
+        }),
       });
-
-
 
       res.json({
         ok: out.ok,

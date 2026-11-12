@@ -3,11 +3,17 @@ const MAX_DECOMPRESSED_BYTES = 256 * 1024;
 export interface PermalinkTabItem {
   code: string;
   title?: string;
+  path?: string;
+  project?: string;
+  agent?: string;
 }
 
 export interface PermalinkPayload {
   code: string;
   title?: string;
+  path?: string;
+  project?: string;
+  agent?: string;
   tabs?: PermalinkTabItem[];
   activeIndex?: number;
 }
@@ -15,11 +21,17 @@ export interface PermalinkPayload {
 interface WireTabItem {
   c: string;
   t?: string;
+  pa?: string;
+  p?: string;
+  ag?: string;
 }
 
 interface WirePermalinkPayload {
   c: string;
   t?: string;
+  pa?: string;
+  p?: string;
+  ag?: string;
   tabs?: WireTabItem[];
   a?: number;
 }
@@ -50,14 +62,21 @@ function base64UrlToBytes(b64url: string): Uint8Array<ArrayBuffer> {
 }
 
 export async function encodePermalinkPayload(payload: PermalinkPayload): Promise<string> {
-  const wire: WirePermalinkPayload = payload.title?.trim()
-    ? { c: payload.code, t: payload.title.trim() }
-    : { c: payload.code };
+  const wire: WirePermalinkPayload = { c: payload.code };
+  if (payload.title?.trim()) wire.t = payload.title.trim();
+  if (payload.path?.trim()) wire.pa = payload.path.trim();
+  if (payload.project?.trim()) wire.p = payload.project.trim();
+  if (payload.agent?.trim()) wire.ag = payload.agent.trim();
 
   if (payload.tabs && payload.tabs.length > 1) {
-    wire.tabs = payload.tabs.map((tab) =>
-      tab.title?.trim() ? { c: tab.code, t: tab.title.trim() } : { c: tab.code }
-    );
+    wire.tabs = payload.tabs.map((tab) => {
+      const item: WireTabItem = { c: tab.code };
+      if (tab.title?.trim()) item.t = tab.title.trim();
+      if (tab.path?.trim()) item.pa = tab.path.trim();
+      if (tab.project?.trim()) item.p = tab.project.trim();
+      if (tab.agent?.trim()) item.ag = tab.agent.trim();
+      return item;
+    });
     if (typeof payload.activeIndex === 'number' && payload.activeIndex >= 0) {
       wire.a = payload.activeIndex;
     }
@@ -115,12 +134,18 @@ export async function decodePermalinkPayload(
         .map((item) => ({
           code: item.c,
           ...(typeof item.t === 'string' && item.t.trim() ? { title: item.t.trim() } : {}),
+          ...(typeof item.pa === 'string' && item.pa.trim() ? { path: item.pa.trim() } : {}),
+          ...(typeof item.p === 'string' && item.p.trim() ? { project: item.p.trim() } : {}),
+          ...(typeof item.ag === 'string' && item.ag.trim() ? { agent: item.ag.trim() } : {}),
         }))
     : undefined;
 
   return {
     code: parsed.c,
     ...(typeof parsed.t === 'string' && parsed.t.trim() ? { title: parsed.t.trim() } : {}),
+    ...(typeof parsed.pa === 'string' && parsed.pa.trim() ? { path: parsed.pa.trim() } : {}),
+    ...(typeof parsed.p === 'string' && parsed.p.trim() ? { project: parsed.p.trim() } : {}),
+    ...(typeof parsed.ag === 'string' && parsed.ag.trim() ? { agent: parsed.ag.trim() } : {}),
     ...(tabs && tabs.length > 0 ? { tabs } : {}),
     ...(typeof parsed.a === 'number' ? { activeIndex: parsed.a } : {}),
   };

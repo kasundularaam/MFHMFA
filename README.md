@@ -8,7 +8,7 @@
 
 Live Studio: **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** · Hosted MCP: `https://mfhmfa.kasun.si/mcp`
 
-Stateless Mermaid workspace and Model Context Protocol (MCP) server. Validates diagram syntax with 1-indexed line/column hints, renders 2x Retina PNGs via a pooled headless Chromium engine so agents can inspect layouts visually, and syncs diagrams straight into browser tabs without a database.
+Zero-storage Mermaid workspace and Model Context Protocol (MCP) server. Gives coding agents a jailed, project-scoped Virtual Diagram Filesystem (`mermaid_ls`, `mermaid_read`, `mermaid_render`, `mermaid_mv`) backed by your browser's `localStorage` with immutable 5-version history, VS Code Explorer tree UI, and 2x Retina PNG visual inspection — with **0 diagrams stored on the server**.
 
 ---
 
@@ -57,7 +57,10 @@ To have agent-rendered diagrams open automatically as tabs in your browser witho
 
 | Tool | Description |
 | :--- | :--- |
-| `mermaid_render` | Validate syntax, render a 2x Retina PNG (`image/png` vision), return layout diagnostics, and publish to browser tabs (`studioUrl` & `liveUrl`). |
+| `mermaid_ls` | List folders and `.mmd` graphs inside the agent's jailed project working directory (`diagramType`, `version`, `author`). |
+| `mermaid_read` | Read `.mmd` source and 5-version immutable history of an existing graph in the working project. |
+| `mermaid_render` | Write/append an immutable graph revision at `path` (e.g. `auth/oauth-flow.mmd`), render 2x Retina PNG (`image/png` vision), and return layout diagnostics + `#z=` `studioUrl`. |
+| `mermaid_mv` | Move or rename a graph or subfolder within the working project while preserving version history. |
 | `mermaid_validate` | Check syntax and static lint rules; returns diagram type, error line/column snippet, and targeted fix hints. |
 | `mermaid_export` | Render and write Mermaid source to `.png`, `.svg`, `.mmd`, or `.md`. |
 | `mermaid_syntax_guide` | Concise escaping and layout reference (`pitfalls`, `flowchart`, `sequence`, `er`, `state`, `class`, `mindmap`, `gantt`). |

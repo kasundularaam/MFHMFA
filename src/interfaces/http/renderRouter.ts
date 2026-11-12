@@ -5,25 +5,35 @@ import {
   isLocalRequestHost,
   resolveRequestBaseUrl,
 } from '../../config/env.js';
-import { sanitizeLiveChannel } from '../../infrastructure/ephemeral/previewHub.js';
-import type { CallerSource, MermaidLook, MermaidTheme } from '../../shared/types.js';
+import { sanitizeWorkspaceToken } from '../../infrastructure/ephemeral/workspaceRelay.js';
+import type {
+  AgentSessionInfo,
+  CallerSource,
+  DiagramRelayPayload,
+  VfsRpcQuery,
+  VfsRpcReply,
+  WorkspaceRelayEvent,
+} from '../../shared/types.js';
 
-const MAX_PREVIEW_CODE_CHARS = 256_000;
+const MAX_RELAY_CODE_CHARS = 256_000;
 const SSE_HEARTBEAT_MS = 20_000;
 
 function extractExplicitWorkspace(req: Request): string | null {
   const headerVal = req.headers['x-mfhmfa-workspace'];
   const rawHeader = Array.isArray(headerVal) ? headerVal[0] : headerVal;
   return (
-    sanitizeLiveChannel(req.body?.workspaceToken) ??
-    sanitizeLiveChannel(req.body?.workspace) ??
-    sanitizeLiveChannel(req.query.workspace) ??
-    sanitizeLiveChannel(req.query.ws) ??
-    sanitizeLiveChannel(rawHeader)
+    sanitizeWorkspaceToken(req.body?.workspaceToken) ??
+    sanitizeWorkspaceToken(req.body?.workspace) ??
+    sanitizeWorkspaceToken(req.query.workspace) ??
+    sanitizeWorkspaceToken(req.query.ws) ??
+    sanitizeWorkspaceToken(rawHeader)
   );
 }
 
-export function createRenderRouter(service: StudioService): Router {
+export function createRenderRouter(
+  service: StudioService,
+  getActiveAgents: (workspaceToken: string) => AgentSessionInfo[]
+): Router {
   const router = Router();
 
   router.post('/validate', async (req: Request, res: Response) => {
@@ -41,15 +51,15 @@ export function createRenderRouter(service: StudioService): Router {
     try {
       const {
         code = '',
+        path: graphPath,
         title,
-        tabId,
+        project,
+        agent,
         theme,
         look,
         background,
         scale,
         outputPath,
-        liveChannel,
-        liveToken,
         includePngBase64 = true,
         source = 'web',
       } = req.body ?? {};
@@ -68,8 +78,10 @@ export function createRenderRouter(service: StudioService): Router {
           : null);
 
       const rendered = await service.render(String(code), {
+        path: typeof graphPath === 'string' ? graphPath : undefined,
         title,
-        tabId,
+        project: typeof project === 'string' ? project : null,
+        agentName: typeof agent === 'string' ? agent : null,
         theme,
         look,
         background,
@@ -77,16 +89,17 @@ export function createRenderRouter(service: StudioService): Router {
         outputPath,
         source,
         requestBaseUrl,
-        liveToken: liveChannel ?? liveToken ?? null,
         workspaceToken,
       });
 
       res.json({
         renderId: rendered.renderId,
-        previewId: rendered.previewId,
         studioUrl: rendered.studioUrl,
-        liveUrl: rendered.liveUrl,
+        syncedToBrowser: rendered.syncedSubscribers > 0,
+        path: rendered.path,
         title: rendered.title,
+        project: rendered.project,
+        agent: rendered.agent,
         valid: rendered.valid,
         diagramType: rendered.diagramType,
         theme: rendered.theme,
@@ -110,101 +123,117 @@ export function createRenderRouter(service: StudioService): Router {
     }
   });
 
-  router.post('/preview', (req: Request, res: Response) => {
-    const code = typeof req.body?.code === 'string' ? req.body.code : '';
-    if (!code.trim()) {
-      res.status(400).json({ error: 'Non-empty `code` is required.' });
-      return;
-    }
-    if (code.length > MAX_PREVIEW_CODE_CHARS) {
-      res.status(413).json({ error: 'Diagram source exceeds maximum preview size.' });
-      return;
-    }
-
-    const requestBaseUrl = resolveRequestBaseUrl(
-      req.headers,
-      req.protocol,
-      service.baseUrl
-    );
-
-    const registered = service.registerPreview({
-      code,
-      title: typeof req.body?.title === 'string' ? req.body.title : undefined,
-      tabId: typeof req.body?.tabId === 'string' ? req.body.tabId : undefined,
-      diagramType:
-        typeof req.body?.diagramType === 'string' ? req.body.diagramType : null,
-      theme: (req.body?.theme as MermaidTheme | undefined) ?? 'default',
-      look: (req.body?.look as MermaidLook | undefined) ?? 'classic',
-      liveToken: req.body?.liveToken ?? req.body?.liveChannel ?? null,
-      workspaceToken: extractExplicitWorkspace(req),
-      requestBaseUrl,
-    });
-
-    res.json({
-      id: registered.snapshot.id,
-      studioUrl: registered.studioUrl,
-      liveUrl: registered.liveUrl,
-      snapshot: registered.snapshot,
-    });
-  });
-
-  router.get('/preview/:id', (req: Request, res: Response) => {
-    const snap = service.getPreview(String(req.params.id || ''));
-    if (!snap) {
-      res.status(404).json({ error: 'Preview link expired or not found.' });
-      return;
-    }
-
-    const requestBaseUrl = resolveRequestBaseUrl(
-      req.headers,
-      req.protocol,
-      service.baseUrl
-    );
-    const sessionTabs = snap.liveToken ? service.getChannelTabs(snap.liveToken) : [];
-
-    res.json({
-      ...snap,
-      liveUrl: snap.liveToken ? `${requestBaseUrl}/live/${snap.liveToken}` : null,
-      sessionTabs: sessionTabs.length > 0 ? sessionTabs : [snap],
-    });
-  });
-
-  router.get('/live/:token', (req: Request, res: Response) => {
-    const cleanToken = sanitizeLiveChannel(req.params.token);
+  // Zero-storage pass-through bridge used by local `mcp-stdio` processes
+  router.post('/workspace/event', (req: Request, res: Response) => {
+    const cleanToken = sanitizeWorkspaceToken(req.body?.workspaceToken);
     if (!cleanToken) {
-      res.status(400).json({ error: 'Invalid live session token.' });
+      res.status(400).json({ error: 'Valid `workspaceToken` is required.' });
       return;
     }
 
-    res.json({
-      token: cleanToken,
-      latest: service.getLiveLatest(cleanToken),
-      tabs: service.getChannelTabs(cleanToken),
-      subscriberCount: service.getLiveSubscriberCount(cleanToken),
-    });
+    const rawEvent = req.body?.event as Partial<WorkspaceRelayEvent> | undefined;
+    if (!rawEvent || typeof rawEvent.type !== 'string') {
+      res.status(400).json({ error: 'Valid `event` payload is required.' });
+      return;
+    }
+
+    if (rawEvent.type === 'agent_status' && rawEvent.agent && typeof rawEvent.agent === 'object') {
+      const delivered = service.publishEvent(cleanToken, {
+        type: 'agent_status',
+        agent: rawEvent.agent as AgentSessionInfo,
+      });
+      res.json({ ok: true, deliveredSubscribers: delivered });
+      return;
+    }
+
+    if (rawEvent.type === 'diagram' && rawEvent.diagram && typeof rawEvent.diagram === 'object') {
+      const diag = rawEvent.diagram as DiagramRelayPayload;
+      if (typeof diag.code !== 'string' || diag.code.length > MAX_RELAY_CODE_CHARS) {
+        res.status(413).json({ error: 'Diagram code missing or exceeds safety limit.' });
+        return;
+      }
+      const delivered = service.publishEvent(cleanToken, {
+        type: 'diagram',
+        diagram: diag,
+      });
+      res.json({ ok: true, deliveredSubscribers: delivered });
+      return;
+    }
+
+    res.status(400).json({ error: 'Unsupported workspace event type.' });
   });
 
-  router.get('/live/:token/events', (req: Request, res: Response) => {
-    const cleanToken = sanitizeLiveChannel(req.params.token);
+  // Zero-storage VFS query bridge used by local `mcp-stdio` processes (`ls`, `read`, `mv`)
+  router.post('/workspace/vfs-query', async (req: Request, res: Response) => {
+    const cleanToken = sanitizeWorkspaceToken(req.body?.workspaceToken);
     if (!cleanToken) {
-      res.status(400).json({ error: 'Invalid live session token.' });
+      res.status(400).json({ error: 'Valid `workspaceToken` is required.' });
       return;
     }
 
-    const writeSnapshot = (snap: unknown) => {
-      if (!res.writableEnded) {
-        res.write(`event: snapshot\ndata: ${JSON.stringify(snap)}\n\n`);
+    const query = req.body?.query as VfsRpcQuery | undefined;
+    if (!query || typeof query !== 'object' || typeof query.op !== 'string') {
+      res.status(400).json({ error: 'Valid `query` payload is required.' });
+      return;
+    }
+
+    try {
+      const result = await service.queryVfs(cleanToken, query);
+      res.json({ ok: true, result });
+    } catch (err: unknown) {
+      res.status(422).json({ ok: false, error: errorMessage(err) });
+    }
+  });
+
+  // Browser `localStorage` reply endpoint for in-flight VFS RPC queries (`ls`, `read`, `mv`)
+  router.post('/workspace/:token/vfs-reply', (req: Request, res: Response) => {
+    const cleanToken = sanitizeWorkspaceToken(req.params.token);
+    if (!cleanToken) {
+      res.status(400).json({ error: 'Invalid workspace token.' });
+      return;
+    }
+
+    const reply = req.body as VfsRpcReply | undefined;
+    if (!reply || typeof reply.requestId !== 'string') {
+      res.status(400).json({ error: 'Valid `requestId` is required.' });
+      return;
+    }
+
+    const matched = service.resolveVfsReply(cleanToken, reply);
+    res.json({ ok: true, matched });
+  });
+
+  // Pure pass-through SSE stream for browser `localStorage` sync
+  router.get('/workspace/:token/events', (req: Request, res: Response) => {
+    const cleanToken = sanitizeWorkspaceToken(req.params.token);
+    if (!cleanToken) {
+      res.status(400).json({ error: 'Invalid workspace token.' });
+      return;
+    }
+
+    const writeEvent = (ev: WorkspaceRelayEvent) => {
+      if (res.writableEnded) return;
+      if (ev.type === 'agent_status') {
+        res.write(`event: agent_status\ndata: ${JSON.stringify(ev.agent)}\n\n`);
+      } else if (ev.type === 'diagram') {
+        res.write(`event: diagram\ndata: ${JSON.stringify(ev.diagram)}\n\n`);
+      } else if (ev.type === 'vfs_request') {
+        res.write(`event: vfs_request\ndata: ${JSON.stringify(ev.request)}\n\n`);
+      } else if (ev.type === 'connected_agents') {
+        res.write(
+          `event: connected_agents\ndata: ${JSON.stringify({ agents: ev.agents })}\n\n`
+        );
       }
     };
 
-    const unsubscribe = service.subscribeLive(cleanToken, writeSnapshot, () => {
+    const unsubscribe = service.subscribeWorkspace(cleanToken, writeEvent, () => {
       if (!res.writableEnded) {
         res.end();
       }
     });
 
     if (!unsubscribe) {
-      res.status(503).json({ error: 'Live session subscriber limit reached.' });
+      res.status(503).json({ error: 'Workspace subscriber limit reached.' });
       return;
     }
 
@@ -217,15 +246,10 @@ export function createRenderRouter(service: StudioService): Router {
 
     res.write(': connected\n\n');
 
-    const existingTabs = service.getChannelTabs(cleanToken);
-    if (existingTabs.length > 0) {
-      res.write(`event: tabs\ndata: ${JSON.stringify({ tabs: existingTabs })}\n\n`);
-    }
-
-    const latest = service.getLiveLatest(cleanToken);
-    if (latest) {
-      writeSnapshot(latest);
-    }
+    const activeAgents = getActiveAgents(cleanToken);
+    res.write(
+      `event: connected_agents\ndata: ${JSON.stringify({ agents: activeAgents })}\n\n`
+    );
 
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) {

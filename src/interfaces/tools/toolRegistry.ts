@@ -3,20 +3,29 @@ import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type {
   StatelessRenderInput,
   StudioService,
+  VfsRpcBridgeFn,
 } from '../../application/studioService.js';
 import type { CallerSource } from '../../shared/types.js';
 
 const THEME_ENUM = z.enum(['default', 'neutral', 'dark', 'forest', 'base']);
 const LOOK_ENUM = z.enum(['classic', 'handDrawn']);
 
+export interface ActiveCallerMetadata {
+  sessionId: string | null;
+  agentName: string | null;
+  project: string | null;
+}
+
 export interface ToolCallContext {
   source: CallerSource;
   getBaseUrl?: () => string;
-  liveToken?: string | null;
   getWorkspaceToken?: () => string | null;
-  previewBridge?: StatelessRenderInput['previewBridge'];
+  getCallerMeta?: () => ActiveCallerMetadata;
+  ensureCallerProject?: () => Promise<string | null>;
+  onProjectDiscovered?: (project: string) => void;
+  relayBridge?: StatelessRenderInput['relayBridge'];
+  vfsBridge?: VfsRpcBridgeFn;
 }
-
 
 export interface ToolExecutionOutput {
   ok: boolean;
@@ -50,42 +59,178 @@ function bytesToBase64(bytes: Uint8Array | null | undefined): string | null {
   return Buffer.from(bytes).toString('base64');
 }
 
+/**
+ * Enforces strict working-directory sandboxing:
+ * Once a session's working project is bound (via MCP `roots`, `?project=`, Stdio CWD, or first tool call),
+ * the agent is strictly locked to that working directory and cannot access other projects.
+ */
+async function resolveJailedProject(
+  argsProject: string | undefined,
+  ctx: ToolCallContext
+): Promise<string> {
+  let meta = ctx.getCallerMeta?.();
+  if (meta?.project) {
+    return meta.project;
+  }
+
+  if (ctx.ensureCallerProject) {
+    const probed = await ctx.ensureCallerProject();
+    if (probed) return probed;
+    meta = ctx.getCallerMeta?.();
+    if (meta?.project) return meta.project;
+  }
+
+  const candidate = argsProject?.trim();
+  if (candidate) {
+    ctx.onProjectDiscovered?.(candidate);
+    return candidate;
+  }
+
+  return 'General';
+}
+
 export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
   defineTool({
-    name: 'mermaid_render',
-    title: 'Validate, Render & Visually Inspect Mermaid Diagram',
+    name: 'mermaid_ls',
+    title: 'List Project Diagram Directories & Graphs (ls)',
     description:
-      'Statelessly validate and render Mermaid code into a high-DPI 2x Retina PNG image, layout diagnostics, and interactive browser links (`studioUrl` for this snapshot and `liveUrl` for real-time session updates). Share `studioUrl` with the user so they can view, pan/zoom, edit, and export in the browser.',
+      'List subdirectories and `.mmd` Mermaid graph files inside your current project working directory (stored in the user\'s browser `localStorage`). Shows directory tree, diagram types, version counts, and which coding agent (`pi`, `claude`, `you`) last updated each graph.',
     zodShape: {
-      code: z.string().describe('Raw Mermaid diagram source code (without ```mermaid fences).'),
-      title: z
+      path: z
         .string()
         .optional()
         .describe(
-          'Concise tab title (e.g. "System Overview", "Auth Sequence"). Distinct titles open separate VS Code tabs in the browser; re-rendering the same title updates that tab in place.'
+          'Relative directory path inside your project working directory (defaults to `"/"` project root, e.g. `"auth"` or `"architecture/core"`).'
         ),
-      tabId: z
+      project: z
         .string()
         .optional()
-        .describe('Optional stable tab key to update an existing browser tab even if title changes.'),
+        .describe(
+          'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
+        ),
+    },
+    jsonParameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Relative directory path inside your project working directory.',
+        },
+        project: { type: 'string' },
+      },
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+    execute: async (args, service, ctx) => {
+      const project = await resolveJailedProject(args.project, ctx);
+      const out = await service.vfsLs({
+        workspaceToken: ctx.getWorkspaceToken?.(),
+        project,
+        dirPath: args.path,
+        vfsBridge: ctx.vfsBridge,
+      });
+      return {
+        ok: true,
+        payload: out,
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'mermaid_read',
+    title: 'Read Diagram Source & Revision History (read)',
+    description:
+      'Read the `.mmd` Mermaid source code and 5-version immutable revision history of an existing graph inside your project working directory (including diagrams created by other coding agents or edited by the human).',
+    zodShape: {
+      path: z
+        .string()
+        .describe(
+          'Relative file path inside your project working directory (e.g. `"auth/oauth-flow.mmd"` or `"auth/oauth-flow"`).'
+        ),
+      version: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe('Optional specific version number to inspect (defaults to latest version).'),
+      project: z
+        .string()
+        .optional()
+        .describe(
+          'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
+        ),
+    },
+    jsonParameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        version: { type: 'number', minimum: 1 },
+        project: { type: 'string' },
+      },
+      required: ['path'],
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+    execute: async (args, service, ctx) => {
+      const project = await resolveJailedProject(args.project, ctx);
+      const out = await service.vfsRead({
+        workspaceToken: ctx.getWorkspaceToken?.(),
+        project,
+        filePath: args.path,
+        version: args.version,
+        vfsBridge: ctx.vfsBridge,
+      });
+      return {
+        ok: true,
+        payload: out,
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'mermaid_render',
+    title: 'Write, Validate, Render & Visually Inspect Mermaid Graph',
+    description:
+      'Write or update a Mermaid graph at `path` inside your project working directory (creating subfolders automatically like `mkdir -p` and appending a new immutable version, keeping the last 5), validate syntax, and receive a 2x Retina PNG image (`image/png`) + layout diagnostics.',
+    zodShape: {
+      code: z.string().describe('Raw Mermaid diagram source code (without ```mermaid fences).'),
+      path: z
+        .string()
+        .optional()
+        .describe(
+          'Relative `.mmd` path inside your project working directory (e.g. `"architecture/system-overview.mmd"`, `"auth/oauth-flow"`). Auto-creates parent folders; re-rendering the same `path` appends a new immutable version.'
+        ),
+      title: z
+        .string()
+        .optional()
+        .describe('Optional human-readable graph title (defaults to file name of `path`).'),
+      project: z
+        .string()
+        .optional()
+        .describe(
+          'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
+        ),
+      agent: z
+        .string()
+        .optional()
+        .describe('Optional coding agent name override when calling via stateless HTTP/REST.'),
       theme: THEME_ENUM.optional().describe('Visual theme (default, neutral, dark, forest, base).'),
       look: LOOK_ENUM.optional().describe('Render style: classic or handDrawn.'),
       background: z.string().optional().describe('CSS color or "transparent".'),
       scale: z.number().min(1).max(4).optional().describe('Pixel scale factor (1-4, default 2).'),
-      outputPath: z.string().optional().describe('Optional file path (.png or .svg) to write output.'),
+      outputPath: z.string().optional().describe('Optional local disk file path (.png or .svg) to write output.'),
       returnImage: z.boolean().optional().describe('Attach rendered PNG image (default true).'),
       includeSvg: z.boolean().optional().describe('Include raw SVG XML string (default false).'),
-      liveChannel: z
-        .string()
-        .optional()
-        .describe('Optional custom live-stream channel token (4-64 alphanumeric/_/- chars).'),
     },
     jsonParameters: {
       type: 'object',
       properties: {
         code: { type: 'string', description: 'Raw Mermaid diagram source code.' },
+        path: {
+          type: 'string',
+          description: 'Relative `.mmd` file path inside your project working directory (e.g. "auth/oauth-flow.mmd").',
+        },
         title: { type: 'string' },
-        tabId: { type: 'string' },
+        project: { type: 'string' },
+        agent: { type: 'string' },
         theme: { type: 'string', enum: ['default', 'neutral', 'dark', 'forest', 'base'] },
         look: { type: 'string', enum: ['classic', 'handDrawn'] },
         background: { type: 'string' },
@@ -93,36 +238,43 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         outputPath: { type: 'string' },
         returnImage: { type: 'boolean', default: true },
         includeSvg: { type: 'boolean', default: false },
-        liveChannel: { type: 'string' },
       },
       required: ['code'],
     },
     annotations: { idempotentHint: true },
     execute: async (args, service, ctx) => {
+      const effectiveProject = await resolveJailedProject(args.project, ctx);
+      const callerMeta = ctx.getCallerMeta?.();
+      const effectiveAgent = args.agent?.trim() || callerMeta?.agentName || null;
+
       const res = await service.render(args.code, {
+        path: args.path,
         title: args.title,
-        tabId: args.tabId,
+        project: effectiveProject,
+        agentName: effectiveAgent,
+        agentSessionId: callerMeta?.sessionId ?? null,
         theme: args.theme,
         look: args.look,
         background: args.background,
         scale: args.scale,
         outputPath: args.outputPath,
         source: ctx.source,
-        requestBaseUrl: ctx.getBaseUrl?.(),
-        liveToken: args.liveChannel ?? ctx.liveToken ?? null,
+        requestBaseUrl: ctx.getBaseUrl,
         workspaceToken: ctx.getWorkspaceToken?.() ?? null,
-        previewBridge: ctx.previewBridge,
+        relayBridge: ctx.relayBridge,
       });
-
 
       return {
         ok: res.valid,
         payload: {
           renderId: res.renderId,
+          project: res.project,
+          path: res.path,
           title: res.title,
+          agent: res.agent,
           valid: res.valid,
           studioUrl: res.studioUrl,
-          liveUrl: res.liveUrl,
+          syncedToBrowser: res.syncedSubscribers > 0,
           diagramType: res.diagramType,
           theme: res.theme,
           look: res.look,
@@ -137,6 +289,51 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
           ...(args.includeSvg && res.svg ? { svg: res.svg } : {}),
         },
         pngBase64: res.valid && args.returnImage !== false ? bytesToBase64(res.pngBytes) : null,
+      };
+    },
+  }),
+
+  defineTool({
+    name: 'mermaid_mv',
+    title: 'Move or Rename Diagram / Subfolder (mv)',
+    description:
+      'Move or rename an existing `.mmd` graph or subfolder within your project working directory while preserving its immutable 5-version history.',
+    zodShape: {
+      from: z
+        .string()
+        .describe('Existing relative file or folder path (e.g. `"draft.mmd"` or `"old-dir"`).'),
+      to: z
+        .string()
+        .describe('Destination relative file or folder path (e.g. `"auth/login-flow.mmd"` or `"architecture/auth"`).'),
+      project: z
+        .string()
+        .optional()
+        .describe(
+          'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
+        ),
+    },
+    jsonParameters: {
+      type: 'object',
+      properties: {
+        from: { type: 'string' },
+        to: { type: 'string' },
+        project: { type: 'string' },
+      },
+      required: ['from', 'to'],
+    },
+    annotations: { idempotentHint: true },
+    execute: async (args, service, ctx) => {
+      const project = await resolveJailedProject(args.project, ctx);
+      const out = await service.vfsMove({
+        workspaceToken: ctx.getWorkspaceToken?.(),
+        project,
+        fromPath: args.from,
+        toPath: args.to,
+        vfsBridge: ctx.vfsBridge,
+      });
+      return {
+        ok: true,
+        payload: out,
       };
     },
   }),
@@ -165,9 +362,9 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
 
   defineTool({
     name: 'mermaid_export',
-    title: 'Export Mermaid Diagram to File',
+    title: 'Export Mermaid Diagram to Disk File',
     description:
-      'Statelessly validate, render, and export raw Mermaid `code` directly to a destination file path (`.png`, `.svg`, `.mmd`, or `.md`).',
+      'Statelessly validate, render, and export raw Mermaid `code` directly to a local filesystem path (`.png`, `.svg`, `.mmd`, or `.md`).',
     zodShape: {
       code: z.string().describe('Raw Mermaid diagram source code.'),
       outputPath: z.string().describe('Destination file path (.png, .svg, .mmd, or .md).'),

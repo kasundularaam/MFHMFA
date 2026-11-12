@@ -43,7 +43,8 @@ claude mcp add --transport http mfhmfa "${pairedMcpUrl}"`;
   -d '{
     "name": "mermaid_render",
     "arguments": {
-      "title": "Order Pipeline",
+      "project": "Order Service",
+      "path": "checkout/order-pipeline.mmd",
       "code": "flowchart LR\\n  Cart[\\"Cart\\"] --> Pay[\\"Stripe\\"] --> Ship[\\"Fulfill\\"]"
     }
   }'`;
@@ -88,14 +89,17 @@ docker compose up -d --build
           <h1 id="doc-overview">MFHMFA Documentation</h1>
           <p>
             <strong>MFHMFA</strong> (<em>Mermaid For Humans, Mermaid For Agents</em>) is a
-            stateless Mermaid workspace, headless Chromium validator/renderer, and Model Context
-            Protocol (MCP) server. There is no database and no persistent server storage.
+            zero-storage Mermaid workspace, headless Chromium validator/renderer, and Model Context
+            Protocol (MCP) server. The server stores <strong>zero diagrams</strong> in memory or on
+            disk — all workspace state lives locally in your browser&apos;s{' '}
+            <code>localStorage</code>.
           </p>
           <p>
-            When an AI agent calls <code>mermaid_render</code>, MFHMFA parses the diagram in a
-            pooled headless Chromium instance, returns 1-indexed syntax errors with fix hints if
-            invalid, or returns a 2x Retina PNG image (<code>image/png</code> vision content)
-            alongside layout diagnostics and live browser tabs if valid.
+            When an AI coding agent connects over MCP, MFHMFA identifies the agent (e.g.{' '}
+            <strong>Claude Code</strong>, <strong>Pi</strong>, <strong>Cursor</strong>,{' '}
+            <strong>Antigravity</strong>) and the project workspace, allocates a dedicated space in
+            your browser&apos;s <code>localStorage</code>, and streams rendered diagrams straight
+            into Chrome-style Project &amp; Agent tab groups.
           </p>
           <ul>
             <li>
@@ -152,29 +156,33 @@ docker compose up -d --build
             Legacy SSE MCP clients are also supported at <code>{baseUrl}/mcp/sse</code>.
           </p>
 
-          <h2 id="doc-sync">3. Browser Sync &amp; Links</h2>
-          <p>Diagrams move between agents and browsers in three ways:</p>
+          <h2 id="doc-sync">3. VS Code Explorer, VFS &amp; Immutable History</h2>
+          <p>
+            Visiting the Studio initializes a Virtual Diagram Filesystem (
+            <code>mfhmfa-workspace-v4</code>) in your browser <code>localStorage</code> while the
+            server acts strictly as a zero-storage 2-way SSE bridge:
+          </p>
           <ul>
             <li>
-              <strong>Workspace auto-tabs (<code>?workspace=ws_...</code>)</strong> — Each
-              distinct diagram <code>title</code> rendered by the agent opens as its own tab.
-              Re-rendering the same <code>title</code> (or passing a stable <code>tabId</code>)
-              updates that tab in place without reordering the tab bar. On{' '}
-              <code>localhost:48333</code>, local workspace sync works automatically with zero
-              query parameters.
+              <strong>Jailed Project Working Directory</strong> — Each MCP session is bound to its
+              working project (resolved via MCP <code>roots/list</code>, Stdio <code>cwd</code>, or{' '}
+              <code>?project=...</code>). Agents can only list, read, render, and move paths inside
+              their own working project, while you see all projects side-by-side in the Left
+              Explorer.
             </li>
             <li>
-              <strong>Ephemeral session URLs (<code>/live/:token</code> &amp; <code>/p/:id</code>)</strong>{' '}
-              — Every <code>mermaid_render</code> response includes a snapshot URL (
-              <code>studioUrl</code>) and a live SSE session URL (<code>liveUrl</code>) held in a
-              bounded in-memory LRU cache (TTL 12–24h). Opening either link loads all tabs from
-              that agent session.
+              <strong>Cross-Agent Collaboration (<code>ls</code> &amp; <code>read</code>)</strong>{' '}
+              — Multiple agents (e.g. <em>Claude Code</em> and <em>Pi</em>) working in the same
+              project share subfolders (<code>architecture/</code>, <code>auth/</code>,{' '}
+              <code>db/</code>), inspect each other&apos;s graphs via <code>mermaid_ls</code> and{' '}
+              <code>mermaid_read</code>, and display author badges (<code>claude</code>,{' '}
+              <code>pi</code>, <code>you</code>) in the Explorer tree.
             </li>
             <li>
-              <strong>Stateless permalinks (<code>/#z=...</code>)</strong> — Clicking the link
-              icon in the top bar compresses all open tabs into the URL fragment using raw{' '}
-              <code>deflate-raw</code> + Base64URL. Fragment payloads never touch server logs and
-              never expire.
+              <strong>Last-5 Immutable Revisions</strong> — Every graph maintains an immutable ring
+              buffer of its last 5 versions. Use the <code>vN</code> history menu on the right side
+              of the tab bar to inspect or restore earlier revisions. Only humans can delete graphs
+              or folders.
             </li>
           </ul>
 
@@ -194,18 +202,53 @@ docker compose up -d --build
             <tbody>
               <tr>
                 <td>
+                  <code>mermaid_ls</code>
+                </td>
+                <td>
+                  <code>path?</code>, <code>project?</code>
+                </td>
+                <td>
+                  Lists subfolders and <code>.mmd</code> graphs inside the agent&apos;s jailed
+                  project working directory with diagram type, version, and author badge.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>mermaid_read</code>
+                </td>
+                <td>
+                  <code>path</code>, <code>version?</code>
+                </td>
+                <td>
+                  Reads the <code>.mmd</code> source of an existing graph (latest head or any of
+                  the last 5 immutable revisions) + revision history.
+                </td>
+              </tr>
+              <tr>
+                <td>
                   <code>mermaid_render</code>
                 </td>
                 <td>
-                  <code>code</code>, <code>title?</code>, <code>tabId?</code>,{' '}
-                  <code>theme?</code>, <code>look?</code>, <code>background?</code>,{' '}
-                  <code>scale?</code>, <code>outputPath?</code>, <code>returnImage?</code>,{' '}
-                  <code>includeSvg?</code>
+                  <code>code</code>, <code>path?</code>, <code>title?</code>,{' '}
+                  <code>project?</code>, <code>theme?</code>, <code>look?</code>,{' '}
+                  <code>scale?</code>, <code>outputPath?</code>
                 </td>
                 <td>
-                  Validates syntax, renders a 2x Retina PNG (returned as MCP{' '}
-                  <code>image/png</code> content), computes dimensions/aspect-ratio diagnostics,
-                  and publishes to browser tabs.
+                  Creates parent folders, appends a new immutable revision in browser{' '}
+                  <code>localStorage</code>, validates syntax, and returns a 2x Retina PNG +
+                  layout diagnostics + <code>#z=</code> <code>studioUrl</code>.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>mermaid_mv</code>
+                </td>
+                <td>
+                  <code>from</code>, <code>to</code>
+                </td>
+                <td>
+                  Moves or renames a graph or subfolder inside the working project while preserving
+                  its 5-version history. (No <code>rm</code> tool is exposed to agents.)
                 </td>
               </tr>
               <tr>
@@ -338,13 +381,17 @@ docker compose up -d --build
           <h2 id="doc-keys">7. Shortcuts</h2>
           <ul>
             <li>
-              <code>Ctrl/Cmd + E</code> — Toggle between Preview and Code editor
+              <code>Ctrl/Cmd + B</code> — Toggle Left Explorer sidebar
             </li>
             <li>
-              <code>Alt + 1..9</code> — Switch to tab 1–9
+              <code>Ctrl/Cmd + E</code> — Toggle between Preview and Code view (or click the icon
+              at the right edge of the tab bar)
             </li>
-            <li>Double-click tab — Rename diagram tab</li>
-            <li>Middle-click tab — Close diagram tab</li>
+            <li>
+              <code>Alt + 1..9</code> — Switch to open tab 1–9
+            </li>
+            <li>Double-click item in Explorer — Rename graph</li>
+            <li>Middle-click open tab — Close tab (keeps graph in Explorer)</li>
             <li>Mouse wheel / drag on canvas — Zoom and pan diagram</li>
           </ul>
         </article>

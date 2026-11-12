@@ -82,24 +82,106 @@ export interface MermaidTemplate {
   code: string;
 }
 
-export interface PreviewSnapshot {
-  id: string;
-  tabKey: string;
+export type AgentStatusKind = 'connected' | 'active' | 'disconnected';
+
+export interface AgentSessionInfo {
+  sessionId: string;
+  agentSlug: string;
+  agentLabel: string;
+  agentShortLabel: string;
+  clientVersion: string | null;
+  project: string | null;
+  source: CallerSource;
+  status: AgentStatusKind;
+  connectedAt: number;
+  lastActiveAt: number;
+}
+
+export interface DiagramRelayPayload {
+  renderId: string;
+  path: string;
   title: string;
   code: string;
   diagramType: string | null;
   theme: MermaidTheme;
   look: MermaidLook;
-  liveToken: string | null;
-  workspaceToken: string | null;
+  project: string;
+  agentSessionId: string | null;
+  agentSlug: string;
+  agentLabel: string;
+  agentShortLabel: string;
+  timestamp: number;
+}
+
+export interface VfsLsEntry {
+  name: string;
+  path: string;
+  kind: 'dir' | 'file';
+  diagramType?: string | null;
+  currentVersion?: number;
+  author?: string;
+  updatedAt?: number;
+}
+
+export interface VfsLsResult {
+  project: string;
+  cwd: string;
+  entries: VfsLsEntry[];
+  treeText: string;
+}
+
+export interface VfsRevisionSummary {
+  version: number;
+  author: string;
+  authorLabel: string;
   createdAt: number;
 }
 
+export interface VfsReadResult {
+  project: string;
+  path: string;
+  title: string;
+  diagramType: string | null;
+  requestedVersion: number;
+  currentVersion: number;
+  code: string;
+  author: string;
+  updatedAt: number;
+  versions: VfsRevisionSummary[];
+}
 
-export interface PreviewHubStats {
-  snapshots: number;
-  maxSnapshots: number;
-  liveChannels: number;
-  liveSubscribers: number;
+export interface VfsMoveResult {
+  project: string;
+  fromPath: string;
+  toPath: string;
+  movedFiles: number;
+}
+
+export type VfsRpcQuery =
+  | { op: 'ls'; project: string; dirPath: string }
+  | { op: 'read'; project: string; filePath: string; version?: number }
+  | { op: 'mv'; project: string; fromPath: string; toPath: string };
+
+export type VfsRpcRequest = VfsRpcQuery & {
+  requestId: string;
+};
+
+export interface VfsRpcReply {
+  requestId: string;
+  ok: boolean;
+  result?: VfsLsResult | VfsReadResult | VfsMoveResult;
+  error?: string;
+}
+
+export type WorkspaceRelayEvent =
+  | { type: 'connected_agents'; agents: AgentSessionInfo[] }
+  | { type: 'agent_status'; agent: AgentSessionInfo }
+  | { type: 'diagram'; diagram: DiagramRelayPayload }
+  | { type: 'vfs_request'; request: VfsRpcRequest };
+
+export interface RelayStats {
+  activeWorkspaces: number;
+  browserSubscribers: number;
+  storedDiagrams: 0;
 }
 

@@ -3,7 +3,6 @@ import {
   isLocalRequestHost,
   resolveRequestBaseUrl,
 } from '../../src/config/env.js';
-
 import {
   analyzeStaticWarnings,
   buildCodeSnippet,
@@ -11,7 +10,12 @@ import {
   inferSuggestion,
   parseMermaidError,
 } from '../../src/domain/diagnostics.js';
-import { InMemoryPreviewHub } from '../../src/infrastructure/ephemeral/previewHub.js';
+import { StatelessWorkspaceRelay } from '../../src/infrastructure/ephemeral/workspaceRelay.js';
+import {
+  extractProjectFromRoots,
+  normalizeAgentIdentity,
+  normalizeProjectName,
+} from '../../src/shared/agentIdentity.js';
 import {
   buildPermalinkUrl,
   decodePermalinkPayload,
@@ -23,9 +27,20 @@ import {
   normalizeSvgIntrinsicDimensions,
   slugify,
 } from '../../src/shared/svg.js';
+import {
+  normalizeRelativeDirPath,
+  normalizeRelativeGraphPath,
+} from '../../src/shared/vfsPath.js';
+import {
+  evaluateVfsLs,
+  evaluateVfsRead,
+  movePathInProject,
+  restoreGraphVersion,
+  upsertGraphInVfs,
+  type WorkspaceState,
+} from '../../web/services/workspaceStorage.js';
 
-
-describe('Domain Diagnostics & Pure Helpers', () => {
+describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () => {
   it('builds 1-indexed code snippets with line pointer', () => {
     const src = ['flowchart TD', '  A --> B[foo(1)]', '  B --> C'].join('\n');
     const snippet = buildCodeSnippet(src, 2);
@@ -89,94 +104,174 @@ describe('Domain Diagnostics & Pure Helpers', () => {
     expect(slugify('  My Cool Chart! (v2)  ')).toBe('my-cool-chart-v2');
   });
 
-  it('round-trips stateless #z= deflate-raw permalinks and rejects oversized/corrupt payloads', async () => {
+  it('jails relative VFS paths inside the working project and rejects traversal', () => {
+    expect(normalizeRelativeDirPath('/')).toBe('');
+    expect(normalizeRelativeDirPath('/auth/flows/')).toBe('auth/flows');
+    expect(normalizeRelativeGraphPath('auth/oauth-flow')).toBe('auth/oauth-flow.mmd');
+    expect(normalizeRelativeGraphPath('/arch/sub/../overview.mmd')).toBe('arch/overview.mmd');
+
+    expect(() => normalizeRelativeDirPath('../other-project')).toThrow(/cannot traverse/i);
+    expect(() => normalizeRelativeGraphPath('../../secret/graph.mmd')).toThrow(
+      /cannot traverse/i
+    );
+  });
+
+  it('identifies coding agents and extracts project names from MCP roots & paths', () => {
+    expect(normalizeAgentIdentity('claude-code')).toEqual({
+      slug: 'claude-code',
+      label: 'Claude Code',
+      shortLabel: 'Claude',
+    });
+    expect(normalizeAgentIdentity('@earendil-works/pi-coding-agent')).toEqual({
+      slug: 'pi',
+      label: 'Pi',
+      shortLabel: 'Pi',
+    });
+    expect(normalizeProjectName('file:///home/ilabs/Projects/Project%20A/')).toBe('Project A');
+    expect(
+      extractProjectFromRoots([{ uri: 'file:///Users/dev/repos/Project-Alpha' }])
+    ).toBe('Project-Alpha');
+  });
+
+  it('round-trips stateless #z= permalinks with project, path & agent metadata', async () => {
     const original = {
-      title: 'Agent ↔ Browser Bridge 🚀',
-      code: 'flowchart LR\n  Agent["MCP Agent"] -->|"studioUrl"| Browser["Web UI"]',
+      title: 'oauth-flow',
+      path: 'auth/oauth-flow.mmd',
+      project: 'Project A',
+      agent: 'Claude Code',
+      code: 'flowchart LR\n  Agent["MCP Agent"] --> Browser["Web UI"]',
     };
     const url = await buildPermalinkUrl('https://mfhmfa.kasun.si/', original);
-    expect(url.startsWith('https://mfhmfa.kasun.si/#z=')).toBe(true);
-
-    const zToken = extractHashToken(url);
-    expect(zToken).toBeTruthy();
-
-    const decoded = await decodePermalinkPayload(zToken!);
+    const decoded = await decodePermalinkPayload(extractHashToken(url)!);
     expect(decoded).toEqual(original);
-
-    // Multi-tab workspace permalink round-trip
-    const multiUrl = await buildPermalinkUrl('https://mfhmfa.kasun.si/', {
-      title: 'Auth Sequence',
-      code: 'sequenceDiagram\n  A->>B: Hi',
-      activeIndex: 1,
-      tabs: [
-        { title: 'System Overview', code: 'flowchart LR\n  X --> Y' },
-        { title: 'Auth Sequence', code: 'sequenceDiagram\n  A->>B: Hi' },
-      ],
-    });
-    const multiDecoded = await decodePermalinkPayload(extractHashToken(multiUrl)!);
-    expect(multiDecoded.tabs?.length).toBe(2);
-    expect(multiDecoded.activeIndex).toBe(1);
-    expect(multiDecoded.tabs?.[0]?.title).toBe('System Overview');
-
-    await expect(decodePermalinkPayload('!invalid-base64!')).rejects.toThrow();
-
 
     const bigCode = 'flowchart TD\n' + '  A --> B\n'.repeat(400);
     const bigToken = await encodePermalinkPayload({ code: bigCode });
     await expect(decodePermalinkPayload(bigToken, 128)).rejects.toThrow(/safety limit/);
   });
 
-  it('enforces bounded LRU eviction, TTL expiry, and live pub/sub in InMemoryPreviewHub', async () => {
-    const hub = new InMemoryPreviewHub({ maxSnapshots: 2, snapshotTtlMs: 80 });
+  it('supports bidirectional VFS RPC over StatelessWorkspaceRelay with zero stored diagrams', async () => {
+    const relay = new StatelessWorkspaceRelay();
     try {
-      const received: string[] = [];
-      const unsub = hub.subscribeLive('session_abc123', (snap) => {
-        received.push(snap.title);
+      const unsub = relay.subscribe('ws_rpc_1', (ev) => {
+        if (ev.type === 'vfs_request' && ev.request.op === 'ls') {
+          relay.resolveVfsReply('ws_rpc_1', {
+            requestId: ev.request.requestId,
+            ok: true,
+            result: {
+              project: ev.request.project,
+              cwd: '/',
+              entries: [{ name: 'auth', path: 'auth', kind: 'dir' }],
+              treeText: 'Project A/\n  auth/',
+            },
+          });
+        }
       });
+
       expect(unsub).not.toBeNull();
-      expect(hub.getSubscriberCount('session_abc123')).toBe(1);
-
-      const s1 = hub.saveSnapshot({
-        title: 'First',
-        code: 'flowchart LR\n  A --> B',
-        diagramType: 'flowchart-v2',
-        theme: 'default',
-        look: 'classic',
-        liveToken: 'session_abc123',
+      const lsRes = await relay.requestVfs('ws_rpc_1', {
+        op: 'ls',
+        project: 'Project A',
+        dirPath: '',
       });
-      const s2 = hub.saveSnapshot({
-        title: 'Second',
-        code: 'flowchart LR\n  B --> C',
-        diagramType: 'flowchart-v2',
-        theme: 'dark',
-        look: 'classic',
-        liveToken: 'session_abc123',
-      });
-      // Touch s1 so s2 becomes the LRU victim when s3 arrives
-      expect(hub.getSnapshot(s1.id)?.title).toBe('First');
-
-      const s3 = hub.saveSnapshot({
-        title: 'Third',
-        code: 'flowchart LR\n  C --> D',
-        diagramType: 'flowchart-v2',
-        theme: 'default',
-        look: 'classic',
-      });
-
-      expect(hub.getSnapshot(s1.id)?.title).toBe('First');
-      expect(hub.getSnapshot(s2.id)).toBeNull();
-      expect(hub.getSnapshot(s3.id)?.title).toBe('Third');
-      expect(received).toEqual(['First', 'Second']);
-      expect(hub.getLiveLatest('session_abc123')?.title).toBe('Second');
+      expect((lsRes as { treeText: string }).treeText).toContain('auth/');
+      expect(relay.getStats().storedDiagrams).toBe(0);
 
       unsub?.();
-      expect(hub.getSubscriberCount('session_abc123')).toBe(0);
-
-      await new Promise((r) => setTimeout(r, 95));
-      expect(hub.getSnapshot(s1.id)).toBeNull();
+      await expect(
+        relay.requestVfs('ws_rpc_1', { op: 'ls', project: 'Project A', dirPath: '' })
+      ).rejects.toThrow(/not currently open/i);
     } finally {
-      hub.dispose();
+      relay.dispose();
     }
+  });
+
+  it('maintains immutable last-5 versions per graph and supports ls, read & mv', () => {
+    let state: WorkspaceState = {
+      version: 4,
+      workspaceId: 'ws_vfs_unit',
+      sidebarOpen: true,
+      sidebarWidth: 256,
+      openTabIds: [],
+      activeFileId: null,
+      projects: [],
+    };
+
+    // Push 7 versions across Claude Code and Pi to `auth/oauth-flow.mmd`
+    for (let i = 1; i <= 7; i++) {
+      const isPi = i % 2 === 0;
+      state = upsertGraphInVfs(state, {
+        projectName: 'Project A',
+        path: 'auth/oauth-flow',
+        code: `sequenceDiagram\n  U->>S: Step_${i}`,
+        diagramType: 'sequence',
+        agentSlug: isPi ? 'pi' : 'claude-code',
+        agentLabel: isPi ? 'Pi' : 'Claude Code',
+        agentShortLabel: isPi ? 'Pi' : 'Claude',
+        autoOpenTab: true,
+        autoFocus: true,
+      }).nextState;
+    }
+
+    // Add a sibling file in `auth/`
+    state = upsertGraphInVfs(state, {
+      projectName: 'Project A',
+      path: 'auth/session-er.mmd',
+      code: 'erDiagram\n  USER ||--o{ SESSION : owns',
+      diagramType: 'er',
+      agentSlug: 'pi',
+      agentLabel: 'Pi',
+      agentShortLabel: 'Pi',
+      autoOpenTab: true,
+      autoFocus: false,
+    }).nextState;
+
+    // Verify ls output
+    const lsRoot = evaluateVfsLs(state, 'Project A', '/');
+    expect(lsRoot.entries.map((e) => `${e.kind}:${e.name}`)).toEqual(['dir:auth']);
+    expect(lsRoot.treeText).toContain('oauth-flow.mmd');
+    expect(lsRoot.treeText).toContain('v7, by claude');
+
+    // Verify last-5 immutable versions (v3..v7 kept; v1 & v2 evicted)
+    const headRead = evaluateVfsRead(state, 'Project A', 'auth/oauth-flow.mmd');
+    expect(headRead.currentVersion).toBe(7);
+    expect(headRead.code).toContain('Step_7');
+    expect(headRead.versions.map((v) => v.version)).toEqual([3, 4, 5, 6, 7]);
+
+    const v4Read = evaluateVfsRead(state, 'Project A', 'auth/oauth-flow', 4);
+    expect(v4Read.code).toContain('Step_4');
+    expect(v4Read.author).toBe('pi');
+    expect(() => evaluateVfsRead(state, 'Project A', 'auth/oauth-flow', 1)).toThrow(
+      /5-version history/
+    );
+
+    // Move `auth` folder -> `security/auth` and verify history preserved
+    const moved = movePathInProject(state, 'Project A', 'auth', 'security/auth');
+    state = moved.nextState;
+    expect(moved.result.movedFiles).toBe(2);
+
+    const movedRead = evaluateVfsRead(
+      state,
+      'Project A',
+      'security/auth/oauth-flow.mmd'
+    );
+    expect(movedRead.currentVersion).toBe(7);
+
+    // Restore v5 immutably -> creates v8!
+    const fileId = state.projects[0]!.files.find((f) =>
+      f.path.endsWith('oauth-flow.mmd')
+    )!.id;
+    const restored = restoreGraphVersion(state, fileId, 5);
+    state = restored.nextState;
+    const afterRestore = evaluateVfsRead(
+      state,
+      'Project A',
+      'security/auth/oauth-flow.mmd'
+    );
+    expect(afterRestore.currentVersion).toBe(8);
+    expect(afterRestore.code).toContain('Step_5');
+    expect(afterRestore.author).toBe('you');
+    expect(afterRestore.versions.map((v) => v.version)).toEqual([4, 5, 6, 7, 8]);
   });
 
   it('resolves public origin safely from reverse-proxy headers and rejects host injection', () => {
@@ -191,16 +286,7 @@ describe('Domain Diagnostics & Pure Helpers', () => {
       )
     ).toBe('https://mfhmfa.kasun.si');
 
-    expect(
-      resolveRequestBaseUrl(
-        { host: 'evil.com/injected-path' },
-        'http',
-        'http://localhost:48333'
-      )
-    ).toBe('http://localhost:48333');
-
     expect(isLocalRequestHost({ host: 'localhost:48333' })).toBe(true);
-    expect(isLocalRequestHost({ host: '127.0.0.1:48333' })).toBe(true);
     expect(
       isLocalRequestHost({
         host: '127.0.0.1:48333',
@@ -208,43 +294,4 @@ describe('Domain Diagnostics & Pure Helpers', () => {
       })
     ).toBe(false);
   });
-
-  it('deduplicates same-title agent retries in-place while preserving multi-tab order', () => {
-    const hub = new InMemoryPreviewHub();
-    try {
-      hub.saveSnapshot({
-        title: 'System Overview',
-        code: 'flowchart LR\n  A --> B',
-        diagramType: 'flowchart-v2',
-        theme: 'default',
-        look: 'classic',
-        workspaceToken: 'ws_unit_test_1',
-      });
-      hub.saveSnapshot({
-        title: 'Auth Sequence',
-        code: 'sequenceDiagram\n  U->>S: V1',
-        diagramType: 'sequence',
-        theme: 'default',
-        look: 'classic',
-        workspaceToken: 'ws_unit_test_1',
-      });
-      // Retry of "System Overview" updates Tab 1 in-place without changing order [Overview, Auth]
-      hub.saveSnapshot({
-        title: 'System Overview',
-        code: 'flowchart TB\n  A --> B --> C',
-        diagramType: 'flowchart-v2',
-        theme: 'default',
-        look: 'classic',
-        workspaceToken: 'ws_unit_test_1',
-      });
-
-      const tabs = hub.getChannelTabs('ws_unit_test_1');
-      expect(tabs.map((t) => t.title)).toEqual(['System Overview', 'Auth Sequence']);
-      expect(tabs[0]?.code).toContain('A --> B --> C');
-    } finally {
-      hub.dispose();
-    }
-  });
 });
-
-

@@ -1,5 +1,6 @@
 import { CodeEditorStage } from './components/CodeEditorStage';
 import { DocsView } from './components/DocsView';
+import { ExplorerSidebar } from './components/ExplorerSidebar';
 import { PreviewCanvas } from './components/PreviewCanvas';
 import { TabBar } from './components/TabBar';
 import { TopBar } from './components/TopBar';
@@ -8,51 +9,93 @@ import { useStudioController } from './hooks/useStudioController';
 export function App() {
   const ctrl = useStudioController();
 
+  const activeBreadcrumb =
+    ctrl.activeProject && ctrl.activeFile
+      ? `${ctrl.activeProject.projectLabel} / ${ctrl.activeFile.path}`
+      : null;
+
   return (
     <div className="studio-shell">
       <TopBar
         page={ctrl.page}
         onChangePage={ctrl.setPage}
-        stageMode={ctrl.stageMode}
-        onChangeStageMode={ctrl.setStageMode}
+        sidebarOpen={ctrl.workspace.sidebarOpen}
+        onToggleSidebar={ctrl.handleToggleSidebar}
         appearanceMode={ctrl.appearanceMode}
         onToggleAppearance={ctrl.toggleAppearanceMode}
-        viewMode={ctrl.viewMode}
-        linkedLiveToken={ctrl.linkedLiveToken}
-        liveState={ctrl.liveState}
-        hasBufferedLiveUpdate={ctrl.hasBufferedLiveUpdate}
+        connectedAgentCount={ctrl.connectedAgents.length}
+        activeBreadcrumb={activeBreadcrumb}
         onBrandClick={ctrl.handleBrandClick}
-        onToggleLivePause={ctrl.handleToggleLivePause}
-        onWatchLive={ctrl.handleWatchLive}
         onCopyPermalink={ctrl.handleCopyPermalink}
         repoUrl={ctrl.status?.repoUrl}
-        hasError={Boolean(ctrl.parseError)}
         onExportPng={ctrl.handleExportPng}
         onExportSvg={ctrl.handleExportSvg}
         onCopyCode={() => {
+          if (!ctrl.code) return;
           navigator.clipboard.writeText(ctrl.code);
           ctrl.notifyToast('Copied source');
         }}
       />
 
       {ctrl.page === 'studio' ? (
-        <>
-          <TabBar
-            tabs={ctrl.tabs}
-            activeTabId={ctrl.activeTabId}
-            onSelectTab={ctrl.handleSelectTab}
-            onCloseTab={ctrl.handleCloseTab}
-            onNewTab={ctrl.handleNewTab}
-            onRenameTab={ctrl.handleRenameTab}
-          />
-          <div className="workspace-body">
+        <div className="workspace-body">
+          {ctrl.workspace.sidebarOpen && (
+            <ExplorerSidebar
+              width={ctrl.workspace.sidebarWidth}
+              projects={ctrl.workspace.projects}
+              activeFileId={ctrl.workspace.activeFileId}
+              activeProjectKey={ctrl.activeProject?.projectKey ?? null}
+              workspaceId={ctrl.workspaceId}
+              relayState={ctrl.relayState}
+              hasBufferedLiveUpdate={ctrl.hasBufferedLiveUpdate}
+              connectedAgents={ctrl.connectedAgents}
+              liveProjectCounts={ctrl.liveProjectCounts}
+              storageStats={ctrl.storageStats}
+              onResizeWidth={ctrl.handleResizeSidebar}
+              onToggleProjectExpanded={ctrl.handleToggleProjectExpanded}
+              onOpenFile={ctrl.handleOpenFile}
+              onCreateGraph={ctrl.handleCreateGraph}
+              onCreateFolder={ctrl.handleCreateFolder}
+              onRenamePath={ctrl.handleRenamePath}
+              onDeleteGraph={ctrl.handleDeleteGraph}
+              onDeleteFolder={ctrl.handleDeleteFolder}
+              onDeleteProject={ctrl.handleDeleteProject}
+              onToggleLivePause={ctrl.handleToggleLivePause}
+              onNotifyToast={ctrl.notifyToast}
+            />
+          )}
+
+          <div className="editor-column">
+            <TabBar
+              openTabs={ctrl.openTabs}
+              activeFile={ctrl.activeFile}
+              activeVersionRecord={ctrl.activeVersionRecord}
+              isHistoricalVersion={ctrl.isHistoricalVersion}
+              stageMode={ctrl.stageMode}
+              hasError={Boolean(ctrl.parseError)}
+              onSelectTab={ctrl.handleOpenFile}
+              onCloseTab={ctrl.handleCloseTab}
+              onNewTab={() => ctrl.handleCreateGraph()}
+              onSelectVersion={ctrl.handleSelectVersion}
+              onRestoreVersion={ctrl.handleRestoreVersion}
+              onToggleStageMode={() =>
+                ctrl.setStageMode((m) => (m === 'preview' ? 'code' : 'preview'))
+              }
+            />
+
             <main className="single-stage">
-              {ctrl.stageMode === 'preview' ? (
+              {ctrl.stageMode === 'preview' || !ctrl.activeFile ? (
                 <PreviewCanvas
                   viewportRef={ctrl.viewportRef}
                   chartKey={ctrl.chartKey}
                   renderedSvg={ctrl.renderedSvg}
-                  waitingForLive={ctrl.waitingForLive}
+                  hasActiveFile={Boolean(ctrl.activeFile)}
+                  historicalVersion={
+                    ctrl.isHistoricalVersion && ctrl.activeVersionRecord
+                      ? ctrl.activeVersionRecord.version
+                      : null
+                  }
+                  onExitHistoricalVersion={() => ctrl.handleSelectVersion(null)}
                   parseError={ctrl.parseError}
                   zoom={ctrl.zoom}
                   pan={ctrl.pan}
@@ -76,7 +119,7 @@ export function App() {
               )}
             </main>
           </div>
-        </>
+        </div>
       ) : (
         <DocsView
           workspaceId={ctrl.workspaceId}

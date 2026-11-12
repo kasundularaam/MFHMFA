@@ -5,22 +5,23 @@ import type {
   MermaidLook,
   MermaidTheme,
   ParseErrorDetail,
-  PreviewHubStats,
-  PreviewSnapshot,
+  RelayStats,
   RenderEngineStats,
   ValidationResult,
+  VfsRpcReply,
 } from '../../src/shared/types';
 
 export interface ServerStatus {
   ok: boolean;
   stateless: boolean;
+  serverStorage: string;
   name: string;
   version: string;
   repoUrl: string;
   baseUrl: string;
   mcpHttpSessions: number;
   engine: RenderEngineStats | null;
-  previews: PreviewHubStats;
+  relay: RelayStats;
   connections: {
     mcpStreamableHttp: string;
     mcpLegacySse: string;
@@ -34,10 +35,11 @@ export interface ServerStatus {
 
 export interface StatelessRenderResponse {
   renderId: string;
-  previewId: string | null;
   studioUrl: string | null;
-  liveUrl: string | null;
+  syncedToBrowser: boolean;
   title: string;
+  project: string;
+  agent: string;
   valid: boolean;
   diagramType: string | null;
   theme: MermaidTheme;
@@ -52,19 +54,6 @@ export interface StatelessRenderResponse {
   svg: string | null;
   pngDataUrl: string | null;
 }
-
-export interface PreviewSnapshotResponse extends PreviewSnapshot {
-  liveUrl: string | null;
-  sessionTabs: PreviewSnapshot[];
-}
-
-export interface LiveSessionResponse {
-  token: string;
-  latest: PreviewSnapshot | null;
-  tabs: PreviewSnapshot[];
-  subscriberCount: number;
-}
-
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -103,9 +92,12 @@ export const studioApi = {
       body: JSON.stringify(payload),
     }),
 
-  getPreview: (id: string) =>
-    requestJson<PreviewSnapshotResponse>(`/api/preview/${encodeURIComponent(id)}`),
-
-  getLiveSession: (token: string) =>
-    requestJson<LiveSessionResponse>(`/api/live/${encodeURIComponent(token)}`),
+  replyVfsRequest: (workspaceToken: string, reply: VfsRpcReply) =>
+    requestJson<{ ok: boolean; matched: boolean }>(
+      `/api/workspace/${encodeURIComponent(workspaceToken)}/vfs-reply`,
+      {
+        method: 'POST',
+        body: JSON.stringify(reply),
+      }
+    ),
 };

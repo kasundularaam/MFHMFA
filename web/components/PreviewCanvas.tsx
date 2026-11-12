@@ -6,7 +6,9 @@ interface PreviewCanvasProps {
   viewportRef: RefObject<HTMLDivElement | null>;
   chartKey: string;
   renderedSvg: string;
-  waitingForLive?: boolean;
+  hasActiveFile: boolean;
+  historicalVersion: number | null;
+  onExitHistoricalVersion?: () => void;
   parseError: ParseErrorDetail | null;
   zoom: number;
   pan: { x: number; y: number };
@@ -28,7 +30,9 @@ export function PreviewCanvas({
   viewportRef,
   chartKey,
   renderedSvg,
-  waitingForLive = false,
+  hasActiveFile,
+  historicalVersion,
+  onExitHistoricalVersion,
   parseError,
   zoom,
   pan,
@@ -155,6 +159,12 @@ export function PreviewCanvas({
           }}
           dangerouslySetInnerHTML={{ __html: renderedSvg }}
         />
+      ) : !hasActiveFile ? (
+        <div className="empty-agent-stage">
+          <div className="empty-stage-watermark">
+            Select a graph in the Explorer or click <code>+</code> to create one
+          </div>
+        </div>
       ) : (
         <div
           style={{
@@ -165,9 +175,17 @@ export function PreviewCanvas({
             color: 'var(--text-muted)',
           }}
         >
-          {waitingForLive
-            ? 'Waiting for AI agent to render a diagram…'
-            : 'Switch to Code to edit diagram'}
+          Switch to Code view to edit diagram
+        </div>
+      )}
+
+      {historicalVersion !== null && (
+        <div
+          className="floating-history-pill"
+          onClick={onExitHistoricalVersion}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <span>Viewing historical revision v{historicalVersion} — Return to head</span>
         </div>
       )}
 

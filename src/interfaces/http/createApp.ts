@@ -19,7 +19,7 @@ export function createStudioExpressApp(service: StudioService): {
   const mcp = mountMcpHttpEndpoints(app, service);
 
   app.use('/api', createStudioRouter(service, mcp.getSessionCount));
-  app.use('/api', createRenderRouter(service));
+  app.use('/api', createRenderRouter(service, mcp.getActiveAgents));
 
   const webDistDir = path.join(PROJECT_ROOT, 'dist/web');
   if (fs.existsSync(webDistDir)) {

@@ -1,12 +1,15 @@
 import type {
-  MermaidLook,
-  MermaidTheme,
-  PreviewHubStats,
-  PreviewSnapshot,
+  RelayStats,
   RenderEngineStats,
   RenderOptions,
   RenderedDiagram,
   ValidationResult,
+  VfsLsResult,
+  VfsMoveResult,
+  VfsReadResult,
+  VfsRpcQuery,
+  VfsRpcReply,
+  WorkspaceRelayEvent,
 } from '../shared/types.js';
 
 export interface RenderEnginePort {
@@ -16,32 +19,22 @@ export interface RenderEnginePort {
   dispose(): Promise<void>;
 }
 
-export interface SaveSnapshotInput {
-  title: string;
-  tabId?: string | null;
-  code: string;
-  diagramType: string | null;
-  theme: MermaidTheme;
-  look: MermaidLook;
-  liveToken?: string | null;
-  workspaceToken?: string | null;
-}
+export type WorkspaceEventListener = (event: WorkspaceRelayEvent) => void;
 
-export type LiveSnapshotListener = (snapshot: PreviewSnapshot) => void;
-
-export interface PreviewHubPort {
-  saveSnapshot(input: SaveSnapshotInput): PreviewSnapshot;
-  getSnapshot(id: string): PreviewSnapshot | null;
-  getLiveLatest(token: string): PreviewSnapshot | null;
-  getChannelTabs(token: string): PreviewSnapshot[];
-  subscribeLive(
-    token: string,
-    listener: LiveSnapshotListener,
+export interface WorkspaceRelayPort {
+  publish(workspaceToken: string, event: WorkspaceRelayEvent): number;
+  requestVfs(
+    workspaceToken: string,
+    query: VfsRpcQuery,
+    timeoutMs?: number
+  ): Promise<VfsLsResult | VfsReadResult | VfsMoveResult>;
+  resolveVfsReply(workspaceToken: string, reply: VfsRpcReply): boolean;
+  subscribe(
+    workspaceToken: string,
+    listener: WorkspaceEventListener,
     onClose?: () => void
   ): (() => void) | null;
-  getSubscriberCount(token: string): number;
-  getStats(): PreviewHubStats;
+  getSubscriberCount(workspaceToken: string): number;
+  getStats(): RelayStats;
   dispose(): void;
 }
-
-
