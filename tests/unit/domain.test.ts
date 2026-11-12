@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isLocalRequestHost,
-  resolveRequestBaseUrl,
-} from '../../src/config/env.js';
+import { StudioService } from '../../src/application/studioService.js';
+import { isLocalRequestHost, resolveRequestBaseUrl } from '../../src/config/env.js';
 import {
   analyzeStaticWarnings,
   buildCodeSnippet,
@@ -10,7 +8,9 @@ import {
   inferSuggestion,
   parseMermaidError,
 } from '../../src/domain/diagnostics.js';
+import type { RenderEnginePort } from '../../src/domain/ports.js';
 import { StatelessWorkspaceRelay } from '../../src/infrastructure/ephemeral/workspaceRelay.js';
+import { getOpenAiToolSchemas } from '../../src/interfaces/tools/toolRegistry.js';
 import {
   extractProjectFromRoots,
   normalizeAgentIdentity,
@@ -18,23 +18,11 @@ import {
 } from '../../src/shared/agentIdentity.js';
 import {
   sanitizeComprehensionGuide,
+  serializeGuideCanonical,
   summarizeComprehensionGuide,
 } from '../../src/shared/comprehension.js';
-import {
-  buildPermalinkUrl,
-  decodePermalinkPayload,
-  encodePermalinkPayload,
-  extractHashToken,
-} from '../../src/shared/permalink.js';
-import {
-  extractSvgDimensions,
-  normalizeSvgIntrinsicDimensions,
-  slugify,
-} from '../../src/shared/svg.js';
-import {
-  normalizeRelativeDirPath,
-  normalizeRelativeGraphPath,
-} from '../../src/shared/vfsPath.js';
+import { BoundedIdSet, slugify } from '../../src/shared/strings.js';
+import { extractSvgDimensions, normalizeSvgIntrinsicDimensions } from '../../src/shared/svg.js';
 import {
   buildExplorerSubtree,
   evaluateVfsLs,
@@ -45,7 +33,11 @@ import {
   restoreGraphVersion,
   upsertGraphInVfs,
   type WorkspaceState,
-} from '../../web/services/workspaceStorage.js';
+} from '../../src/shared/vfs/index.js';
+import {
+  normalizeRelativeDirPath,
+  normalizeRelativeGraphPath,
+} from '../../src/shared/vfsPath.js';
 
 describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () => {
   it('builds 1-indexed code snippets with line pointer', () => {
@@ -60,15 +52,15 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
     expect(inferSuggestion('```mermaid\nflowchart TD\n```', 'err', 1)).toContain(
       'Markdown code fences'
     );
-    expect(
-      inferSuggestion('flowchart TD\n  A[call(x)] --> B', 'Parse error', 2)
-    ).toContain('double quotes');
-    expect(
-      inferSuggestion('flowchart TD\n  start --> end', "got 'end'", 2)
-    ).toContain('reserved Mermaid keyword');
-    expect(
-      inferSuggestion('flowchart TD\n  A -> B', 'Parse error', 2)
-    ).toContain('Replace `->` with `-->`');
+    expect(inferSuggestion('flowchart TD\n  A[call(x)] --> B', 'Parse error', 2)).toContain(
+      'double quotes'
+    );
+    expect(inferSuggestion('flowchart TD\n  start --> end', "got 'end'", 2)).toContain(
+      'reserved Mermaid keyword'
+    );
+    expect(inferSuggestion('flowchart TD\n  A -> B', 'Parse error', 2)).toContain(
+      'Replace `->` with `-->`'
+    );
     expect(
       inferSuggestion('flowchart TD\n  subgraph G1\n    A --> B', 'Parse error', 3)
     ).toContain('closing `end`');
@@ -86,7 +78,7 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
   });
 
   it('detects static lint warnings and wide layout aspect ratios', () => {
-    const longLabel = 'A["' + 'x'.repeat(85) + '"]';
+    const longLabel = `A["${'x'.repeat(85)}"]`;
     const warnings = analyzeStaticWarnings(`flowchart TD\n  ${longLabel}`);
     expect(warnings.some((w) => w.code === 'LONG_NODE_LABEL')).toBe(true);
 
@@ -100,7 +92,8 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
   });
 
   it('normalizes SVG viewBox intrinsic pixel dimensions and slugs', () => {
-    const rawSvg = '<svg viewBox="0 0 640.4 319.1" width="100%" style="max-width: 640.4px;"><g/></svg>';
+    const rawSvg =
+      '<svg viewBox="0 0 640.4 319.1" width="100%" style="max-width: 640.4px;"><g/></svg>';
     expect(extractSvgDimensions(rawSvg)).toEqual({ width: 641, height: 320 });
 
     const normalized = normalizeSvgIntrinsicDimensions(rawSvg);
@@ -135,29 +128,82 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       shortLabel: 'Pi',
     });
     expect(normalizeProjectName('file:///home/ilabs/Projects/Project%20A/')).toBe('Project A');
-    expect(
-      extractProjectFromRoots([{ uri: 'file:///Users/dev/repos/Project-Alpha' }])
-    ).toBe('Project-Alpha');
+    expect(extractProjectFromRoots([{ uri: 'file:///Users/dev/repos/Project-Alpha' }])).toBe(
+      'Project-Alpha'
+    );
   });
 
-  it('round-trips stateless #z= permalinks with project, path & agent metadata', async () => {
-    const original = {
-      title: 'oauth-flow',
-      path: 'auth/oauth-flow.mmd',
-      project: 'Project A',
-      agent: 'Claude Code',
-      code: 'flowchart LR\n  Agent["MCP Agent"] --> Browser["Web UI"]',
+  it('evicts oldest entries in BoundedIdSet and generates OpenAI schemas from Zod single-source', () => {
+    const set = new BoundedIdSet(16);
+    for (let i = 0; i < 20; i++) {
+      set.add(`id-${i}`);
+    }
+    expect(set.has('id-0')).toBe(false);
+    expect(set.has('id-3')).toBe(false);
+    expect(set.has('id-4')).toBe(true);
+    expect(set.has('id-19')).toBe(true);
+
+    const schemas = getOpenAiToolSchemas();
+    expect(schemas.length).toBe(8);
+    const renderSchema = schemas.find((s) => s.function.name === 'mermaid_render');
+    expect(renderSchema).toBeDefined();
+    expect(renderSchema!.function.parameters).toHaveProperty('properties');
+    expect((renderSchema!.function.parameters as { required?: string[] }).required).toContain(
+      'code'
+    );
+  });
+
+  it('blocks server-side disk writes when allowLocalDiskWrite is false', async () => {
+    const fakeEngine: RenderEnginePort = {
+      validate: async () => ({
+        valid: true,
+        diagramType: 'flowchart-v2',
+        error: null,
+        warnings: [],
+        durationMs: 1,
+      }),
+      render: async () => ({
+        valid: true,
+        diagramType: 'flowchart-v2',
+        error: null,
+        warnings: [],
+        durationMs: 1,
+        svg: '<svg viewBox="0 0 100 100"/>',
+        pngBytes: new Uint8Array([1, 2, 3]),
+        dimensions: { width: 100, height: 100, aspectRatio: 1, scale: 2 },
+        metrics: {
+          nodeCount: 1,
+          edgeCount: 0,
+          subgraphCount: 0,
+          textLabelCount: 1,
+          sampleLabels: ['A'],
+        },
+        layoutDiagnostics: [],
+        theme: 'default',
+        look: 'classic',
+        background: '#ffffff',
+      }),
+      dispose: async () => {},
     };
-    const url = await buildPermalinkUrl('https://mfhmfa.kasun.si/', original);
-    const decoded = await decodePermalinkPayload(extractHashToken(url)!);
-    expect(decoded).toEqual(original);
 
-    const bigCode = 'flowchart TD\n' + '  A --> B\n'.repeat(400);
-    const bigToken = await encodePermalinkPayload({ code: bigCode });
-    await expect(decodePermalinkPayload(bigToken, 128)).rejects.toThrow(/safety limit/);
+    const svc = new StudioService({ engine: fakeEngine });
+    await expect(
+      svc.render('flowchart LR\n  A --> B', {
+        outputPath: '/tmp/forbidden.png',
+        allowLocalDiskWrite: false,
+      })
+    ).rejects.toThrow(/disabled on remote/i);
+
+    await expect(
+      svc.exportDiagram({
+        code: 'flowchart LR\n  A --> B',
+        outputPath: '/tmp/forbidden.svg',
+        allowLocalDiskWrite: false,
+      })
+    ).rejects.toThrow(/disabled on remote/i);
   });
 
-  it('supports bidirectional VFS RPC over StatelessWorkspaceRelay with zero stored diagrams', async () => {
+  it('supports strongly typed bidirectional VFS RPC over StatelessWorkspaceRelay with zero stored diagrams', async () => {
     const relay = new StatelessWorkspaceRelay();
     try {
       const unsub = relay.subscribe('ws_rpc_1', (ev) => {
@@ -181,7 +227,7 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
         project: 'Project A',
         dirPath: '',
       });
-      expect((lsRes as { treeText: string }).treeText).toContain('auth/');
+      expect(lsRes.treeText).toContain('auth/');
       expect(relay.getStats().storedDiagrams).toBe(0);
 
       unsub?.();
@@ -204,7 +250,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       projects: [],
     };
 
-    // Push 7 versions across Claude Code and Pi to `auth/oauth-flow.mmd`
     for (let i = 1; i <= 7; i++) {
       const isPi = i % 2 === 0;
       state = upsertGraphInVfs(state, {
@@ -220,7 +265,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       }).nextState;
     }
 
-    // Add a sibling file in `auth/`
     state = upsertGraphInVfs(state, {
       projectName: 'Project A',
       path: 'auth/session-er.mmd',
@@ -233,13 +277,11 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       autoFocus: false,
     }).nextState;
 
-    // Verify ls output
     const lsRoot = evaluateVfsLs(state, 'Project A', '/');
     expect(lsRoot.entries.map((e) => `${e.kind}:${e.name}`)).toEqual(['dir:auth']);
     expect(lsRoot.treeText).toContain('oauth-flow.mmd');
     expect(lsRoot.treeText).toContain('v7, by claude');
 
-    // Verify last-5 immutable versions (v3..v7 kept; v1 & v2 evicted)
     const headRead = evaluateVfsRead(state, 'Project A', 'auth/oauth-flow.mmd');
     expect(headRead.currentVersion).toBe(7);
     expect(headRead.code).toContain('Step_7');
@@ -252,29 +294,17 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       /5-version history/
     );
 
-    // Move `auth` folder -> `security/auth` and verify history preserved
     const moved = movePathInProject(state, 'Project A', 'auth', 'security/auth');
     state = moved.nextState;
     expect(moved.result.movedFiles).toBe(2);
 
-    const movedRead = evaluateVfsRead(
-      state,
-      'Project A',
-      'security/auth/oauth-flow.mmd'
-    );
+    const movedRead = evaluateVfsRead(state, 'Project A', 'security/auth/oauth-flow.mmd');
     expect(movedRead.currentVersion).toBe(7);
 
-    // Restore v5 immutably -> creates v8!
-    const fileId = state.projects[0]!.files.find((f) =>
-      f.path.endsWith('oauth-flow.mmd')
-    )!.id;
+    const fileId = state.projects[0]!.files.find((f) => f.path.endsWith('oauth-flow.mmd'))!.id;
     const restored = restoreGraphVersion(state, fileId, 5);
     state = restored.nextState;
-    const afterRestore = evaluateVfsRead(
-      state,
-      'Project A',
-      'security/auth/oauth-flow.mmd'
-    );
+    const afterRestore = evaluateVfsRead(state, 'Project A', 'security/auth/oauth-flow.mmd');
     expect(afterRestore.currentVersion).toBe(8);
     expect(afterRestore.code).toContain('Step_5');
     expect(afterRestore.author).toBe('you');
@@ -294,7 +324,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
 
     const t0 = 1_700_000_000_000;
 
-    // Pi iterates 4 times within 30s while inspecting 2x Retina PNGs -> stays clean v1!
     for (let attempt = 1; attempt <= 4; attempt++) {
       state = upsertGraphInVfs(state, {
         projectName: 'MFHMFA',
@@ -320,7 +349,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
     expect(afterRetries.versions.length).toBe(1);
     expect(afterRetries.code).toContain('Attempt 4');
 
-    // Another agent (Claude Code) edits 10s later -> appends immutable v2!
     state = upsertGraphInVfs(state, {
       projectName: 'MFHMFA',
       path: 'architecture/memory-architecture.mmd',
@@ -335,7 +363,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       now: t0 + 30_000,
     }).nextState;
 
-    // Claude returns 2 minutes later in a follow-up turn -> appends immutable v3!
     state = upsertGraphInVfs(state, {
       projectName: 'MFHMFA',
       path: 'architecture/memory-architecture.mmd',
@@ -350,11 +377,7 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       now: t0 + 180_000,
     }).nextState;
 
-    const finalRead = evaluateVfsRead(
-      state,
-      'MFHMFA',
-      'architecture/memory-architecture.mmd'
-    );
+    const finalRead = evaluateVfsRead(state, 'MFHMFA', 'architecture/memory-architecture.mmd');
     expect(finalRead.currentVersion).toBe(3);
     expect(finalRead.versions.map((v) => `${v.version}:${v.author}`)).toEqual([
       '1:pi',
@@ -384,14 +407,12 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
     ).toBe(false);
   });
 
-  it('enforces cognitive load diagnostics, sanitizes comprehension guides, and rewrites childPath on mv', async () => {
-    // 1. Dual-Coding dense box warning (> 11 words inside a single box)
+  it('enforces cognitive load diagnostics, sanitizes comprehension guides canonically, and rewrites childPath on mv', () => {
     const denseWarnings = analyzeStaticWarnings(
       'flowchart TB\n  Overloaded["This single box crams way too many technical explanation words inside one visual shape"] --> B["Clean Box"]'
     );
     expect(denseWarnings.some((w) => w.code === 'DENSE_NODE_LABEL')).toBe(true);
 
-    // 2. Working-memory > 8 nodes notice in layout diagnostics
     const cognitiveNotes = computeLayoutDiagnostics(
       { width: 1100, height: 950, aspectRatio: 1.16, scale: 2 },
       { nodeCount: 11, edgeCount: 12, subgraphCount: 2, textLabelCount: 20, sampleLabels: [] },
@@ -400,7 +421,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
     );
     expect(cognitiveNotes.some((n) => n.includes('Cognitive load notice'))).toBe(true);
 
-    // 3. Sanitize guide & reject path traversal in childPath / parentPath
     const cleanGuide = sanitizeComprehensionGuide({
       gist: '  Server stores 0 diagrams; browser stores everything. ',
       parentPath: 'architecture/overview',
@@ -433,24 +453,23 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       parentPath: 'architecture/overview.mmd',
     });
 
+    // Canonical serialization is key-order independent
+    const g1 = sanitizeComprehensionGuide({
+      gist: 'Same',
+      nodes: { B: { summary: 'two' }, A: { summary: 'one' } },
+    });
+    const g2 = sanitizeComprehensionGuide({
+      nodes: { A: { summary: 'one' }, B: { summary: 'two' } },
+      gist: 'Same',
+    });
+    expect(serializeGuideCanonical(g1)).toBe(serializeGuideCanonical(g2));
+
     expect(() =>
       sanitizeComprehensionGuide({
         nodes: { Bad: { summary: 'bad', childPath: '../../etc/passwd' } },
       })
     ).toThrow(/cannot traverse/i);
 
-    // 4. Round-trip `#z=` permalink with interactive comprehension guide
-    const linkUrl = await buildPermalinkUrl('https://mfhmfa.kasun.si', {
-      title: 'memory-overview',
-      path: 'architecture/overview.mmd',
-      project: 'MFHMFA',
-      code: 'flowchart TB\n  AI["AI"] --> Preview["Preview"]',
-      guide: cleanGuide,
-    });
-    const decoded = await decodePermalinkPayload(extractHashToken(linkUrl)!);
-    expect(decoded.guide).toEqual(cleanGuide);
-
-    // 5. Preserve guide across rapid layout-fix retries & rewrite links on `mv`
     let state: WorkspaceState = {
       version: 4,
       workspaceId: 'ws_guide_unit',
@@ -483,7 +502,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       now: t0,
     }).nextState;
 
-    // Layout tweak 10s later omitting `guide` keeps existing `guide` intact!
     state = upsertGraphInVfs(state, {
       projectName: 'MFHMFA',
       path: 'architecture/overview.mmd',
@@ -509,7 +527,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       now: t0 + 12_000,
     }).nextState;
 
-    // Rename `architecture/renderer-pool.mmd` -> `internals/chromium-pool.mmd`
     state = movePathInProject(
       state,
       'MFHMFA',
@@ -519,9 +536,7 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
 
     const overviewAfterMv = evaluateVfsRead(state, 'MFHMFA', 'architecture/overview.mmd');
     expect(overviewAfterMv.currentVersion).toBe(1);
-    expect(overviewAfterMv.guide?.nodes?.A?.childPath).toBe(
-      'internals/chromium-pool.mmd'
-    );
+    expect(overviewAfterMv.guide?.nodes?.A?.childPath).toBe('internals/chromium-pool.mmd');
   });
 
   it('nests sub-graphs under their parent in Explorer and keeps parent focused regardless of agent render order', () => {
@@ -534,7 +549,7 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
           gist: 'Main overview.',
           nodes: {
             Server: { summary: 'Stateless workers', childPath: 'memory/server-workers.mmd' },
-            Browser: { summary: 'Local storage', childPath: 'memory/browser-storage.mmd' },
+            Browser: { summary: 'IndexedDB storage', childPath: 'memory/browser-storage.mmd' },
           },
         },
       },
@@ -552,7 +567,6 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       },
     } as const;
 
-    // Test ALL 6 possible agent render orders!
     const permutations = [
       ['parent', 'childA', 'childB'],
       ['parent', 'childB', 'childA'],
@@ -590,14 +604,11 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
         }).nextState;
       });
 
-      // 1. Regardless of render order, ONLY the parent tab is open & focused!
       const active = findFileWithProject(ws, ws.activeFileId);
       expect(active?.file.path).toBe('memory/how-memory-works.mmd');
       expect(ws.openTabIds.length).toBe(1);
       expect(ws.openTabIds[0]).toBe(active?.file.id);
 
-      // 2. In Explorer `memory/`, `how-memory-works` is #1 at the root (NOT buried behind `browser-storage`),
-      //    with `[server-workers, browser-storage]` nested underneath in parent box order!
       const proj = ws.projects[0]!;
       const memFolder = buildExplorerSubtree(proj, '').folders.find(
         (f) => f.name === 'memory'
@@ -610,11 +621,8 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
         'memory/browser-storage.mmd',
       ]);
 
-      // 3. Breadcrumb hops carry the parent component label + sibling branches!
       const hierarchy = resolveProjectGraphHierarchy(proj);
-      const childFileA = proj.files.find(
-        (f) => f.path === 'memory/browser-storage.mmd'
-      )!;
+      const childFileA = proj.files.find((f) => f.path === 'memory/browser-storage.mmd')!;
       const hops = hierarchy.getBreadcrumbHops(childFileA.id);
       expect(hops.length).toBe(1);
       expect(hops[0]!.parentFile.title).toBe('How Memory Works');

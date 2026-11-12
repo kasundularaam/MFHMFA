@@ -57,7 +57,7 @@ export interface DiagramWalkthroughStep {
 }
 
 /**
- * Optional comprehension layer persisted alongside a `.mmd` revision in browser localStorage.
+ * Optional comprehension layer persisted alongside a `.mmd` revision in browser IndexedDB.
  */
 export interface DiagramComprehensionGuide {
   gist?: string;
@@ -198,6 +198,14 @@ export type VfsRpcQuery =
   | { op: 'read'; project: string; filePath: string; version?: number }
   | { op: 'mv'; project: string; fromPath: string; toPath: string };
 
+export interface VfsRpcResultMap {
+  ls: VfsLsResult;
+  read: VfsReadResult;
+  mv: VfsMoveResult;
+}
+
+export type VfsRpcAnyResult = VfsRpcResultMap[keyof VfsRpcResultMap];
+
 export type VfsRpcRequest = VfsRpcQuery & {
   requestId: string;
 };
@@ -205,7 +213,7 @@ export type VfsRpcRequest = VfsRpcQuery & {
 export interface VfsRpcReply {
   requestId: string;
   ok: boolean;
-  result?: VfsLsResult | VfsReadResult | VfsMoveResult;
+  result?: VfsRpcAnyResult;
   error?: string;
 }
 
@@ -220,4 +228,3 @@ export interface RelayStats {
   browserSubscribers: number;
   storedDiagrams: 0;
 }
-

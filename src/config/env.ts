@@ -12,8 +12,6 @@ export const GITHUB_REPO_URL = 'https://github.com/kasundularaam/MFHMFA';
 export const PUBLIC_FALLBACK_STUDIO_URL = 'https://mfhmfa.kasun.si';
 export const LOCAL_WORKSPACE_CHANNEL = 'local_workspace';
 
-
-
 export function resolveProjectRoot(metaUrl: string = import.meta.url): string {
   let dir = path.dirname(fileURLToPath(metaUrl));
   for (let i = 0; i < 6; i++) {
@@ -102,8 +100,6 @@ export function isLocalRequestHost(
     : effectiveHost.split(':')[0]?.toLowerCase();
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
 }
-
-
 
 export function resolveVisibleProjectRoot(): string {
   return process.env.HOST_PROJECT_ROOT || PROJECT_ROOT;

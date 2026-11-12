@@ -1,36 +1,24 @@
 import { Router, type Request, type Response } from 'express';
 import type { StudioService } from '../../application/studioService.js';
-import {
-  LOCAL_WORKSPACE_CHANNEL,
-  isLocalRequestHost,
-  resolveRequestBaseUrl,
-} from '../../config/env.js';
 import { sanitizeWorkspaceToken } from '../../infrastructure/ephemeral/workspaceRelay.js';
 import { sanitizeComprehensionGuide } from '../../shared/comprehension.js';
+import {
+  AgentSessionInfoSchema,
+  DiagramRelayPayloadSchema,
+  ExportHttpBodySchema,
+  RenderHttpBodySchema,
+  ValidateHttpBodySchema,
+  VfsRpcQuerySchema,
+  VfsRpcReplySchema,
+} from '../../shared/protocolSchemas.js';
 import type {
   AgentSessionInfo,
-  CallerSource,
   DiagramComprehensionGuide,
-  DiagramRelayPayload,
-  VfsRpcQuery,
-  VfsRpcReply,
   WorkspaceRelayEvent,
 } from '../../shared/types.js';
+import { isLocalHttpCaller, resolveExplicitWorkspaceToken } from './requestContext.js';
 
-const MAX_RELAY_CODE_CHARS = 256_000;
 const SSE_HEARTBEAT_MS = 20_000;
-
-function extractExplicitWorkspace(req: Request): string | null {
-  const headerVal = req.headers['x-mfhmfa-workspace'];
-  const rawHeader = Array.isArray(headerVal) ? headerVal[0] : headerVal;
-  return (
-    sanitizeWorkspaceToken(req.body?.workspaceToken) ??
-    sanitizeWorkspaceToken(req.body?.workspace) ??
-    sanitizeWorkspaceToken(req.query.workspace) ??
-    sanitizeWorkspaceToken(req.query.ws) ??
-    sanitizeWorkspaceToken(rawHeader)
-  );
-}
 
 export function createRenderRouter(
   service: StudioService,
@@ -40,9 +28,12 @@ export function createRenderRouter(
 
   router.post('/validate', async (req: Request, res: Response) => {
     try {
-      const code = String(req.body?.code ?? '');
-      const source = (req.body?.source as CallerSource | undefined) ?? 'web';
-      const result = await service.validate(code, source);
+      const parsed = ValidateHttpBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid request body.' });
+        return;
+      }
+      const result = await service.validate(parsed.data.code, 'web');
       res.json(result);
     } catch (err: unknown) {
       res.status(500).json({ error: errorMessage(err) });
@@ -51,11 +42,19 @@ export function createRenderRouter(
 
   router.post('/render', async (req: Request, res: Response) => {
     try {
+      const parsed = RenderHttpBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.issues[0]?.message || 'Invalid render payload.',
+        });
+        return;
+      }
+
       const {
-        code = '',
+        code,
         path: graphPath,
         title,
-        guide,
+        guide: rawGuide,
         project,
         agent,
         theme,
@@ -63,43 +62,34 @@ export function createRenderRouter(
         background,
         scale,
         outputPath,
-        includePngBase64 = true,
-        source = 'web',
-      } = req.body ?? {};
+        includePngBase64,
+      } = parsed.data;
 
-      const requestBaseUrl = resolveRequestBaseUrl(
-        req.headers,
-        req.protocol,
-        service.baseUrl
-      );
+      let safeGuide: DiagramComprehensionGuide | undefined;
+      if (rawGuide !== undefined) {
+        safeGuide = sanitizeComprehensionGuide(rawGuide);
+      }
 
-      const explicitWs = extractExplicitWorkspace(req);
-      const workspaceToken =
-        explicitWs ??
-        (source !== 'web' && isLocalRequestHost(req.headers)
-          ? LOCAL_WORKSPACE_CHANNEL
-          : null);
+      const workspaceToken = resolveExplicitWorkspaceToken(req);
 
-      const rendered = await service.render(String(code), {
-        path: typeof graphPath === 'string' ? graphPath : undefined,
+      const rendered = await service.render(code, {
+        path: graphPath,
         title,
-        guide: guide as DiagramComprehensionGuide | undefined,
-        project: typeof project === 'string' ? project : null,
-        agentName: typeof agent === 'string' ? agent : null,
+        guide: safeGuide,
+        project: project ?? null,
+        agentName: agent ?? null,
         theme,
         look,
         background,
         scale,
         outputPath,
-        source,
-        requestBaseUrl,
+        allowLocalDiskWrite: isLocalHttpCaller(req),
+        source: 'web',
         workspaceToken,
-        includeStudioUrl: source === 'web',
       });
 
       res.json({
         renderId: rendered.renderId,
-        studioUrl: rendered.studioUrl,
         syncedToBrowser: rendered.syncedSubscribers > 0,
         path: rendered.path,
         title: rendered.title,
@@ -125,7 +115,9 @@ export function createRenderRouter(
             : null,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: errorMessage(err) });
+      const message = errorMessage(err);
+      const status = message.includes('disabled on remote/hosted endpoints') ? 403 : 500;
+      res.status(status).json({ error: message });
     }
   });
 
@@ -137,43 +129,48 @@ export function createRenderRouter(
       return;
     }
 
-    const rawEvent = req.body?.event as Partial<WorkspaceRelayEvent> | undefined;
+    const rawEvent = req.body?.event as
+      | { type?: unknown; agent?: unknown; diagram?: unknown }
+      | undefined;
     if (!rawEvent || typeof rawEvent.type !== 'string') {
       res.status(400).json({ error: 'Valid `event` payload is required.' });
       return;
     }
 
-    if (rawEvent.type === 'agent_status' && rawEvent.agent && typeof rawEvent.agent === 'object') {
+    if (rawEvent.type === 'agent_status') {
+      const parsedAgent = AgentSessionInfoSchema.safeParse(rawEvent.agent);
+      if (!parsedAgent.success) {
+        res.status(400).json({ error: 'Invalid `agent` status payload.' });
+        return;
+      }
       const delivered = service.publishEvent(cleanToken, {
         type: 'agent_status',
-        agent: rawEvent.agent as AgentSessionInfo,
+        agent: parsedAgent.data,
       });
       res.json({ ok: true, deliveredSubscribers: delivered });
       return;
     }
 
-    if (rawEvent.type === 'diagram' && rawEvent.diagram && typeof rawEvent.diagram === 'object') {
-      const diag = rawEvent.diagram as DiagramRelayPayload;
-      if (typeof diag.code !== 'string' || diag.code.length > MAX_RELAY_CODE_CHARS) {
-        res.status(413).json({ error: 'Diagram code missing or exceeds safety limit.' });
-        return;
-      }
-      let safeGuide: DiagramComprehensionGuide | undefined;
+    if (rawEvent.type === 'diagram') {
       try {
-        safeGuide = sanitizeComprehensionGuide(diag.guide);
+        const parsedDiagram = DiagramRelayPayloadSchema.safeParse(rawEvent.diagram);
+        if (!parsedDiagram.success) {
+          const tooLarge = parsedDiagram.error.issues.some((i) => i.code === 'too_big');
+          res.status(tooLarge ? 413 : 400).json({
+            error: parsedDiagram.error.issues[0]?.message || 'Invalid diagram payload.',
+          });
+          return;
+        }
+        const delivered = service.publishEvent(cleanToken, {
+          type: 'diagram',
+          diagram: parsedDiagram.data,
+        });
+        res.json({ ok: true, deliveredSubscribers: delivered });
+        return;
       } catch (err: unknown) {
         res.status(400).json({ error: errorMessage(err) });
         return;
       }
-      const delivered = service.publishEvent(cleanToken, {
-        type: 'diagram',
-        diagram: {
-          ...diag,
-          ...(safeGuide ? { guide: safeGuide } : { guide: undefined }),
-        },
-      });
-      res.json({ ok: true, deliveredSubscribers: delivered });
-      return;
     }
 
     res.status(400).json({ error: 'Unsupported workspace event type.' });
@@ -187,21 +184,21 @@ export function createRenderRouter(
       return;
     }
 
-    const query = req.body?.query as VfsRpcQuery | undefined;
-    if (!query || typeof query !== 'object' || typeof query.op !== 'string') {
+    const parsedQuery = VfsRpcQuerySchema.safeParse(req.body?.query);
+    if (!parsedQuery.success) {
       res.status(400).json({ error: 'Valid `query` payload is required.' });
       return;
     }
 
     try {
-      const result = await service.queryVfs(cleanToken, query);
+      const result = await service.queryVfs(cleanToken, parsedQuery.data);
       res.json({ ok: true, result });
     } catch (err: unknown) {
       res.status(422).json({ ok: false, error: errorMessage(err) });
     }
   });
 
-  // Browser `localStorage` reply endpoint for in-flight VFS RPC queries (`ls`, `read`, `mv`)
+  // Browser IndexedDB reply endpoint for in-flight VFS RPC queries (`ls`, `read`, `mv`)
   router.post('/workspace/:token/vfs-reply', (req: Request, res: Response) => {
     const cleanToken = sanitizeWorkspaceToken(req.params.token);
     if (!cleanToken) {
@@ -209,17 +206,17 @@ export function createRenderRouter(
       return;
     }
 
-    const reply = req.body as VfsRpcReply | undefined;
-    if (!reply || typeof reply.requestId !== 'string') {
-      res.status(400).json({ error: 'Valid `requestId` is required.' });
+    const parsedReply = VfsRpcReplySchema.safeParse(req.body);
+    if (!parsedReply.success) {
+      res.status(400).json({ error: 'Valid `requestId` and reply payload required.' });
       return;
     }
 
-    const matched = service.resolveVfsReply(cleanToken, reply);
+    const matched = service.resolveVfsReply(cleanToken, parsedReply.data);
     res.json({ ok: true, matched });
   });
 
-  // Pure pass-through SSE stream for browser `localStorage` sync
+  // Pure pass-through SSE stream for browser workspace sync
   router.get('/workspace/:token/events', (req: Request, res: Response) => {
     const cleanToken = sanitizeWorkspaceToken(req.params.token);
     if (!cleanToken) {
@@ -263,9 +260,7 @@ export function createRenderRouter(
     res.write(': connected\n\n');
 
     const activeAgents = getActiveAgents(cleanToken);
-    res.write(
-      `event: connected_agents\ndata: ${JSON.stringify({ agents: activeAgents })}\n\n`
-    );
+    res.write(`event: connected_agents\ndata: ${JSON.stringify({ agents: activeAgents })}\n\n`);
 
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) {
@@ -282,37 +277,24 @@ export function createRenderRouter(
 
   router.post('/export', async (req: Request, res: Response) => {
     try {
-      const {
-        code = '',
-        outputPath = '',
-        title,
-        format,
-        theme,
-        look,
-        background,
-        scale,
-        source = 'web',
-      } = req.body ?? {};
-
-      if (!outputPath) {
-        res.status(400).json({ error: '`outputPath` is required.' });
+      const parsed = ExportHttpBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({
+          error: parsed.error.issues[0]?.message || '`outputPath` is required.',
+        });
         return;
       }
 
       const exported = await service.exportDiagram({
-        code: String(code),
-        outputPath: String(outputPath),
-        title,
-        format,
-        theme,
-        look,
-        background,
-        scale,
-        source,
+        ...parsed.data,
+        allowLocalDiskWrite: isLocalHttpCaller(req),
+        source: 'web',
       });
       res.json(exported);
     } catch (err: unknown) {
-      res.status(422).json({ error: errorMessage(err) });
+      const message = errorMessage(err);
+      const status = message.includes('disabled on remote/hosted endpoints') ? 403 : 422;
+      res.status(status).json({ error: message });
     }
   });
 

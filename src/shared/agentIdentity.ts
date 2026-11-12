@@ -1,3 +1,4 @@
+import { slugifyStrictAlnum } from './strings.js';
 import type { CallerSource } from './types.js';
 
 export interface NormalizedAgentIdentity {
@@ -106,15 +107,6 @@ const KNOWN_AGENTS: readonly KnownAgentRule[] = [
   },
 ];
 
-function slugifyToken(input: string, fallback = 'agent'): string {
-  const cleaned = input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-  return cleaned || fallback;
-}
-
 function humanizeAgentName(raw: string): string {
   const withoutScope = raw.trim().replace(/^@[^/]+\//, '');
   const stripped = withoutScope
@@ -161,7 +153,7 @@ export function normalizeAgentIdentity(
     const label = humanizeAgentName(trimmed);
     const shortLabel = label.length > 16 ? label.split(/\s+/)[0] || label.slice(0, 14) : label;
     return {
-      slug: slugifyToken(label, 'mcp-agent'),
+      slug: slugifyStrictAlnum(label, 'mcp-agent'),
       label,
       shortLabel,
     };
@@ -181,7 +173,6 @@ export function normalizeProjectName(raw?: string | null): string | null {
   let cleaned = raw.trim();
   if (!cleaned) return null;
 
-  // Handle file:// URIs or filesystem paths by taking the folder basename
   if (cleaned.startsWith('file://')) {
     try {
       const parsed = new URL(cleaned);
@@ -192,11 +183,7 @@ export function normalizeProjectName(raw?: string | null): string | null {
   }
 
   if (cleaned.includes('/') || cleaned.includes('\\')) {
-    const segments = cleaned
-      .replace(/\\/g, '/')
-      .replace(/\/+$/, '')
-      .split('/')
-      .filter(Boolean);
+    const segments = cleaned.replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean);
     cleaned = segments[segments.length - 1] ?? '';
   }
 

@@ -73,8 +73,8 @@ When AI tools try to personalize explanations based on a user's job title (e.g. 
 
 ## 4. Architectural Principles
 
-1. **Zero Server Storage (100% Browser `localStorage`)**
-   Your architecture maps belong on your machine, not in someone else's database. The MFHMFA server is a pure pass-through SSE bridge + ephemeral PNG renderer (`0` stored diagrams). Your Virtual Diagram Filesystem (`mfhmfa-workspace-v4`), 5-version immutable ring buffer, and comprehension guides live entirely in your browser.
+1. **Zero Server Storage (100% Browser `IndexedDB`)**
+   Your architecture maps belong on your machine, not in someone else's database. The MFHMFA server is a pure pass-through SSE bridge + ephemeral PNG renderer (`0` stored diagrams). Your Virtual Diagram Filesystem (`mfhmfa-db`), 5-version immutable ring buffer, and comprehension guides live entirely in your browser's IndexedDB.
 2. **Vision-Closed Loop for Agents**
    Agents should never dump broken Mermaid code or raw URLs into chat. Every `mermaid_render` call validates syntax, renders a **2x Retina PNG** in an isolated headless Chromium slot for the agent's own vision model to inspect, checks layout + cognitive load diagnostics, coalesces rapid layout retries into one clean revision, and streams the finished interactive diagram straight to your open Studio tab.
 3. **Human Sovereignty Over the Workspace**

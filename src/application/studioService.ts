@@ -12,12 +12,8 @@ import {
   StatelessWorkspaceRelay,
   sanitizeWorkspaceToken,
 } from '../infrastructure/ephemeral/workspaceRelay.js';
-import {
-  normalizeAgentIdentity,
-  normalizeProjectName,
-} from '../shared/agentIdentity.js';
+import { normalizeAgentIdentity, normalizeProjectName } from '../shared/agentIdentity.js';
 import { sanitizeComprehensionGuide } from '../shared/comprehension.js';
-import { buildPermalinkUrl } from '../shared/permalink.js';
 import type {
   AgentSessionInfo,
   CallerSource,
@@ -36,6 +32,7 @@ import type {
   VfsReadResult,
   VfsRpcQuery,
   VfsRpcReply,
+  VfsRpcResultMap,
   WorkspaceRelayEvent,
 } from '../shared/types.js';
 import {
@@ -45,9 +42,9 @@ import {
   normalizeRelativeGraphPath,
 } from '../shared/vfsPath.js';
 
-export type VfsRpcBridgeFn = (
-  query: VfsRpcQuery
-) => Promise<VfsLsResult | VfsReadResult | VfsMoveResult>;
+export type VfsRpcBridgeFn = <Q extends VfsRpcQuery>(
+  query: Q
+) => Promise<VfsRpcResultMap[Q['op']]>;
 
 export interface StatelessRenderInput extends RenderOptions {
   path?: string;
@@ -57,10 +54,9 @@ export interface StatelessRenderInput extends RenderOptions {
   agentName?: string | null;
   agentSessionId?: string | null;
   outputPath?: string;
+  allowLocalDiskWrite?: boolean;
   source?: CallerSource;
-  requestBaseUrl?: string | (() => string | undefined);
   workspaceToken?: string | null;
-  includeStudioUrl?: boolean;
   relayBridge?: (diagram: DiagramRelayPayload) => Promise<number>;
 }
 
@@ -72,11 +68,13 @@ export interface StatelessRenderResult extends RenderedDiagram {
   project: string;
   agent: string;
   outputPath: string | null;
-  studioUrl: string | null;
   syncedSubscribers: number;
 }
 
 export type ExportFormat = 'png' | 'svg' | 'mmd' | 'md';
+
+const REMOTE_DISK_WRITE_ERROR =
+  'Server-side disk writes are disabled on remote/hosted endpoints (MFHMFA stores 0 files on the server). Run via local mcp-stdio or export PNG/SVG from the MFHMFA Studio browser UI.';
 
 export class StudioService {
   public readonly engine: RenderEnginePort;
@@ -132,11 +130,11 @@ export class StudioService {
     return this.relay.resolveVfsReply(workspaceToken, reply);
   }
 
-  async queryVfs(
+  async queryVfs<Q extends VfsRpcQuery>(
     workspaceToken: string | null | undefined,
-    query: VfsRpcQuery,
+    query: Q,
     vfsBridge?: VfsRpcBridgeFn
-  ): Promise<VfsLsResult | VfsReadResult | VfsMoveResult> {
+  ): Promise<VfsRpcResultMap[Q['op']]> {
     if (vfsBridge) {
       return vfsBridge(query);
     }
@@ -151,12 +149,11 @@ export class StudioService {
   }): Promise<VfsLsResult> {
     const project = normalizeProjectName(params.project) || 'General';
     const dirPath = normalizeRelativeDirPath(params.dirPath);
-    const out = await this.queryVfs(
+    return this.queryVfs(
       params.workspaceToken,
       { op: 'ls', project, dirPath },
       params.vfsBridge
     );
-    return out as VfsLsResult;
   }
 
   async vfsRead(params: {
@@ -168,7 +165,7 @@ export class StudioService {
   }): Promise<VfsReadResult> {
     const project = normalizeProjectName(params.project) || 'General';
     const filePath = normalizeRelativeGraphPath(params.filePath);
-    const out = await this.queryVfs(
+    return this.queryVfs(
       params.workspaceToken,
       {
         op: 'read',
@@ -178,7 +175,6 @@ export class StudioService {
       },
       params.vfsBridge
     );
-    return out as VfsReadResult;
   }
 
   async vfsMove(params: {
@@ -189,7 +185,6 @@ export class StudioService {
     vfsBridge?: VfsRpcBridgeFn;
   }): Promise<VfsMoveResult> {
     const project = normalizeProjectName(params.project) || 'General';
-    // Validate both paths against `..` traversal while preserving dir vs `.mmd` intent
     const fromHasExt = /\.(mmd|mermaid)$/i.test(params.fromPath.trim());
     const toHasExt = /\.(mmd|mermaid)$/i.test(params.toPath.trim());
     const fromClean = fromHasExt
@@ -203,20 +198,25 @@ export class StudioService {
       throw new Error('Both `from` and `to` paths within the working directory are required.');
     }
 
-    const out = await this.queryVfs(
+    return this.queryVfs(
       params.workspaceToken,
       { op: 'mv', project, fromPath: fromClean, toPath: toClean },
       params.vfsBridge
     );
-    return out as VfsMoveResult;
   }
 
   async validate(code: string, _source?: CallerSource): Promise<ValidationResult> {
     return this.engine.validate(code);
   }
 
-  async render(code: string, options: StatelessRenderInput = {}): Promise<StatelessRenderResult> {
-    // Validate relative paths early so traversal errors surface cleanly before rendering
+  async render(
+    code: string,
+    options: StatelessRenderInput = {}
+  ): Promise<StatelessRenderResult> {
+    if (options.outputPath && !options.allowLocalDiskWrite) {
+      throw new Error(REMOTE_DISK_WRITE_ERROR);
+    }
+
     const explicitRelPath = options.path?.trim()
       ? normalizeRelativeGraphPath(options.path)
       : null;
@@ -232,15 +232,14 @@ export class StudioService {
 
     const inferredTitle = inferDiagramTitle(code, res.diagramType);
     const relPath =
-      explicitRelPath ??
-      inferPathFromTitle(options.title?.trim() || inferredTitle);
+      explicitRelPath ?? inferPathFromTitle(options.title?.trim() || inferredTitle);
     const title = options.title?.trim() || graphTitleFromPath(relPath);
     const agent = normalizeAgentIdentity(options.agentName, options.source);
     const project = normalizeProjectName(options.project) || 'General';
 
     let savedOutputPath: string | null = null;
 
-    if (res.valid && options.outputPath) {
+    if (res.valid && options.outputPath && options.allowLocalDiskWrite) {
       const absOut = path.resolve(options.outputPath);
       fs.mkdirSync(path.dirname(absOut), { recursive: true });
       if (absOut.toLowerCase().endsWith('.svg') && res.svg) {
@@ -252,7 +251,6 @@ export class StudioService {
       }
     }
 
-    let studioUrl: string | null = null;
     let syncedSubscribers = 0;
 
     if (res.valid) {
@@ -284,22 +282,6 @@ export class StudioService {
           });
         }
       }
-
-      if (options.includeStudioUrl) {
-        const rawBase =
-          typeof options.requestBaseUrl === 'function'
-            ? options.requestBaseUrl()
-            : options.requestBaseUrl;
-        const cleanBase = (rawBase || this.baseUrl).replace(/\/+$/, '');
-        studioUrl = await buildPermalinkUrl(cleanBase, {
-          code,
-          title,
-          path: relPath,
-          project,
-          agent: agent.label,
-          ...(cleanGuide ? { guide: cleanGuide } : {}),
-        });
-      }
     }
 
     return {
@@ -311,7 +293,6 @@ export class StudioService {
       project,
       agent: agent.label,
       outputPath: savedOutputPath,
-      studioUrl,
       syncedSubscribers,
     };
   }
@@ -319,6 +300,7 @@ export class StudioService {
   async exportDiagram(params: {
     code: string;
     outputPath: string;
+    allowLocalDiskWrite?: boolean;
     title?: string;
     format?: ExportFormat;
     theme?: MermaidTheme;
@@ -332,8 +314,12 @@ export class StudioService {
     bytes: number;
     dimensions: { width: number; height: number } | null;
   }> {
+    if (!params.allowLocalDiskWrite) {
+      throw new Error(REMOTE_DISK_WRITE_ERROR);
+    }
+
     const sourceCode = params.code;
-    if (!sourceCode || !sourceCode.trim()) {
+    if (!sourceCode?.trim()) {
       throw new Error('Non-empty Mermaid `code` is required to export.');
     }
 

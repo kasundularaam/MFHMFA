@@ -6,6 +6,7 @@ import {
   parseMermaidError,
 } from '../../domain/diagnostics.js';
 import type { RenderEnginePort } from '../../domain/ports.js';
+import { withTimeout } from '../../shared/strings.js';
 import type {
   DiagramDimensions,
   MermaidLook,
@@ -20,23 +21,10 @@ import {
   resolveChromePath,
   resolveMermaidBundlePath,
 } from './browserDiscovery.js';
-
-interface BrowserMermaidApi {
-  initialize(config: Record<string, unknown>): void;
-  parse(code: string): Promise<{ diagramType?: string }>;
-  render(
-    id: string,
-    code: string
-  ): Promise<{
-    svg: string;
-    diagramType?: string;
-    bindFunctions?: (el: Element) => void;
-  }>;
-}
-
-interface MermaidWindow extends Window {
-  mermaid: BrowserMermaidApi;
-}
+import {
+  evaluateMermaidRenderInPage,
+  evaluateMermaidValidateInPage,
+} from './pageEvaluateRender.js';
 
 interface ViewportState {
   width: number;
@@ -77,26 +65,6 @@ const CHROMIUM_ARGS = [
   '--disable-renderer-backgrounding',
   '--font-render-hinting=none',
 ];
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms}ms`));
-    }, ms);
-    timer.unref?.();
-
-    promise.then(
-      (val) => {
-        clearTimeout(timer);
-        resolve(val);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      }
-    );
-  });
-}
 
 export class ChromiumRenderEngine implements RenderEnginePort {
   private browser: Browser | null = null;
@@ -169,9 +137,8 @@ export class ChromiumRenderEngine implements RenderEnginePort {
 
   private async createSlot(): Promise<PageSlot> {
     const browser = await this.ensureBrowser();
-    // Each slot gets its own isolated BrowserContext (and top-level window) so
-    // `document.visibilityState` stays "visible" across all concurrent slots —
-    // preventing Chromium `--headless=new` from freezing screenshots on background tabs.
+    // Each slot gets its own isolated BrowserContext so `document.visibilityState`
+    // stays "visible" across all concurrent slots, preventing headless screenshot freezes.
     const context = await browser.createBrowserContext();
     try {
       const page = await context.newPage();
@@ -217,7 +184,11 @@ export class ChromiumRenderEngine implements RenderEnginePort {
     if (this.slots.length + this.creatingSlots < this.maxConcurrency) {
       this.creatingSlots += 1;
       try {
-        const slot = await withTimeout(this.createSlot(), SLOT_OP_TIMEOUT_MS, 'Chromium slot init');
+        const slot = await withTimeout(
+          this.createSlot(),
+          SLOT_OP_TIMEOUT_MS,
+          'Chromium slot init'
+        );
         slot.busy = true;
         this.slots.push(slot);
         return slot;
@@ -275,10 +246,7 @@ export class ChromiumRenderEngine implements RenderEnginePort {
 
   private releaseSlot(slot: PageSlot, forceEvict = false): void {
     const shouldEvict =
-      forceEvict ||
-      slot.broken ||
-      slot.page.isClosed() ||
-      slot.renderSeq >= MAX_OPS_PER_SLOT;
+      forceEvict || slot.broken || slot.page.isClosed() || slot.renderSeq >= MAX_OPS_PER_SLOT;
 
     if (shouldEvict) {
       slot.broken = true;
@@ -362,26 +330,9 @@ export class ChromiumRenderEngine implements RenderEnginePort {
     this.totalValidations += 1;
 
     return this.runOnSlot<ValidationResult>('Mermaid validate', async (slot) => {
-      const evalRes = await slot.page.evaluate(async (diagramCode: string) => {
-        const m = (window as unknown as MermaidWindow).mermaid;
-        m.initialize({ startOnLoad: false, theme: 'default', look: 'classic', securityLevel: 'antiscript' });
-        try {
-          const parsed = await m.parse(diagramCode);
-          return { ok: true as const, diagramType: parsed?.diagramType ?? null };
-        } catch (err: unknown) {
-          const e = err as Record<string, unknown>;
-          return {
-            ok: false as const,
-            err: {
-              message: typeof e?.message === 'string' ? e.message : String(err),
-              str: e?.str,
-              hash: e?.hash,
-            },
-          };
-        }
-      }, code);
-
+      const evalRes = await slot.page.evaluate(evaluateMermaidValidateInPage, code);
       const durationMs = Math.round(performance.now() - started);
+
       if (!evalRes.ok) {
         return {
           value: {
@@ -441,136 +392,14 @@ export class ChromiumRenderEngine implements RenderEnginePort {
 
       await this.ensureViewport(slot, DEFAULT_VIEWPORT_W, DEFAULT_VIEWPORT_H, scale);
 
-      const pageRes = await slot.page.evaluate(
-        async (params: {
-          code: string;
-          renderId: string;
-          theme: string;
-          look: string;
-          background: string;
-          padding: number;
-        }) => {
-          const stage = document.getElementById('capture-stage')!;
-          stage.innerHTML = '';
-          stage.style.padding = `${params.padding}px`;
-          stage.style.background =
-            params.background === 'transparent' ? 'transparent' : params.background;
-
-          document
-            .querySelectorAll('[id^="dmmd_render_"], [id^="mmd_render_"]')
-            .forEach((el) => el.remove());
-
-          const m = (window as unknown as MermaidWindow).mermaid;
-          m.initialize({
-            startOnLoad: false,
-            theme: params.theme,
-            look: params.look,
-            securityLevel: 'antiscript',
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "DejaVu Sans", Arial, sans-serif',
-            flowchart: { htmlLabels: true, curve: 'basis' },
-          });
-
-          let diagramType: string | null = null;
-          try {
-            const parsed = await m.parse(params.code);
-            diagramType = parsed?.diagramType ?? null;
-          } catch (err: unknown) {
-            const e = err as Record<string, unknown>;
-            return {
-              ok: false as const,
-              err: {
-                message: typeof e?.message === 'string' ? e.message : String(err),
-                str: e?.str,
-                hash: e?.hash,
-              },
-            };
-          }
-
-          try {
-            const rendered = await m.render(params.renderId, params.code);
-            if (!diagramType && rendered?.diagramType) {
-              diagramType = rendered.diagramType;
-            }
-            stage.innerHTML = rendered.svg;
-            rendered.bindFunctions?.(stage);
-
-            const svgEl = stage.querySelector('svg');
-            if (!svgEl) {
-              throw new Error('Mermaid render completed without producing an <svg> element.');
-            }
-
-            if (!svgEl.getAttribute('xmlns')) {
-              svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-            }
-            const vb = svgEl.getAttribute('viewBox');
-            if (vb) {
-              const parts = vb.trim().split(/[\s,]+/).map(Number);
-              if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-                const vbW = Math.ceil(parts[2]);
-                const vbH = Math.ceil(parts[3]);
-                const rawW = svgEl.getAttribute('width') || '';
-                if (!rawW || rawW.includes('%')) {
-                  svgEl.setAttribute('width', String(vbW));
-                  svgEl.setAttribute('height', String(vbH));
-                  svgEl.style.width = `${vbW}px`;
-                  svgEl.style.height = `${vbH}px`;
-                }
-              }
-            }
-
-            const nodeEls = svgEl.querySelectorAll(
-              '.node, g.nodes > g, .actor, .er.entityBox, .classGroup, .stateGroup, .mindmap-node, .task, .slice'
-            );
-            const edgeEls = svgEl.querySelectorAll(
-              '.edgePath, .flowchart-link, .messageLine0, .messageLine1, .er.relationshipLine, .relation, .transition'
-            );
-            const subgraphEls = svgEl.querySelectorAll('.cluster, .subgraph');
-            const labelEls = Array.from(
-              svgEl.querySelectorAll(
-                'text, foreignObject span, foreignObject div, .nodeLabel, .edgeLabel'
-              )
-            );
-
-            const uniqueLabels: string[] = [];
-            const seen = new Set<string>();
-            for (const el of labelEls) {
-              const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
-              if (txt && !seen.has(txt)) {
-                seen.add(txt);
-                uniqueLabels.push(txt);
-              }
-            }
-
-            const rect = stage.getBoundingClientRect();
-            return {
-              ok: true as const,
-              diagramType,
-              svg: svgEl.outerHTML,
-              stageWidth: Math.ceil(rect.width),
-              stageHeight: Math.ceil(rect.height),
-              metrics: {
-                nodeCount: nodeEls.length,
-                edgeCount: edgeEls.length,
-                subgraphCount: subgraphEls.length,
-                textLabelCount: uniqueLabels.length,
-                sampleLabels: uniqueLabels.slice(0, 15),
-              },
-            };
-          } catch (err: unknown) {
-            const e = err as Record<string, unknown>;
-            return {
-              ok: false as const,
-              err: {
-                message: typeof e?.message === 'string' ? e.message : String(err),
-                str: e?.str,
-                hash: e?.hash,
-              },
-            };
-          }
-        },
-        { code, renderId, theme, look, background, padding }
-      );
+      const pageRes = await slot.page.evaluate(evaluateMermaidRenderInPage, {
+        code,
+        renderId,
+        theme,
+        look,
+        background,
+        padding,
+      });
 
       if (!pageRes.ok) {
         return {

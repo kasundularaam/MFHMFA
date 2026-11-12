@@ -4,11 +4,9 @@ import type {
   RenderOptions,
   RenderedDiagram,
   ValidationResult,
-  VfsLsResult,
-  VfsMoveResult,
-  VfsReadResult,
   VfsRpcQuery,
   VfsRpcReply,
+  VfsRpcResultMap,
   WorkspaceRelayEvent,
 } from '../shared/types.js';
 
@@ -23,11 +21,11 @@ export type WorkspaceEventListener = (event: WorkspaceRelayEvent) => void;
 
 export interface WorkspaceRelayPort {
   publish(workspaceToken: string, event: WorkspaceRelayEvent): number;
-  requestVfs(
+  requestVfs<Q extends VfsRpcQuery>(
     workspaceToken: string,
-    query: VfsRpcQuery,
+    query: Q,
     timeoutMs?: number
-  ): Promise<VfsLsResult | VfsReadResult | VfsMoveResult>;
+  ): Promise<VfsRpcResultMap[Q['op']]>;
   resolveVfsReply(workspaceToken: string, reply: VfsRpcReply): boolean;
   subscribe(
     workspaceToken: string,

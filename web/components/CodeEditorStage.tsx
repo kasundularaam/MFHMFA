@@ -3,10 +3,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { AlertCircle } from 'lucide-react';
 import type { ParseErrorDetail } from '../../src/shared/types';
-import {
-  createComfortEditorExtension,
-  type AppearanceMode,
-} from '../theme/comfortTheme';
+import { createComfortEditorExtension, type AppearanceMode } from '../theme/comfortTheme';
 
 interface CodeEditorStageProps {
   code: string;
@@ -46,9 +43,7 @@ export function CodeEditorStage({
         />
       </div>
 
-      {!parseError && (
-        <div className="editor-status-quiet">{diagramType || 'Mermaid'}</div>
-      )}
+      {!parseError && <div className="editor-status-quiet">{diagramType || 'Mermaid'}</div>}
 
       {parseError && (
         <div className="diagnostics-drawer">

@@ -13,8 +13,7 @@ export function getMermaidComfortConfig(mode: AppearanceMode) {
     theme: 'base' as const,
     look: 'classic' as const,
     securityLevel: 'antiscript' as const,
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
     flowchart: {
       htmlLabels: true,
       curve: 'basis' as const,
@@ -22,8 +21,7 @@ export function getMermaidComfortConfig(mode: AppearanceMode) {
     themeVariables: {
       darkMode: isDark,
       background: isDark ? '#191918' : '#f5f3ee',
-      fontFamily:
-        '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
       fontSize: '15px',
 
       primaryColor: isDark ? '#232321' : '#fcfbf8',
@@ -135,10 +133,17 @@ export function createComfortEditorExtension(mode: AppearanceMode): Extension {
     { tag: [t.keyword, t.operatorKeyword, t.modifier], color: isDark ? '#a3b39b' : '#486142' },
     { tag: [t.string, t.special(t.string)], color: isDark ? '#c4ad88' : '#7a5c2e' },
     { tag: [t.number, t.bool, t.null], color: isDark ? '#b89f8d' : '#7c4f38' },
-    { tag: [t.comment, t.lineComment], color: isDark ? '#6c6a63' : '#8d887e', fontStyle: 'italic' },
+    {
+      tag: [t.comment, t.lineComment],
+      color: isDark ? '#6c6a63' : '#8d887e',
+      fontStyle: 'italic',
+    },
     { tag: [t.heading, t.strong], color: isDark ? '#e0ddd5' : '#1c1b19', fontWeight: '600' },
     { tag: [t.punctuation, t.bracket, t.separator], color: isDark ? '#858279' : '#78736a' },
-    { tag: [t.variableName, t.propertyName, t.typeName], color: isDark ? '#9eb0b8' : '#385663' },
+    {
+      tag: [t.variableName, t.propertyName, t.typeName],
+      color: isDark ? '#9eb0b8' : '#385663',
+    },
   ]);
 
   return [baseTheme, syntaxHighlighting(highlight)];

@@ -1,23 +1,20 @@
 import crypto from 'node:crypto';
-import type { Express, Request, Response } from 'express';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import type { Express, Request, Response } from 'express';
 import type { StudioService } from '../../application/studioService.js';
-import {
-  APP_NAME,
-  APP_VERSION,
-  LOCAL_WORKSPACE_CHANNEL,
-  isLocalRequestHost,
-  resolveRequestBaseUrl,
-} from '../../config/env.js';
+import { APP_NAME, APP_VERSION, resolveRequestBaseUrl } from '../../config/env.js';
 import { sanitizeWorkspaceToken } from '../../infrastructure/ephemeral/workspaceRelay.js';
-import {
-  normalizeAgentIdentity,
-  normalizeProjectName,
-} from '../../shared/agentIdentity.js';
+import { normalizeAgentIdentity, normalizeProjectName } from '../../shared/agentIdentity.js';
 import type { AgentSessionInfo, AgentStatusKind } from '../../shared/types.js';
+import {
+  firstString,
+  isLocalHttpCaller,
+  resolveExplicitProject,
+  resolveRequestWorkspaceToken,
+} from '../http/requestContext.js';
 import { createMermaidMcpServer } from './createMcpServer.js';
 
 const SESSION_IDLE_TTL_MS = 20 * 60 * 1000;
@@ -29,6 +26,7 @@ interface SessionAgentMeta {
   clientVersion: string | null;
   pinnedProject: string | null;
   discoveredProject: string | null;
+  isLocalCaller: boolean;
   connectedAt: number;
   lastActiveAt: number;
 }
@@ -36,14 +34,12 @@ interface SessionAgentMeta {
 interface ActiveHttpSession {
   server: McpServer;
   transport: StreamableHTTPServerTransport;
-  baseUrl: string;
   meta: SessionAgentMeta;
 }
 
 interface ActiveSseSession {
   server: McpServer;
   transport: SSEServerTransport;
-  baseUrl: string;
   meta: SessionAgentMeta;
 }
 
@@ -51,30 +47,6 @@ export interface MountedMcpEndpoints {
   getSessionCount: () => number;
   getActiveAgents: (workspaceToken: string) => AgentSessionInfo[];
   closeAll: () => Promise<void>;
-}
-
-function firstString(val: unknown): string | null {
-  if (typeof val === 'string') return val;
-  if (Array.isArray(val) && typeof val[0] === 'string') return val[0];
-  return null;
-}
-
-function resolveWorkspaceToken(req: Request): string | null {
-  const explicit =
-    sanitizeWorkspaceToken(firstString(req.query.workspace)) ??
-    sanitizeWorkspaceToken(firstString(req.query.ws)) ??
-    sanitizeWorkspaceToken(firstString(req.headers['x-mfhmfa-workspace']));
-  if (explicit) {
-    return explicit;
-  }
-  return isLocalRequestHost(req.headers) ? LOCAL_WORKSPACE_CHANNEL : null;
-}
-
-function resolveExplicitProject(req: Request): string | null {
-  return (
-    normalizeProjectName(firstString(req.query.project)) ??
-    normalizeProjectName(firstString(req.headers['x-mfhmfa-project']))
-  );
 }
 
 function extractInitClientInfo(body: unknown): {
@@ -92,12 +64,12 @@ function extractInitClientInfo(body: unknown): {
   if (!ci || typeof ci !== 'object') {
     return { name: null, version: null };
   }
-  const name = typeof (ci as { name?: unknown }).name === 'string'
-    ? (ci as { name: string }).name
-    : null;
-  const version = typeof (ci as { version?: unknown }).version === 'string'
-    ? (ci as { version: string }).version
-    : null;
+  const name =
+    typeof (ci as { name?: unknown }).name === 'string' ? (ci as { name: string }).name : null;
+  const version =
+    typeof (ci as { version?: unknown }).version === 'string'
+      ? (ci as { version: string }).version
+      : null;
   return { name, version };
 }
 
@@ -118,6 +90,56 @@ function buildAgentSessionInfo(
     connectedAt: meta.connectedAt,
     lastActiveAt: meta.lastActiveAt,
   };
+}
+
+function createManagedSessionServer(
+  service: StudioService,
+  meta: SessionAgentMeta
+): { mcpServer: McpServer; emitStatus: (status: AgentStatusKind) => void } {
+  const emitStatus = (status: AgentStatusKind) => {
+    if (meta.workspaceToken) {
+      service.publishAgentStatus(meta.workspaceToken, buildAgentSessionInfo(meta, status));
+    }
+  };
+
+  const mcpServer = createMermaidMcpServer(
+    service,
+    {
+      source: 'mcp-http',
+      allowLocalDiskWrite: () => meta.isLocalCaller,
+      getWorkspaceToken: () => meta.workspaceToken,
+      getCallerMeta: () => ({
+        sessionId: meta.sessionId,
+        agentName: meta.rawAgentName,
+        project: meta.pinnedProject ?? meta.discoveredProject,
+      }),
+      onProjectDiscovered: (proj) => {
+        const normalized = normalizeProjectName(proj);
+        if (normalized && normalized !== meta.discoveredProject) {
+          meta.discoveredProject = normalized;
+          meta.lastActiveAt = Date.now();
+          emitStatus('active');
+        }
+      },
+    },
+    {
+      onClientInitialized: ({ name, version }) => {
+        if (name) meta.rawAgentName = name;
+        if (version) meta.clientVersion = version;
+        meta.lastActiveAt = Date.now();
+        emitStatus('connected');
+      },
+      onRootsResolved: (project) => {
+        if (project && project !== meta.discoveredProject) {
+          meta.discoveredProject = project;
+          meta.lastActiveAt = Date.now();
+          emitStatus('connected');
+        }
+      },
+    }
+  );
+
+  return { mcpServer, emitStatus };
 }
 
 export function mountMcpHttpEndpoints(
@@ -146,13 +168,21 @@ export function mountMcpHttpEndpoints(
         session.server.close().catch(() => {});
       }
     }
+    for (const [sid, session] of sseSessions.entries()) {
+      if (session.meta.lastActiveAt < cutoff) {
+        sseSessions.delete(sid);
+        notifyDisconnect(session.meta);
+        session.transport.close().catch(() => {});
+        session.server.close().catch(() => {});
+      }
+    }
   }, 60_000);
   sweepTimer.unref?.();
 
   app.all('/mcp', async (req: Request, res: Response) => {
     try {
       const reqBaseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
-      const reqWorkspace = resolveWorkspaceToken(req);
+      const reqWorkspace = resolveRequestWorkspaceToken(req);
       const reqProject = resolveExplicitProject(req);
       const sessionId = firstString(req.headers['mcp-session-id']);
 
@@ -170,7 +200,7 @@ export function mountMcpHttpEndpoints(
           return;
         }
         active.meta.lastActiveAt = Date.now();
-        active.baseUrl = reqBaseUrl;
+        active.meta.isLocalCaller = isLocalHttpCaller(req);
         if (reqWorkspace) {
           active.meta.workspaceToken = reqWorkspace;
         }
@@ -193,75 +223,23 @@ export function mountMcpHttpEndpoints(
           clientVersion: initInfo.version,
           pinnedProject: reqProject,
           discoveredProject: null,
+          isLocalCaller: isLocalHttpCaller(req),
           connectedAt: now,
           lastActiveAt: now,
         };
 
-        let currentBaseUrl = reqBaseUrl;
         let closedNotified = false;
-
-        const emitStatus = (status: AgentStatusKind) => {
-          if (meta.workspaceToken) {
-            service.publishAgentStatus(
-              meta.workspaceToken,
-              buildAgentSessionInfo(meta, status)
-            );
-          }
-        };
-
-        const mcpServer = createMermaidMcpServer(
-          service,
-          {
-            source: 'mcp-http',
-            getBaseUrl: () => currentBaseUrl,
-            getWorkspaceToken: () => meta.workspaceToken,
-            getCallerMeta: () => ({
-              sessionId: meta.sessionId,
-              agentName: meta.rawAgentName,
-              project: meta.pinnedProject ?? meta.discoveredProject,
-            }),
-            onProjectDiscovered: (proj) => {
-              const normalized = normalizeProjectName(proj);
-              if (normalized && normalized !== meta.discoveredProject) {
-                meta.discoveredProject = normalized;
-                meta.lastActiveAt = Date.now();
-                emitStatus('active');
-              }
-            },
-          },
-          {
-            onClientInitialized: ({ name, version }) => {
-              if (name) meta.rawAgentName = name;
-              if (version) meta.clientVersion = version;
-              meta.lastActiveAt = Date.now();
-              emitStatus('connected');
-            },
-            onRootsResolved: (project) => {
-              if (project && project !== meta.discoveredProject) {
-                meta.discoveredProject = project;
-                meta.lastActiveAt = Date.now();
-                emitStatus('connected');
-              }
-            },
-          }
-        );
+        const { mcpServer, emitStatus } = createManagedSessionServer(service, meta);
 
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => sid,
           enableJsonResponse: true,
           onsessioninitialized: (initializedSid) => {
-            const sessionRecord: ActiveHttpSession = {
+            httpSessions.set(initializedSid, {
               server: mcpServer,
               transport,
-              get baseUrl() {
-                return currentBaseUrl;
-              },
-              set baseUrl(next: string) {
-                currentBaseUrl = next;
-              },
               meta,
-            };
-            httpSessions.set(initializedSid, sessionRecord);
+            });
             emitStatus('connected');
           },
           onsessionclosed: (closedSid) => {
@@ -291,9 +269,10 @@ export function mountMcpHttpEndpoints(
       if (req.method === 'POST') {
         const ua = firstString(req.headers['user-agent']);
         let statelessProject = reqProject;
+        const localCaller = isLocalHttpCaller(req);
         const statelessServer = createMermaidMcpServer(service, {
           source: 'mcp-http',
-          getBaseUrl: () => reqBaseUrl,
+          allowLocalDiskWrite: localCaller,
           getWorkspaceToken: () => reqWorkspace,
           getCallerMeta: () => ({
             sessionId: null,
@@ -317,15 +296,12 @@ export function mountMcpHttpEndpoints(
         return;
       }
 
-      if (
-        req.method === 'GET' &&
-        !(req.headers.accept || '').includes('text/event-stream')
-      ) {
+      if (req.method === 'GET' && !(req.headers.accept || '').includes('text/event-stream')) {
         res.status(200).json({
           name: APP_NAME,
           version: APP_VERSION,
           stateless: true,
-          serverStorage: 'none (browser localStorage + pass-through SSE)',
+          serverStorage: 'none (browser IndexedDB + pass-through SSE)',
           protocol: 'Model Context Protocol (Streamable HTTP & SSE)',
           endpoints: {
             streamableHttp: `${reqBaseUrl}/mcp`,
@@ -359,8 +335,7 @@ export function mountMcpHttpEndpoints(
   });
 
   app.get('/mcp/sse', async (req: Request, res: Response) => {
-    let currentBaseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
-    const reqWorkspace = resolveWorkspaceToken(req);
+    const reqWorkspace = resolveRequestWorkspaceToken(req);
     const reqProject = resolveExplicitProject(req);
     const now = Date.now();
 
@@ -372,71 +347,23 @@ export function mountMcpHttpEndpoints(
       clientVersion: null,
       pinnedProject: reqProject,
       discoveredProject: null,
+      isLocalCaller: isLocalHttpCaller(req),
       connectedAt: now,
       lastActiveAt: now,
     };
 
-    const emitStatus = (status: AgentStatusKind) => {
-      if (meta.workspaceToken) {
-        service.publishAgentStatus(
-          meta.workspaceToken,
-          buildAgentSessionInfo(meta, status)
-        );
-      }
-    };
-
-    const mcpServer = createMermaidMcpServer(
-      service,
-      {
-        source: 'mcp-http',
-        getBaseUrl: () => currentBaseUrl,
-        getWorkspaceToken: () => meta.workspaceToken,
-        getCallerMeta: () => ({
-          sessionId: meta.sessionId,
-          agentName: meta.rawAgentName,
-          project: meta.pinnedProject ?? meta.discoveredProject,
-        }),
-        onProjectDiscovered: (proj) => {
-          const normalized = normalizeProjectName(proj);
-          if (normalized && normalized !== meta.discoveredProject) {
-            meta.discoveredProject = normalized;
-            meta.lastActiveAt = Date.now();
-            emitStatus('active');
-          }
-        },
-      },
-      {
-        onClientInitialized: ({ name, version }) => {
-          if (name) meta.rawAgentName = name;
-          if (version) meta.clientVersion = version;
-          meta.lastActiveAt = Date.now();
-          emitStatus('connected');
-        },
-        onRootsResolved: (project) => {
-          if (project && project !== meta.discoveredProject) {
-            meta.discoveredProject = project;
-            meta.lastActiveAt = Date.now();
-            emitStatus('connected');
-          }
-        },
-      }
-    );
+    const { mcpServer } = createManagedSessionServer(service, meta);
 
     sseSessions.set(transport.sessionId, {
       server: mcpServer,
       transport,
-      get baseUrl() {
-        return currentBaseUrl;
-      },
-      set baseUrl(next: string) {
-        currentBaseUrl = next;
-      },
       meta,
     });
 
     res.on('close', () => {
-      sseSessions.delete(transport.sessionId);
-      notifyDisconnect(meta);
+      if (sseSessions.delete(transport.sessionId)) {
+        notifyDisconnect(meta);
+      }
       mcpServer.close().catch(() => {});
     });
 
@@ -451,8 +378,8 @@ export function mountMcpHttpEndpoints(
       return;
     }
     session.meta.lastActiveAt = Date.now();
-    session.baseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
-    const ws = resolveWorkspaceToken(req);
+    session.meta.isLocalCaller = isLocalHttpCaller(req);
+    const ws = resolveRequestWorkspaceToken(req);
     if (ws) session.meta.workspaceToken = ws;
     const proj = resolveExplicitProject(req);
     if (proj) session.meta.pinnedProject = proj;

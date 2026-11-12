@@ -1,17 +1,8 @@
-import { useEffect, useState } from 'react';
-import {
-  BookOpen,
-  Copy,
-  Download,
-  FileCode2,
-  Link2,
-  Moon,
-  PanelLeft,
-  Sun,
-} from 'lucide-react';
-import type { StudioPage } from '../hooks/useStudioController';
+import { BookOpen, Copy, Download, FileCode2, Moon, PanelLeft, Sun } from 'lucide-react';
+import type { StudioPage } from '../store/uiStore';
 import type { AppearanceMode } from '../theme/comfortTheme';
 import { BrandLogo } from './BrandLogo';
+import { ActionMenu, DropdownItem } from './DropdownMenu';
 
 const DEFAULT_GITHUB_URL = 'https://github.com/kasundularaam/MFHMFA';
 
@@ -25,7 +16,6 @@ interface TopBarProps {
   connectedAgentCount: number;
   activeBreadcrumb: string | null;
   onBrandClick: () => void;
-  onCopyPermalink: () => void;
   repoUrl?: string;
   onExportPng: () => void;
   onExportSvg: () => void;
@@ -42,21 +32,11 @@ export function TopBar({
   connectedAgentCount,
   activeBreadcrumb,
   onBrandClick,
-  onCopyPermalink,
   repoUrl,
   onExportPng,
   onExportSvg,
   onCopyCode,
 }: TopBarProps) {
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
-
-  useEffect(() => {
-    if (!exportMenuOpen) return undefined;
-    const onDocClick = () => setExportMenuOpen(false);
-    window.addEventListener('click', onDocClick);
-    return () => window.removeEventListener('click', onDocClick);
-  }, [exportMenuOpen]);
-
   return (
     <header className="topbar">
       <div className="topbar-left">
@@ -97,9 +77,7 @@ export function TopBar({
 
       <div className="topbar-center">
         {page === 'studio' ? (
-          activeBreadcrumb && (
-            <span className="topbar-breadcrumb">{activeBreadcrumb}</span>
-          )
+          activeBreadcrumb && <span className="topbar-breadcrumb">{activeBreadcrumb}</span>
         ) : (
           <span className="topbar-page-title">Documentation</span>
         )}
@@ -107,73 +85,24 @@ export function TopBar({
 
       <div className="topbar-right">
         {page === 'studio' && (
-          <>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={onCopyPermalink}
-              title="Copy link"
-              aria-label="Copy link"
-            >
-              <Link2 size={18} />
-            </button>
-
-            <div className="dropdown-wrap" onClick={(e) => e.stopPropagation()}>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => setExportMenuOpen((v) => !v)}
-                title="Export"
-                aria-label="Export"
-              >
+          <ActionMenu
+            align="end"
+            trigger={
+              <button type="button" className="icon-btn" title="Export" aria-label="Export">
                 <Download size={18} />
               </button>
-              {exportMenuOpen && (
-                <div className="dropdown-menu">
-                  <button
-                    type="button"
-                    className="dropdown-item"
-                    onClick={() => {
-                      setExportMenuOpen(false);
-                      onExportPng();
-                    }}
-                  >
-                    <Download size={15} /> Export PNG
-                  </button>
-                  <button
-                    type="button"
-                    className="dropdown-item"
-                    onClick={() => {
-                      setExportMenuOpen(false);
-                      onExportSvg();
-                    }}
-                  >
-                    <FileCode2 size={15} /> Export SVG
-                  </button>
-                  <button
-                    type="button"
-                    className="dropdown-item"
-                    onClick={() => {
-                      setExportMenuOpen(false);
-                      onCopyPermalink();
-                    }}
-                  >
-                    <Link2 size={15} /> Copy link
-                  </button>
-                  <button
-                    type="button"
-                    className="dropdown-item"
-                    onClick={() => {
-                      setExportMenuOpen(false);
-                      onCopyCode();
-                    }}
-                  >
-                    <Copy size={15} /> Copy code
-                  </button>
-                </div>
-              )}
-            </div>
-          </>
+            }
+          >
+            <DropdownItem onSelect={onExportPng}>
+              <Download size={15} /> Export PNG
+            </DropdownItem>
+            <DropdownItem onSelect={onExportSvg}>
+              <FileCode2 size={15} /> Export SVG
+            </DropdownItem>
+            <DropdownItem onSelect={onCopyCode}>
+              <Copy size={15} /> Copy code
+            </DropdownItem>
+          </ActionMenu>
         )}
 
         <button
@@ -204,8 +133,14 @@ export function TopBar({
           title="GitHub"
           aria-label="GitHub"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12 .5C5.648.5.5 5.648.5 12c0 5.088 3.292 9.395 7.868 10.915.575.107.785-.25.785-.555 0-.273-.01-1-.015-1.962-3.2.695-3.875-1.542-3.875-1.542-.523-1.33-1.278-1.684-1.278-1.684-1.044-.714.08-.7.08-.7 1.155.082 1.763 1.186 1.763 1.186 1.026 1.758 2.692 1.25 3.348.956.104-.743.402-1.25.73-1.538-2.554-.29-5.238-1.277-5.238-5.683 0-1.255.448-2.28 1.184-3.084-.118-.29-.513-1.462.112-3.048 0 0 .966-.31 3.166 1.18a11.01 11.01 0 0 1 2.882-.388c.978.005 1.963.132 2.882.388 2.2-1.49 3.164-1.18 3.164-1.18.627 1.586.232 2.758.114 3.048.738.804 1.182 1.83 1.182 3.084 0 4.418-2.688 5.39-5.25 5.674.412.356.78 1.058.78 2.132 0 1.54-.014 2.782-.014 3.16 0 .308.208.668.792.554C20.212 21.39 23.5 17.085 23.5 12 23.5 5.648 18.352.5 12 .5Z" />
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.07 11.07 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14 0 1.55-.01 2.79-.01 3.17 0 .31.21.68.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
           </svg>
         </a>
       </div>

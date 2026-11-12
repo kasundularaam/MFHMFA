@@ -56,18 +56,12 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
   });
 
   it('validates Mermaid code statelessly and returns line/col snippets on errors', async () => {
-    const ok = await started.service.validate(
-      'sequenceDiagram\n  Alice->>Bob: Hello!',
-      'web'
-    );
+    const ok = await started.service.validate('sequenceDiagram\n  Alice->>Bob: Hello!', 'web');
     expect(ok.valid).toBe(true);
     expect(ok.diagramType).toBe('sequence');
     expect(ok.error).toBeNull();
 
-    const broken = await started.service.validate(
-      'flowchart TD\n  A[call(x)] --> B',
-      'web'
-    );
+    const broken = await started.service.validate('flowchart TD\n  A[call(x)] --> B', 'web');
     expect(broken.valid).toBe(false);
     expect(broken.error?.line).toBe(2);
     expect(broken.error?.snippet).toContain('>   2 |   A[call(x)] --> B');
@@ -76,10 +70,9 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
   it('exposes VFS MCP tools (ls, read, render, mv — NO rm) and streams path-based graphs with zero server storage', async () => {
     const wsToken = 'ws_sse_relay_vfs';
     const sseAbort = new AbortController();
-    const sseResp = await fetch(
-      `${started.baseUrl}/api/workspace/${wsToken}/events`,
-      { signal: sseAbort.signal }
-    );
+    const sseResp = await fetch(`${started.baseUrl}/api/workspace/${wsToken}/events`, {
+      signal: sseAbort.signal,
+    });
     expect(sseResp.ok).toBe(true);
     const reader = sseResp.body!.getReader();
     const decoder = new TextDecoder();
@@ -146,9 +139,9 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
       }>;
       expect(contentArr.length).toBe(2);
       expect(contentArr[1].mimeType).toBe('image/png');
-      expect(
-        Buffer.from(contentArr[1].data!, 'base64').subarray(0, 8).equals(PNG_MAGIC)
-      ).toBe(true);
+      expect(Buffer.from(contentArr[1].data!, 'base64').subarray(0, 8).equals(PNG_MAGIC)).toBe(
+        true
+      );
 
       const meta = JSON.parse(contentArr[0].text!) as {
         valid: boolean;
@@ -167,7 +160,9 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
       expect(meta.syncedToBrowser).toBe(true);
       expect(meta.syncStatus).toBe('synced_live');
       expect(meta.studioUrl).toBeUndefined();
-      expect(meta.presentationRule).toContain('do NOT output raw Mermaid source code or any URLs');
+      expect(meta.presentationRule).toContain(
+        'do NOT output raw Mermaid source code or any URLs'
+      );
 
       await readUntil('payments/checkout-flow.mmd');
       expect(started.service.getRelayStats().storedDiagrams).toBe(0);
@@ -357,6 +352,24 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
     const callJson = (await callResp.json()) as { ok: boolean };
     expect(callJson.ok).toBe(true);
     expect(fs.existsSync(outSvg)).toBe(true);
+
+    // Remote/hosted requests (non-localhost X-Forwarded-Host) MUST be blocked from writing server disk files
+    const remoteExportResp = await fetch(`${started.baseUrl}/api/tools/call`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-Host': 'mfhmfa.kasun.si',
+      },
+      body: JSON.stringify({
+        name: 'mermaid_export',
+        arguments: {
+          code: 'flowchart LR\n  A --> B',
+          outputPath: path.join(tempDir, 'remote-blocked.svg'),
+        },
+      }),
+    });
+    expect(remoteExportResp.status).toBe(403);
+    expect(fs.existsSync(path.join(tempDir, 'remote-blocked.svg'))).toBe(false);
   }, 20_000);
 
   it('supports end-to-end jailed multi-agent VFS (ls, read, render, mv), immutable 5-version history, and VS Code Explorer UI', async () => {
@@ -377,12 +390,97 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         waitUntil: 'networkidle2',
       });
 
-      // 1. Verify localStorage v4 initialized immediately on browser visit
-      const initRaw = await wsPage.evaluate(() =>
+      // 1. Verify IndexedDB v4 workspace initialized immediately on browser visit (and 0 localStorage blob)
+      await wsPage.waitForFunction(
+        async () => {
+          const dbs = await indexedDB.databases();
+          if (!dbs.some((d) => d.name === 'mfhmfa-db')) return false;
+          return new Promise<boolean>((resolve) => {
+            const req = indexedDB.open('mfhmfa-db');
+            req.onsuccess = () => {
+              const db = req.result;
+              if (!db.objectStoreNames.contains('workspace')) {
+                db.close();
+                resolve(false);
+                return;
+              }
+              const tx = db.transaction('workspace', 'readonly');
+              const getReq = tx.objectStore('workspace').get('mfhmfa-workspace-v4');
+              getReq.onsuccess = () => {
+                const val = getReq.result as { version?: number } | undefined;
+                db.close();
+                resolve(val?.version === 4);
+              };
+              getReq.onerror = () => {
+                db.close();
+                resolve(false);
+              };
+            };
+            req.onerror = () => resolve(false);
+          });
+        },
+        { timeout: 5_000 }
+      );
+      const legacyBlob = await wsPage.evaluate(() =>
         localStorage.getItem('mfhmfa-workspace-v4')
       );
-      expect(initRaw).toBeTruthy();
-      expect(JSON.parse(initRaw!).version).toBe(4);
+      expect(legacyBlob).toBeNull();
+
+      // 1b. Verify automatic one-time migration from legacy localStorage v4 -> IndexedDB + cleanup
+      const migContext = await browser.createBrowserContext();
+      const isolatedMigPage = await migContext.newPage();
+      await isolatedMigPage.evaluateOnNewDocument(() => {
+        localStorage.setItem(
+          'mfhmfa-workspace-v4',
+          JSON.stringify({
+            version: 4,
+            workspaceId: 'ws_migrated_legacy',
+            sidebarOpen: true,
+            sidebarWidth: 260,
+            openTabIds: ['file-leg-1'],
+            activeFileId: 'file-leg-1',
+            projects: [
+              {
+                projectKey: 'legacy-proj',
+                projectLabel: 'Legacy Proj',
+                expanded: true,
+                folders: [],
+                files: [
+                  {
+                    id: 'file-leg-1',
+                    path: 'migrated-flow.mmd',
+                    title: 'migrated-flow',
+                    diagramType: 'flowchart-v2',
+                    currentVersion: 1,
+                    versions: [
+                      {
+                        version: 1,
+                        code: 'flowchart LR\n  Legacy["Legacy"] --> IDB["IndexedDB"]',
+                        authorSlug: 'user',
+                        authorLabel: 'You',
+                        authorBadge: 'you',
+                        createdAt: 1700000000000,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          })
+        );
+      });
+      await isolatedMigPage.goto(`${started.baseUrl}/?workspace=ws_migrated_legacy`, {
+        waitUntil: 'networkidle2',
+      });
+      await isolatedMigPage.waitForSelector(
+        '[data-explorer-path="legacy-proj/migrated-flow.mmd"]',
+        { timeout: 5_000 }
+      );
+      const lsAfterMig = await isolatedMigPage.evaluate(() =>
+        localStorage.getItem('mfhmfa-workspace-v4')
+      );
+      expect(lsAfterMig).toBeNull();
+      await migContext.close();
 
       // 2. Connect Claude Code (Project A), Pi (Project A), and Cursor (Project B)
       const claude = new Client(
@@ -441,13 +539,11 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         await wsPage.click('.sidebar-agents-pane .sidebar-section-header');
         await wsPage.waitForFunction(
           () => {
-            const names = Array.from(
-              document.querySelectorAll('.sidebar-agent-name')
-            ).map((el) => el.textContent?.trim());
+            const names = Array.from(document.querySelectorAll('.sidebar-agent-name')).map(
+              (el) => el.textContent?.trim()
+            );
             return (
-              names.includes('Claude Code') &&
-              names.includes('Pi') &&
-              names.includes('Cursor')
+              names.includes('Claude Code') && names.includes('Pi') && names.includes('Cursor')
             );
           },
           { timeout: 5_000 }
@@ -486,7 +582,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         });
         expect(piLsRes.isError).toBeFalsy();
         const piLsJson = JSON.parse(
-          ((piLsRes.content as Array<{ text?: string }>)[0]?.text ?? '{}')
+          (piLsRes.content as Array<{ text?: string }>)[0]?.text ?? '{}'
         ) as { project: string; treeText: string };
         expect(piLsJson.project).toBe('Project A');
         expect(piLsJson.treeText).toContain('architecture/');
@@ -505,7 +601,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           arguments: { path: 'auth/oauth-flow' },
         });
         const readV1Payload = JSON.parse(
-          ((piReadV1.content as Array<{ text?: string }>)[0]?.text ?? '{}')
+          (piReadV1.content as Array<{ text?: string }>)[0]?.text ?? '{}'
         ) as { code: string; currentVersion: number; author: string };
         expect(readV1Payload.code).toContain('ClaudeOAuthV1');
         expect(readV1Payload.currentVersion).toBe(1);
@@ -543,7 +639,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           arguments: { path: 'auth/oauth-flow.mmd', version: 1 },
         });
         const histPayload = JSON.parse(
-          ((claudeReadHistorical.content as Array<{ text?: string }>)[0]?.text ?? '{}')
+          (claudeReadHistorical.content as Array<{ text?: string }>)[0]?.text ?? '{}'
         ) as { code: string; currentVersion: number; requestedVersion: number };
         expect(histPayload.requestedVersion).toBe(1);
         expect(histPayload.currentVersion).toBe(2);
@@ -553,14 +649,10 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         await wsPage.waitForFunction(
           () =>
             Boolean(
-              document.querySelector(
-                '[data-explorer-path="project-a/database/session-er.mmd"]'
-              )
+              document.querySelector('[data-explorer-path="project-a/database/session-er.mmd"]')
             ) &&
             Boolean(
-              document.querySelector(
-                '[data-explorer-path="project-a/auth/oauth-flow.mmd"]'
-              )
+              document.querySelector('[data-explorer-path="project-a/auth/oauth-flow.mmd"]')
             ),
           { timeout: 10_000 }
         );
@@ -582,9 +674,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           (prevCount: number) =>
             document.querySelectorAll('.editor-tab').length === prevCount - 1 &&
             Boolean(
-              document.querySelector(
-                '[data-explorer-path="project-a/database/session-er.mmd"]'
-              )
+              document.querySelector('[data-explorer-path="project-a/database/session-er.mmd"]')
             ),
           {},
           openTabsBefore
@@ -595,12 +685,8 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           const actions = Array.from(
             document.querySelectorAll('.tabbar-right-actions > button')
           );
-          const viewIdx = actions.findIndex((b) =>
-            b.classList.contains('tabbar-view-toggle')
-          );
-          const fitIdx = actions.findIndex((b) =>
-            b.classList.contains('tabbar-fit-btn')
-          );
+          const viewIdx = actions.findIndex((b) => b.classList.contains('tabbar-view-toggle'));
+          const fitIdx = actions.findIndex((b) => b.classList.contains('tabbar-fit-btn'));
           return {
             aria: document.querySelector('.tabbar-view-toggle')?.getAttribute('aria-label'),
             fitAfterView: viewIdx >= 0 && fitIdx === viewIdx + 1,
@@ -617,16 +703,19 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
 
         await wsPage.waitForFunction(
           () =>
-            document
-              .querySelector('.tabbar-view-toggle')
-              ?.getAttribute('aria-label') === 'Switch to Preview' &&
+            document.querySelector('.tabbar-view-toggle')?.getAttribute('aria-label') ===
+              'Switch to Preview' &&
             document.querySelector('.tabbar-fit-btn') === null &&
             Boolean(document.querySelector('.codemirror-wrap')),
           { timeout: 5_000 }
         );
 
-        // Verify clean Explorer UI: no agent badges on file rows, no storage footer,
+        // Verify no permalink Copy-link button exists in TopBar, clean Explorer UI,
         // `File history` tooltip on version pill, 3-dot context menu, Light theme, and Docs logo return!
+        const copyLinkButtons = await wsPage.evaluate(
+          () => document.querySelectorAll('button[aria-label="Copy link"]').length
+        );
+        expect(copyLinkButtons).toBe(0);
         const uiAudit = await wsPage.evaluate(() => {
           const projRow = document.querySelector(
             '[data-project-key="project-a"] .tree-project-row'
@@ -639,9 +728,8 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
             el.classList.contains('tree-project-label')
           );
           return {
-            authorBadgesInTree: document.querySelectorAll(
-              '.explorer-tree .tree-author-badge'
-            ).length,
+            authorBadgesInTree: document.querySelectorAll('.explorer-tree .tree-author-badge')
+              .length,
             projectCountBadges: document.querySelectorAll('.project-live-badge').length,
             dotBeforeProjectLabel: dotIdx >= 0 && labelIdx > dotIdx,
             agentsHeaderButtons: document.querySelectorAll(
@@ -668,10 +756,9 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
 
         // Toggle Light theme and navigate to Documentation, verifying no separate back button
         await wsPage.click('button[aria-label="Light theme"]');
-        await wsPage.waitForFunction(
-          () => document.documentElement.dataset.mode === 'light',
-          { timeout: 3_000 }
-        );
+        await wsPage.waitForFunction(() => document.documentElement.dataset.mode === 'light', {
+          timeout: 3_000,
+        });
 
         await wsPage.click('button[aria-label="Documentation"]');
         await wsPage.waitForSelector('.docs-page');
@@ -743,19 +830,22 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
               steps: [
                 {
                   title: '1. Temporary preview check',
-                  caption: 'AI renders a temporary PNG to check layout, then the PNG is discarded.',
+                  caption:
+                    'AI renders a temporary PNG to check layout, then the PNG is discarded.',
                   focusNodes: ['AI', 'Preview'],
                 },
                 {
                   title: '2. Live stream to browser',
-                  caption: 'Valid Mermaid text passes through the server straight into your open tab.',
+                  caption:
+                    'Valid Mermaid text passes through the server straight into your open tab.',
                   focusNodes: ['AI', 'Relay', 'Browser'],
                 },
               ],
               nodes: {
                 Browser: {
                   label: 'Browser Local Storage',
-                  summary: 'Stores all project folders, diagrams, and 5-version history on your computer.',
+                  summary:
+                    'Stores all project folders, diagrams, and 5-version history on your computer.',
                   example: 'mfhmfa-workspace-v4 (~14 KB JSON)',
                   whatIf: 'Close all Studio tabs -> AI ls/read calls time out after 2.5s.',
                   files: ['web/services/workspaceStorage.ts'],
@@ -803,7 +893,9 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
             const childRow = document.querySelector(
               '.tree-subgraph-children [data-explorer-path="mfhmfa/memory/browser-storage.mmd"]'
             );
-            const zoomBadges = document.querySelectorAll('.canvas-stage svg .mfhmfa-zoom-badge');
+            const zoomBadges = document.querySelectorAll(
+              '.canvas-stage svg .mfhmfa-zoom-badge'
+            );
             const countPills = document.querySelectorAll('.tree-overview-pill');
             const tabs = document.querySelectorAll('.editor-tab');
             return (
@@ -931,7 +1023,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           arguments: { path: 'memory/overview.mmd' },
         });
         const readJson = JSON.parse(
-          ((readBack.content as Array<{ text?: string }>)[0]?.text ?? '{}')
+          (readBack.content as Array<{ text?: string }>)[0]?.text ?? '{}'
         ) as { guide?: { steps?: unknown[]; nodes?: Record<string, unknown> } };
         expect(readJson.guide?.steps?.length).toBe(2);
         expect(Boolean(readJson.guide?.nodes?.Browser)).toBe(true);

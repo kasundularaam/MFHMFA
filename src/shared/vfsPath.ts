@@ -1,10 +1,15 @@
 import { slugify } from './svg.js';
 
 function sanitizeSegment(raw: string): string {
-  const cleaned = raw
-    .replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '')
-    .trim();
-  return cleaned;
+  let out = '';
+  for (let i = 0; i < raw.length; i++) {
+    const code = raw.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) continue;
+    const ch = raw[i]!;
+    if ('<>:"|?*'.includes(ch)) continue;
+    out += ch;
+  }
+  return out.trim();
 }
 
 /**
@@ -89,9 +94,7 @@ export function normalizeRelativeGraphPath(rawPath: string): string {
  * Normalizes a move path (could be either a `.mmd` file or a folder path depending on source).
  */
 export function normalizeRelativeAnyPath(rawPath: string, treatAsFile: boolean): string {
-  return treatAsFile
-    ? normalizeRelativeGraphPath(rawPath)
-    : normalizeRelativeDirPath(rawPath);
+  return treatAsFile ? normalizeRelativeGraphPath(rawPath) : normalizeRelativeDirPath(rawPath);
 }
 
 export function graphTitleFromPath(relFilePath: string): string {

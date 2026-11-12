@@ -30,7 +30,7 @@ MFHMFA is built around **proven cognitive science principles of human learning**
 - **Clickable Node Inspector:** Boxes on the canvas stay clean (2–5 plain words). Click any outlined box to inspect its **plain mechanism**, **concrete payload/timing example**, **"What Breaks If…" edge case**, and **source file paths**.
 - **Google-Maps Sub-Graph Zoom:** Double-click dashed subsystem boxes (or click *Zoom into…*) to drill down into linked child `.mmd` diagrams and jump back via the top-left breadcrumb.
 - **Agent Vision + Cognitive Load Linter:** When an agent calls `mermaid_render`, it receives a **2x Retina PNG** to visually check for overlaps *plus* diagnostics warning if a graph crams too many nodes or words into one view.
-- **Zero Server Storage (Browser VFS):** All project folders, `.mmd` files, interactive guides, and 5-version immutable revision histories live in your browser's `localStorage` (`0` diagrams stored on the server). Share snapshots anytime via deflate-compressed `#z=` permalinks.
+- **Zero Server Storage (Browser IndexedDB VFS):** All project folders, `.mmd` files, interactive guides, and 5-version immutable revision histories live asynchronously in your browser's `IndexedDB` (`0` diagrams stored on the server).
 
 ---
 
@@ -93,7 +93,7 @@ Keep **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** open in a browser tab while 
 | :--- | :--- |
 | `mermaid_ls` | List folders and `.mmd` graphs inside the agent's jailed project working directory (`diagramType`, `version`, `stepCount`, `author`). |
 | `mermaid_read` | Read `.mmd` source, attached comprehension `guide`, and 5-version immutable history of an existing graph. |
-| `mermaid_render` | Write/update a `.mmd` graph + interactive `guide` (`gist`, `steps`, `nodes`, `childPath`), coalesce rapid retries in browser `localStorage`, and return a 2x Retina PNG + layout/cognitive diagnostics. |
+| `mermaid_render` | Write/update a `.mmd` graph + interactive `guide` (`gist`, `steps`, `nodes`, `childPath`), coalesce rapid retries in browser `IndexedDB`, and return a 2x Retina PNG + layout/cognitive diagnostics. |
 | `mermaid_mv` | Move or rename a graph or subfolder within the working project while preserving version history and automatically updating `childPath` / `parentPath` links. |
 | `mermaid_validate` | Check syntax and static lint rules (including Dual-Coding dense label checks); returns error line/column snippet and fix hints. |
 | `mermaid_export` | Render and write Mermaid source to disk as `.png`, `.svg`, `.mmd`, or `.md`. |

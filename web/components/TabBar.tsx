@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import * as RadixDropdown from '@radix-ui/react-dropdown-menu';
 import { Code2, Eye, History, Maximize2, Plus, RotateCcw, X } from 'lucide-react';
-import type { OpenTabEntry, StageMode } from '../hooks/useStudioController';
-import type { GraphVersionRecord, VfsGraphFile } from '../services/workspaceStorage';
+import { useEffect, useRef } from 'react';
+import type { GraphVersionRecord, VfsGraphFile } from '../../src/shared/vfs';
+import { graphTitleFromPath } from '../../src/shared/vfsPath';
+import type { StageMode } from '../store/uiStore';
+import type { OpenTabEntry } from '../store/workspaceStore';
+import { ActionMenu } from './DropdownMenu';
 
 interface TabBarProps {
   openTabs: OpenTabEntry[];
@@ -35,14 +39,6 @@ export function TabBar({
   onFitCanvas,
 }: TabBarProps) {
   const stripRef = useRef<HTMLDivElement | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-
-  useEffect(() => {
-    if (!historyOpen) return undefined;
-    const close = () => setHistoryOpen(false);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, [historyOpen]);
 
   useEffect(() => {
     if (!activeFile) return;
@@ -54,10 +50,7 @@ export function TabBar({
 
   const labelCounts = new Map<string, number>();
   for (const entry of openTabs) {
-    const base = (entry.file.path.split('/').pop() || entry.file.title).replace(
-      /\.(mmd|mermaid)$/i,
-      ''
-    );
+    const base = graphTitleFromPath(entry.file.path);
     labelCounts.set(base, (labelCounts.get(base) ?? 0) + 1);
   }
 
@@ -74,10 +67,7 @@ export function TabBar({
       >
         {openTabs.map(({ file, project }) => {
           const isActive = activeFile?.id === file.id;
-          const baseName = (file.path.split('/').pop() || file.title).replace(
-            /\.(mmd|mermaid)$/i,
-            ''
-          );
+          const baseName = graphTitleFromPath(file.path);
           const isDuplicate = (labelCounts.get(baseName) ?? 0) > 1;
           const disambiguator = isDuplicate
             ? file.path.includes('/')
@@ -111,13 +101,11 @@ export function TabBar({
               title={`${project.projectLabel}/${file.path}`}
             >
               {file.unread && (
-                <span className="tab-unread-dot" aria-label="Updated" />
+                <span className="tab-unread-dot" role="img" aria-label="Updated" />
               )}
 
               <span className="tab-label">{baseName}</span>
-              {disambiguator && (
-                <span className="tab-subpath">{disambiguator}</span>
-              )}
+              {disambiguator && <span className="tab-subpath">{disambiguator}</span>}
 
               <button
                 type="button"
@@ -146,95 +134,84 @@ export function TabBar({
         </button>
       </div>
 
-      {/* Right Edge Actions: File History + View Switcher */}
       <div className="tabbar-right-actions">
         {activeFile && activeVersionRecord && (
-          <div className="dropdown-wrap" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className={`version-pill ${isHistoricalVersion ? 'historical' : ''}`}
-              onClick={() => setHistoryOpen((v) => !v)}
-              title="File history"
-              aria-label="File history"
-            >
-              <History size={15} />
-              <span>v{activeVersionRecord.version}</span>
-            </button>
-
-            {historyOpen && (
-              <div className="dropdown-menu version-menu">
-                <div className="version-menu-header">File history</div>
-                {[...activeFile.versions].reverse().map((rev) => {
-                  const isHead = rev.version === activeFile.currentVersion;
-                  const isSelected = rev.version === activeVersionRecord.version;
-                  return (
-                    <div
-                      key={rev.version}
-                      className={`version-menu-item ${isSelected ? 'selected' : ''}`}
-                    >
+          <ActionMenu
+            align="end"
+            contentClassName="version-menu"
+            trigger={
+              <button
+                type="button"
+                className={`version-pill ${isHistoricalVersion ? 'historical' : ''}`}
+                title="File history"
+                aria-label="File history"
+              >
+                <History size={15} />
+                <span>v{activeVersionRecord.version}</span>
+              </button>
+            }
+          >
+            <div className="version-menu-header">File history</div>
+            {[...activeFile.versions].reverse().map((rev) => {
+              const isHead = rev.version === activeFile.currentVersion;
+              const isSelected = rev.version === activeVersionRecord.version;
+              return (
+                <div
+                  key={rev.version}
+                  className={`version-menu-item ${isSelected ? 'selected' : ''}`}
+                >
+                  <RadixDropdown.Item
+                    asChild
+                    onSelect={() => onSelectVersion(isHead ? null : rev.version)}
+                  >
+                    <button type="button" className="version-select-btn">
+                      <span className="version-num">v{rev.version}</span>
+                      <span className="version-author">{rev.authorBadge}</span>
+                      <span className="version-time">{formatRelativeAge(rev.createdAt)}</span>
+                    </button>
+                  </RadixDropdown.Item>
+                  {!isHead && (
+                    <RadixDropdown.Item asChild onSelect={() => onRestoreVersion(rev.version)}>
                       <button
                         type="button"
-                        className="version-select-btn"
-                        onClick={() => {
-                          onSelectVersion(isHead ? null : rev.version);
-                          setHistoryOpen(false);
-                        }}
+                        className="version-restore-btn"
+                        title={`Restore v${rev.version}`}
                       >
-                        <span className="version-num">v{rev.version}</span>
-                        <span className="version-author">{rev.authorLabel}</span>
-                        {isHead && <span className="version-head-tag">Current</span>}
+                        <RotateCcw size={13} />
                       </button>
-
-                      {!isHead && (
-                        <button
-                          type="button"
-                          className="version-restore-btn"
-                          title={`Restore v${rev.version}`}
-                          aria-label={`Restore v${rev.version}`}
-                          onClick={() => {
-                            onRestoreVersion(rev.version);
-                            setHistoryOpen(false);
-                          }}
-                        >
-                          <RotateCcw size={14} />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    </RadixDropdown.Item>
+                  )}
+                </div>
+              );
+            })}
+          </ActionMenu>
         )}
 
         <button
           type="button"
-          className="icon-btn tabbar-view-toggle"
-          disabled={!activeFile}
+          className={`icon-btn tabbar-view-toggle ${
+            stageMode === 'code' ? 'active' : ''
+          } ${hasError ? 'has-error' : ''}`}
           onClick={onToggleStageMode}
-          aria-label={
-            stageMode === 'preview' ? 'Switch to Code view' : 'Switch to Preview'
-          }
+          disabled={!activeFile}
           title={
             stageMode === 'preview'
-              ? 'Code view (Ctrl+E)'
-              : 'Preview (Ctrl+E)'
+              ? 'Switch to Code view (Ctrl+E)'
+              : 'Switch to Preview (Ctrl+E)'
           }
+          aria-label={stageMode === 'preview' ? 'Switch to Code view' : 'Switch to Preview'}
         >
           {stageMode === 'preview' ? <Code2 size={17} /> : <Eye size={17} />}
-          {stageMode === 'preview' && hasError && (
-            <span className="tabbar-error-dot" />
-          )}
+          {hasError && <span className="error-indicator-dot" />}
         </button>
 
-        {stageMode === 'preview' && (
+        {stageMode === 'preview' && activeFile && (
           <button
             type="button"
             className="icon-btn tabbar-fit-btn"
-            disabled={!activeFile}
             onClick={onFitCanvas}
-            aria-label="Fit to screen"
             title="Fit to screen"
+            aria-label="Fit to screen"
           >
             <Maximize2 size={16} />
           </button>
@@ -242,4 +219,14 @@ export function TabBar({
       </div>
     </div>
   );
+}
+
+function formatRelativeAge(ts: number): string {
+  const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (sec < 45) return 'now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  return `${Math.floor(hr / 24)}d`;
 }

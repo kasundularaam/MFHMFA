@@ -86,10 +86,7 @@ export function inferSuggestion(
     .map((l) => l.trim())
     .find((l) => l.length > 0 && !l.startsWith('%%') && !l.startsWith('---'));
 
-  if (
-    firstMeaningfulLine &&
-    !KNOWN_HEADERS.some((h) => firstMeaningfulLine.startsWith(h))
-  ) {
+  if (firstMeaningfulLine && !KNOWN_HEADERS.some((h) => firstMeaningfulLine.startsWith(h))) {
     return `Unknown or missing diagram header "${firstMeaningfulLine.split(/\s+/)[0]}". Start with a valid Mermaid header like \`flowchart TD\`, \`sequenceDiagram\`, \`classDiagram\`, \`stateDiagram-v2\`, \`erDiagram\`, \`mindmap\`, \`gantt\`, or \`architecture-beta\`.`;
   }
 
@@ -99,7 +96,7 @@ export function inferSuggestion(
     return `Special characters like (), {}, or [] inside a node label on line ${line} break parsing. Wrap the label text in double quotes, e.g. \`NodeId["Label (detail)"]\`.`;
   }
 
-  if (targetLine && /\w+\{[^"\}]*[()[\]][^"\}]*\}/.test(targetLine)) {
+  if (targetLine && /\w+\{[^"}\]]*[()[\]][^"}]*\}/.test(targetLine)) {
     return `Special characters inside a diamond decision node \`{...}\` on line ${line} must be wrapped in double quotes, e.g. \`Check{"Is x > f(y)?"}\`.`;
   }
 
@@ -138,7 +135,9 @@ export function inferSuggestion(
 export function parseMermaidError(code: string, rawErr: unknown): ParseErrorDetail {
   const errObj: RawMermaidErrorShape =
     rawErr && typeof rawErr === 'object' ? (rawErr as RawMermaidErrorShape) : {};
-  const rawMessage = String(errObj.message || errObj.str || rawErr || 'Unknown Mermaid parse error');
+  const rawMessage = String(
+    errObj.message || errObj.str || rawErr || 'Unknown Mermaid parse error'
+  );
 
   let line: number | null = null;
   let column: number | null = null;
@@ -209,13 +208,16 @@ export function analyzeStaticWarnings(code: string): LintWarning[] {
       warnings.push({
         line: lineNum,
         code: 'LONG_NODE_LABEL',
-        message: 'Node label exceeds 75 characters on a single line, which can stretch diagram width.',
+        message:
+          'Node label exceeds 75 characters on a single line, which can stretch diagram width.',
         suggestion: 'Insert `<br/>` or shorten label text for cleaner box proportions.',
       });
     }
 
     if (!line.startsWith('subgraph ')) {
-      const quotedBoxes = line.matchAll(/[A-Za-z0-9_-]+\s*(?:\[\["|\(\["|\[\("|(?:\{\{")|\["|\(")([^"]+)"/g);
+      const quotedBoxes = line.matchAll(
+        /[A-Za-z0-9_-]+\s*(?:\[\["|\(\["|\[\("|(?:\{\{")|\["|\(")([^"]+)"/g
+      );
       for (const m of quotedBoxes) {
         const plain = (m[1] ?? '')
           .replace(/<br\s*\/?>/gi, ' ')
@@ -239,7 +241,8 @@ export function analyzeStaticWarnings(code: string): LintWarning[] {
       warnings.push({
         line: lineNum,
         code: 'UNSAFE_HTML_TAG',
-        message: 'Disallowed HTML tag detected in diagram source; strict/antiscript security may strip it.',
+        message:
+          'Disallowed HTML tag detected in diagram source; strict/antiscript security may strip it.',
       });
     }
   });
@@ -249,7 +252,8 @@ export function analyzeStaticWarnings(code: string): LintWarning[] {
       line: null,
       code: 'LARGE_DIAGRAM',
       message: `Diagram has ${lines.length} lines. Very dense diagrams can become difficult to read at standard zoom.`,
-      suggestion: 'Consider grouping related nodes with `subgraph` or splitting into high-level overview + detailed sub-charts.',
+      suggestion:
+        'Consider grouping related nodes with `subgraph` or splitting into high-level overview + detailed sub-charts.',
     });
   }
 
@@ -284,7 +288,9 @@ export function computeLayoutDiagnostics(
   }
 
   if (metrics && metrics.nodeCount === 0 && metrics.textLabelCount === 0) {
-    notes.push('Rendered SVG contains no visible nodes or text labels — verify diagram statements.');
+    notes.push(
+      'Rendered SVG contains no visible nodes or text labels — verify diagram statements.'
+    );
   }
 
   const bgLower = background.trim().toLowerCase();

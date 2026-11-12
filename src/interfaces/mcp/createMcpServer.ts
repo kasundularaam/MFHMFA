@@ -7,29 +7,13 @@ import { z } from 'zod';
 import type { StudioService } from '../../application/studioService.js';
 import { APP_NAME, APP_VERSION } from '../../config/env.js';
 import { extractProjectFromRoots } from '../../shared/agentIdentity.js';
+import { withTimeout } from '../../shared/strings.js';
 import type { CallerSource } from '../../shared/types.js';
 import { AGENT_TOOLS, type ToolCallContext } from '../tools/toolRegistry.js';
 
 export interface McpServerLifecycleHooks {
   onClientInitialized?: (client: { name: string | null; version: string | null }) => void;
   onRootsResolved?: (project: string) => void;
-}
-
-function withRaceTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout')), ms);
-    timer.unref?.();
-    promise.then(
-      (val) => {
-        clearTimeout(timer);
-        resolve(val);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      }
-    );
-  });
 }
 
 export function createMermaidMcpServer(
@@ -47,7 +31,7 @@ export function createMermaidMcpServer(
     },
     {
       instructions: [
-        'MFHMFA (Mermaid For Humans, Mermaid For Agents) is a zero-server-storage Codebase Comprehension Studio & Virtual Diagram Filesystem (VFS) stored 100% in the user\'s browser localStorage plus a headless 2x Retina PNG validation/rendering engine.',
+        "MFHMFA (Mermaid For Humans, Mermaid For Agents) is a zero-server-storage Codebase Comprehension Studio & Virtual Diagram Filesystem (VFS) stored 100% in the user's browser IndexedDB plus a headless 2x Retina PNG validation/rendering engine.",
         'Follow these Comprehension & VFS rules:',
         '1. Call `mermaid_ls` to inspect existing folders and `.mmd` graphs in this project (and `mermaid_read` before updating an existing graph).',
         '2. DESIGN FOR HUMAN WORKING MEMORY (4–7 Boxes per View): Keep each `.mmd` graph to ~4–7 core boxes with concise 2–5 word plain-English labels (never cram raw code identifiers, unexplained buzzwords, or forced metaphors inside boxes). For deeper subsystems, render clean child `.mmd` files and link them via `guide.nodes[nodeId].childPath` (setting `guide.parentPath` on child graphs).',
@@ -71,7 +55,7 @@ export function createMermaidMcpServer(
     if (!inflightRootsProbe) {
       inflightRootsProbe = (async () => {
         try {
-          const result = await withRaceTimeout(server.server.listRoots(), 1200);
+          const result = await withTimeout(server.server.listRoots(), 1200, 'MCP roots/list');
           const project = extractProjectFromRoots(result?.roots);
           if (project) {
             resolvedRootsProject = project;
@@ -121,13 +105,10 @@ export function createMermaidMcpServer(
       t1.unref?.();
 
       if (caps.roots.listChanged) {
-        server.server.setNotificationHandler(
-          RootsListChangedNotificationSchema,
-          async () => {
-            resolvedRootsProject = null;
-            await probeClientRoots();
-          }
-        );
+        server.server.setNotificationHandler(RootsListChangedNotificationSchema, async () => {
+          resolvedRootsProject = null;
+          await probeClientRoots();
+        });
       }
     }
   };
@@ -143,7 +124,7 @@ export function createMermaidMcpServer(
       },
       async (args: Record<string, unknown>): Promise<CallToolResult> => {
         try {
-          const out = await tool.execute(args, service, enrichedCtx);
+          const out = await tool.parseAndExecute(args, service, enrichedCtx);
 
           const content: CallToolResult['content'] = [
             {
@@ -175,7 +156,6 @@ export function createMermaidMcpServer(
     );
   }
 
-  // Stateless Resources
   server.registerResource(
     'syntax-pitfalls-guide',
     'mermaid://guides/pitfalls',
@@ -249,7 +229,6 @@ export function createMermaidMcpServer(
     }
   );
 
-  // Guided Prompt
   server.registerPrompt(
     'design-and-verify-diagram',
     {

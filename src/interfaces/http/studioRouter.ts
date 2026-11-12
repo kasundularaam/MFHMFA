@@ -5,20 +5,16 @@ import {
   APP_NAME,
   APP_VERSION,
   GITHUB_REPO_URL,
-  LOCAL_WORKSPACE_CHANNEL,
-  isLocalRequestHost,
-  resolveRequestBaseUrl,
   resolveVisibleProjectRoot,
 } from '../../config/env.js';
-import { sanitizeWorkspaceToken } from '../../infrastructure/ephemeral/workspaceRelay.js';
-import { normalizeProjectName } from '../../shared/agentIdentity.js';
+import { ToolCallHttpBodySchema } from '../../shared/protocolSchemas.js';
 import { dispatchNamedTool, getOpenAiToolSchemas } from '../tools/toolRegistry.js';
-
-function firstString(val: unknown): string | null {
-  if (typeof val === 'string') return val;
-  if (Array.isArray(val) && typeof val[0] === 'string') return val[0];
-  return null;
-}
+import {
+  firstString,
+  isLocalHttpCaller,
+  resolveExplicitProject,
+  resolveRequestWorkspaceToken,
+} from './requestContext.js';
 
 export function createStudioRouter(
   service: StudioService,
@@ -71,26 +67,24 @@ export function createStudioRouter(
 
   router.post('/tools/call', async (req: Request, res: Response) => {
     try {
-      const name = String(req.body?.name ?? '');
-      const args = req.body?.arguments ?? {};
-      const reqBaseUrl = resolveRequestBaseUrl(req.headers, req.protocol, service.baseUrl);
-      const explicitWs =
-        sanitizeWorkspaceToken(firstString(req.query.workspace)) ??
-        sanitizeWorkspaceToken(firstString(req.query.ws)) ??
-        sanitizeWorkspaceToken(firstString(req.headers['x-mfhmfa-workspace']));
-      const workspaceToken =
-        explicitWs ??
-        (isLocalRequestHost(req.headers) ? LOCAL_WORKSPACE_CHANNEL : null);
-      const explicitProject =
-        normalizeProjectName(firstString(req.query.project)) ??
-        normalizeProjectName(firstString(req.headers['x-mfhmfa-project']));
+      const parsedBody = ToolCallHttpBodySchema.safeParse(req.body ?? {});
+      if (!parsedBody.success) {
+        res.status(400).json({
+          ok: false,
+          error: parsedBody.error.issues[0]?.message || 'Invalid tool call body.',
+        });
+        return;
+      }
+
+      const { name, arguments: args } = parsedBody.data;
+      const workspaceToken = resolveRequestWorkspaceToken(req);
+      const explicitProject = resolveExplicitProject(req);
       const explicitAgent =
-        firstString(req.headers['x-mfhmfa-agent']) ??
-        firstString(req.headers['user-agent']);
+        firstString(req.headers['x-mfhmfa-agent']) ?? firstString(req.headers['user-agent']);
 
       const out = await dispatchNamedTool(name, args, service, {
         source: 'rest-tool',
-        getBaseUrl: () => reqBaseUrl,
+        allowLocalDiskWrite: isLocalHttpCaller(req),
         getWorkspaceToken: () => workspaceToken,
         getCallerMeta: () => ({
           sessionId: null,
@@ -111,7 +105,11 @@ export function createStudioRouter(
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      const status = message.startsWith('Unknown tool') ? 400 : 500;
+      const status = message.startsWith('Unknown tool')
+        ? 400
+        : message.includes('disabled on remote/hosted endpoints')
+          ? 403
+          : 500;
       res.status(status).json({ ok: false, error: message });
     }
   });

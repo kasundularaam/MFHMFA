@@ -1,87 +1,17 @@
-import { z } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import type {
   StatelessRenderInput,
   StudioService,
   VfsRpcBridgeFn,
 } from '../../application/studioService.js';
-import { summarizeComprehensionGuide } from '../../shared/comprehension.js';
+import {
+  ComprehensionGuideToolSchema,
+  summarizeComprehensionGuide,
+} from '../../shared/comprehension.js';
+import { MermaidLookSchema, MermaidThemeSchema } from '../../shared/protocolSchemas.js';
 import type { CallerSource, DiagramComprehensionGuide } from '../../shared/types.js';
-
-const THEME_ENUM = z.enum(['default', 'neutral', 'dark', 'forest', 'base']);
-const LOOK_ENUM = z.enum(['classic', 'handDrawn']);
-
-const NODE_DETAIL_ZOD = z.object({
-  label: z
-    .string()
-    .optional()
-    .describe('Optional display heading for the node inspector card.'),
-  summary: z
-    .string()
-    .describe(
-      '1–2 plain-English sentences describing what physically happens at this component (avoid raw code identifiers and forced domain metaphors).'
-    ),
-  example: z
-    .string()
-    .optional()
-    .describe(
-      'Concrete input -> output example with real sizes, counts, or timings (e.g. "1 KB Mermaid text -> 180 KB PNG -> deleted immediately").'
-    ),
-  whatIf: z
-    .string()
-    .optional()
-    .describe(
-      'Counterfactual boundary test: what happens when this component closes, fills up, or fails?'
-    ),
-  files: z
-    .array(z.string())
-    .optional()
-    .describe('Relevant repository file paths (e.g. ["src/infrastructure/ephemeral/workspaceRelay.ts"]).'),
-  childPath: z
-    .string()
-    .optional()
-    .describe(
-      'Optional relative `.mmd` path in this project VFS to zoom into when the user drills down into this subsystem.'
-    ),
-});
-
-const WALKTHROUGH_STEP_ZOD = z.object({
-  title: z.string().describe('Short step headline (e.g. "1. AI requests file list").'),
-  caption: z
-    .string()
-    .describe('1–2 plain-English sentences narrating what happens at this exact step.'),
-  focusNodes: z
-    .array(z.string())
-    .describe('Exact Mermaid node IDs (or sequence participant IDs) to spotlight during this step.'),
-});
-
-const COMPREHENSION_GUIDE_ZOD = z
-  .object({
-    gist: z
-      .string()
-      .optional()
-      .describe('1-sentence plain-English core takeaway for the diagram.'),
-    parentPath: z
-      .string()
-      .optional()
-      .describe('Optional parent `.mmd` path when this diagram is a zoomed-in subsystem view.'),
-    steps: z
-      .array(WALKTHROUGH_STEP_ZOD)
-      .optional()
-      .describe(
-        'Ordered Story Mode walkthrough steps (`◀ 1 / N ▶`) tracing one concrete action from start to finish.'
-      ),
-    nodes: z
-      .record(z.string(), NODE_DETAIL_ZOD)
-      .optional()
-      .describe(
-        'Map of Mermaid node ID -> clickable inspector details (summary, concrete example, whatIf counterfactual, source files, optional childPath drill-down).'
-      ),
-  })
-  .optional()
-  .describe(
-    'Interactive human comprehension layer saved alongside the `.mmd` in browser localStorage: Story Stepper (`steps`), Clickable Node Inspector (`nodes`), and Sub-Graph Zoom (`childPath` / `parentPath`). Keep box labels in `code` short (2–5 plain words, 4–7 boxes per view) and put rich details here.'
-  );
 
 export interface ActiveCallerMetadata {
   sessionId: string | null;
@@ -91,7 +21,7 @@ export interface ActiveCallerMetadata {
 
 export interface ToolCallContext {
   source: CallerSource;
-  getBaseUrl?: () => string;
+  allowLocalDiskWrite?: boolean | (() => boolean);
   getWorkspaceToken?: () => string | null;
   getCallerMeta?: () => ActiveCallerMetadata;
   ensureCallerProject?: () => Promise<string | null>;
@@ -107,12 +37,25 @@ export interface ToolExecutionOutput {
   pngBase64?: string | null;
 }
 
-export interface AgentToolDefinition<Shape extends z.ZodRawShape = z.ZodRawShape> {
+export interface RegisteredAgentTool {
+  name: string;
+  title: string;
+  description: string;
+  zodShape: z.ZodRawShape;
+  jsonParameters: Record<string, unknown>;
+  annotations?: ToolAnnotations;
+  parseAndExecute: (
+    rawArgs: unknown,
+    service: StudioService,
+    ctx: ToolCallContext
+  ) => Promise<ToolExecutionOutput>;
+}
+
+interface ToolDefinitionSpec<Shape extends z.ZodRawShape> {
   name: string;
   title: string;
   description: string;
   zodShape: Shape;
-  jsonParameters: Record<string, unknown>;
   annotations?: ToolAnnotations;
   execute: (
     args: z.infer<z.ZodObject<Shape>>,
@@ -122,14 +65,39 @@ export interface AgentToolDefinition<Shape extends z.ZodRawShape = z.ZodRawShape
 }
 
 function defineTool<Shape extends z.ZodRawShape>(
-  def: AgentToolDefinition<Shape>
-): AgentToolDefinition<Shape> {
-  return def;
+  spec: ToolDefinitionSpec<Shape>
+): RegisteredAgentTool {
+  const schema = z.object(spec.zodShape);
+  const rawJsonSchema = zodToJsonSchema(schema, {
+    target: 'openApi3',
+    $refStrategy: 'none',
+  }) as Record<string, unknown>;
+
+  return {
+    name: spec.name,
+    title: spec.title,
+    description: spec.description,
+    zodShape: spec.zodShape,
+    jsonParameters: rawJsonSchema,
+    annotations: spec.annotations,
+    parseAndExecute: async (rawArgs, service, ctx) => {
+      const parsed = schema.parse(rawArgs ?? {});
+      return spec.execute(parsed, service, ctx);
+    },
+  };
 }
 
 function bytesToBase64(bytes: Uint8Array | null | undefined): string | null {
   if (!bytes) return null;
   return Buffer.from(bytes).toString('base64');
+}
+
+function resolveDiskWriteAllowed(ctx: ToolCallContext): boolean {
+  if (ctx.source === 'mcp-stdio') return true;
+  if (typeof ctx.allowLocalDiskWrite === 'function') {
+    return ctx.allowLocalDiskWrite();
+  }
+  return Boolean(ctx.allowLocalDiskWrite);
 }
 
 /**
@@ -162,12 +130,12 @@ async function resolveJailedProject(
   return 'General';
 }
 
-export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
+export const AGENT_TOOLS: readonly RegisteredAgentTool[] = [
   defineTool({
     name: 'mermaid_ls',
     title: 'List Project Diagram Directories & Graphs (ls)',
     description:
-      'List subdirectories and `.mmd` Mermaid graph files inside your current project working directory (stored in the user\'s browser `localStorage`). Shows directory tree, diagram types, version counts, and which coding agent (`pi`, `claude`, `you`) last updated each graph.',
+      "List subdirectories and `.mmd` Mermaid graph files inside your current project working directory (stored in the user's browser IndexedDB). Shows directory tree, diagram types, version counts, and which coding agent (`pi`, `claude`, `you`) last updated each graph.",
     zodShape: {
       path: z
         .string()
@@ -181,16 +149,6 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         .describe(
           'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
         ),
-    },
-    jsonParameters: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'Relative directory path inside your project working directory.',
-        },
-        project: { type: 'string' },
-      },
     },
     annotations: { readOnlyHint: true, idempotentHint: true },
     execute: async (args, service, ctx) => {
@@ -212,7 +170,7 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
     name: 'mermaid_read',
     title: 'Read Diagram Source & Revision History (read)',
     description:
-      'Read the `.mmd` Mermaid source code and 5-version immutable revision history of an existing graph inside your project working directory (including diagrams created by other coding agents or edited by the human).',
+      'Read the `.mmd` Mermaid source code, comprehension `guide`, and 5-version immutable revision history of an existing graph inside your project working directory (including diagrams created by other coding agents or edited by the human).',
     zodShape: {
       path: z
         .string()
@@ -231,15 +189,6 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         .describe(
           'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
         ),
-    },
-    jsonParameters: {
-      type: 'object',
-      properties: {
-        path: { type: 'string' },
-        version: { type: 'number', minimum: 1 },
-        project: { type: 'string' },
-      },
-      required: ['path'],
     },
     annotations: { readOnlyHint: true, idempotentHint: true },
     execute: async (args, service, ctx) => {
@@ -275,7 +224,7 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         .string()
         .optional()
         .describe('Optional human-readable graph title (defaults to file name of `path`).'),
-      guide: COMPREHENSION_GUIDE_ZOD,
+      guide: ComprehensionGuideToolSchema.optional(),
       project: z
         .string()
         .optional()
@@ -286,77 +235,32 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         .string()
         .optional()
         .describe('Optional coding agent name override when calling via stateless HTTP/REST.'),
-      theme: THEME_ENUM.optional().describe('Visual theme (default, neutral, dark, forest, base).'),
-      look: LOOK_ENUM.optional().describe('Render style: classic or handDrawn.'),
+      theme: MermaidThemeSchema.optional().describe(
+        'Visual theme (default, neutral, dark, forest, base).'
+      ),
+      look: MermaidLookSchema.optional().describe('Render style: classic or handDrawn.'),
       background: z.string().optional().describe('CSS color or "transparent".'),
-      scale: z.number().min(1).max(4).optional().describe('Pixel scale factor (1-4, default 2).'),
-      outputPath: z.string().optional().describe('Optional local disk file path (.png or .svg) to write output.'),
+      scale: z
+        .number()
+        .min(1)
+        .max(4)
+        .optional()
+        .describe('Pixel scale factor (1-4, default 2).'),
+      outputPath: z
+        .string()
+        .optional()
+        .describe('Optional local disk file path (.png or .svg) when running locally.'),
       returnImage: z.boolean().optional().describe('Attach rendered PNG image (default true).'),
-      includeSvg: z.boolean().optional().describe('Include raw SVG XML string (default false).'),
-    },
-    jsonParameters: {
-      type: 'object',
-      properties: {
-        code: { type: 'string', description: 'Raw Mermaid diagram source code.' },
-        path: {
-          type: 'string',
-          description: 'Relative `.mmd` file path inside your project working directory (e.g. "auth/oauth-flow.mmd").',
-        },
-        title: { type: 'string' },
-        guide: {
-          type: 'object',
-          description:
-            'Optional interactive comprehension layer (Story Mode `steps`, clickable `nodes` inspector cards with concrete `example` & `whatIf`, and `childPath`/`parentPath` sub-graph drill-down).',
-          properties: {
-            gist: { type: 'string' },
-            parentPath: { type: 'string' },
-            steps: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  title: { type: 'string' },
-                  caption: { type: 'string' },
-                  focusNodes: { type: 'array', items: { type: 'string' } },
-                },
-                required: ['title', 'caption', 'focusNodes'],
-              },
-            },
-            nodes: {
-              type: 'object',
-              additionalProperties: {
-                type: 'object',
-                properties: {
-                  label: { type: 'string' },
-                  summary: { type: 'string' },
-                  example: { type: 'string' },
-                  whatIf: { type: 'string' },
-                  files: { type: 'array', items: { type: 'string' } },
-                  childPath: { type: 'string' },
-                },
-                required: ['summary'],
-              },
-            },
-          },
-        },
-        project: { type: 'string' },
-        agent: { type: 'string' },
-        theme: { type: 'string', enum: ['default', 'neutral', 'dark', 'forest', 'base'] },
-        look: { type: 'string', enum: ['classic', 'handDrawn'] },
-        background: { type: 'string' },
-        scale: { type: 'number', minimum: 1, maximum: 4 },
-        outputPath: { type: 'string' },
-        returnImage: { type: 'boolean', default: true },
-        includeSvg: { type: 'boolean', default: false },
-      },
-      required: ['code'],
+      includeSvg: z
+        .boolean()
+        .optional()
+        .describe('Include raw SVG XML string (default false).'),
     },
     annotations: { idempotentHint: true },
     execute: async (args, service, ctx) => {
       const effectiveProject = await resolveJailedProject(args.project, ctx);
       const callerMeta = ctx.getCallerMeta?.();
       const effectiveAgent = args.agent?.trim() || callerMeta?.agentName || null;
-
       const workspaceToken = ctx.getWorkspaceToken?.() ?? null;
 
       const res = await service.render(args.code, {
@@ -371,10 +275,9 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         background: args.background,
         scale: args.scale,
         outputPath: args.outputPath,
+        allowLocalDiskWrite: resolveDiskWriteAllowed(ctx),
         source: ctx.source,
-        requestBaseUrl: ctx.getBaseUrl,
         workspaceToken,
-        includeStudioUrl: false,
         relayBridge: ctx.relayBridge,
       });
 
@@ -390,9 +293,9 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
       const presentationRule = !res.valid
         ? undefined
         : syncedToBrowser
-          ? 'Synced live to the user\'s MFHMFA Studio browser tab. Once you have visually verified the PNG and layoutDiagnostics, reply concisely that their diagram is ready on MFHMFA — do NOT output raw Mermaid source code or any URLs unless the user explicitly asks for raw code.'
+          ? "Synced live to the user's MFHMFA Studio browser tab. Once you have visually verified the PNG and layoutDiagnostics, reply concisely that their diagram is ready on MFHMFA — do NOT output raw Mermaid source code or any URLs unless the user explicitly asks for raw code."
           : workspaceToken
-            ? 'No MFHMFA Studio browser tab is currently open for this workspace (MFHMFA stores 0 diagrams on the server — 100% browser localStorage). Ask the user to open MFHMFA Studio in their browser and tell you when ready so you can push the finalized diagram live. Do NOT output raw Mermaid source code or URLs unless explicitly asked.'
+            ? 'No MFHMFA Studio browser tab is currently open for this workspace (MFHMFA stores 0 diagrams on the server — 100% browser IndexedDB). Ask the user to open MFHMFA Studio in their browser and tell you when ready so you can push the finalized diagram live. Do NOT output raw Mermaid source code or URLs unless explicitly asked.'
             : 'No ?workspace=ws_... token is configured on this MCP connection, so MFHMFA cannot route diagrams to the user\'s browser tab. Ask the user to copy their paired MCP URL from MFHMFA Studio ("Copy MCP URL" in the sidebar or Docs) and reconnect. Do NOT output raw Mermaid source code or URLs unless explicitly asked.';
 
       return {
@@ -430,29 +333,22 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
     name: 'mermaid_mv',
     title: 'Move or Rename Diagram / Subfolder (mv)',
     description:
-      'Move or rename an existing `.mmd` graph or subfolder within your project working directory while preserving its immutable 5-version history.',
+      'Move or rename an existing `.mmd` graph or subfolder within your project working directory while preserving its immutable 5-version history and updating linked `childPath` / `parentPath` references.',
     zodShape: {
       from: z
         .string()
         .describe('Existing relative file or folder path (e.g. `"draft.mmd"` or `"old-dir"`).'),
       to: z
         .string()
-        .describe('Destination relative file or folder path (e.g. `"auth/login-flow.mmd"` or `"architecture/auth"`).'),
+        .describe(
+          'Destination relative file or folder path (e.g. `"auth/login-flow.mmd"` or `"architecture/auth"`).'
+        ),
       project: z
         .string()
         .optional()
         .describe(
           'Working project folder name (used only if your MCP client did not advertise workspace `roots`).'
         ),
-    },
-    jsonParameters: {
-      type: 'object',
-      properties: {
-        from: { type: 'string' },
-        to: { type: 'string' },
-        project: { type: 'string' },
-      },
-      required: ['from', 'to'],
     },
     annotations: { idempotentHint: true },
     execute: async (args, service, ctx) => {
@@ -479,13 +375,6 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
     zodShape: {
       code: z.string().describe('Raw Mermaid diagram source code (without ```mermaid fences).'),
     },
-    jsonParameters: {
-      type: 'object',
-      properties: {
-        code: { type: 'string', description: 'Raw Mermaid diagram source code.' },
-      },
-      required: ['code'],
-    },
     annotations: { readOnlyHint: true, idempotentHint: true },
     execute: async ({ code }, service, ctx) => {
       const res = await service.validate(code, ctx.source);
@@ -495,36 +384,26 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
 
   defineTool({
     name: 'mermaid_export',
-    title: 'Export Mermaid Diagram to Disk File',
+    title: 'Export Mermaid Diagram to Local Disk File',
     description:
-      'Statelessly validate, render, and export raw Mermaid `code` directly to a local filesystem path (`.png`, `.svg`, `.mmd`, or `.md`).',
+      'Statelessly validate, render, and export raw Mermaid `code` directly to a local filesystem path (`.png`, `.svg`, `.mmd`, or `.md`) when running locally.',
     zodShape: {
       code: z.string().describe('Raw Mermaid diagram source code.'),
       outputPath: z.string().describe('Destination file path (.png, .svg, .mmd, or .md).'),
       title: z.string().optional().describe('Optional heading title when exporting `.md`.'),
       format: z.enum(['png', 'svg', 'mmd', 'md']).optional(),
-      theme: THEME_ENUM.optional(),
-      look: LOOK_ENUM.optional(),
+      theme: MermaidThemeSchema.optional(),
+      look: MermaidLookSchema.optional(),
       background: z.string().optional(),
       scale: z.number().min(1).max(4).optional(),
     },
-    jsonParameters: {
-      type: 'object',
-      properties: {
-        code: { type: 'string' },
-        outputPath: { type: 'string' },
-        title: { type: 'string' },
-        format: { type: 'string', enum: ['png', 'svg', 'mmd', 'md'] },
-        theme: { type: 'string', enum: ['default', 'neutral', 'dark', 'forest', 'base'] },
-        look: { type: 'string', enum: ['classic', 'handDrawn'] },
-        background: { type: 'string' },
-        scale: { type: 'number', minimum: 1, maximum: 4 },
-      },
-      required: ['code', 'outputPath'],
-    },
     annotations: { idempotentHint: true },
     execute: async (args, service, ctx) => {
-      const out = await service.exportDiagram({ ...args, source: ctx.source });
+      const out = await service.exportDiagram({
+        ...args,
+        allowLocalDiskWrite: resolveDiskWriteAllowed(ctx),
+        source: ctx.source,
+      });
       return { ok: true, payload: out };
     },
   }),
@@ -533,13 +412,9 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
     name: 'mermaid_syntax_guide',
     title: 'Get Mermaid Syntax & Escaping Guide',
     description:
-      'Retrieve concise Mermaid syntax examples and escaping rules (pitfalls, flowchart, sequence, er, state, class, mindmap, gantt, all).',
+      'Retrieve concise Mermaid syntax examples, comprehension guidelines, and escaping rules (comprehension, pitfalls, flowchart, sequence, er, state, class, mindmap, gantt, all).',
     zodShape: {
       topic: z.string().optional().describe('Guide topic.'),
-    },
-    jsonParameters: {
-      type: 'object',
-      properties: { topic: { type: 'string' } },
     },
     annotations: { readOnlyHint: true, idempotentHint: true },
     execute: async ({ topic }, service, ctx) => {
@@ -553,7 +428,6 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
     title: 'List Starter Mermaid Templates',
     description: 'Return curated starter Mermaid templates across 11 diagram categories.',
     zodShape: {},
-    jsonParameters: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, idempotentHint: true },
     execute: async (_args, service) => ({
       ok: true,
@@ -581,10 +455,11 @@ export async function dispatchNamedTool(
 ): Promise<ToolExecutionOutput> {
   const tool = AGENT_TOOLS.find((t) => t.name === name);
   if (!tool) {
-    throw new Error(`Unknown tool "${name}". Fetch GET /api/tools/schemas for available tools.`);
+    throw new Error(
+      `Unknown tool "${name}". Fetch GET /api/tools/schemas for available tools.`
+    );
   }
   const ctx: ToolCallContext =
     typeof sourceOrCtx === 'string' ? { source: sourceOrCtx } : sourceOrCtx;
-  const parsedArgs = z.object(tool.zodShape).parse(rawArgs ?? {});
-  return tool.execute(parsedArgs, service, ctx);
+  return tool.parseAndExecute(rawArgs, service, ctx);
 }

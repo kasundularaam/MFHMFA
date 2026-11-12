@@ -2,12 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StudioService } from './application/studioService.js';
-import {
-  APP_TITLE,
-  DEFAULT_HOST,
-  DEFAULT_PORT,
-  resolveConfiguredPort,
-} from './config/env.js';
+import { APP_TITLE, DEFAULT_HOST, DEFAULT_PORT, resolveConfiguredPort } from './config/env.js';
 import type { RenderEnginePort } from './domain/ports.js';
 import { getSharedRenderEngine } from './infrastructure/renderer/chromiumEngine.js';
 import { createStudioExpressApp } from './interfaces/http/createApp.js';
@@ -60,13 +55,11 @@ export async function startStudioServer(opts?: {
         await engine.dispose();
       }
     },
-
   };
 }
 
 const isMain =
-  Boolean(process.argv[1]) &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  Boolean(process.argv[1]) && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isMain) {
   startStudioServer()

@@ -1,7 +1,4 @@
-import type {
-  DiagramComprehensionGuide,
-  DiagramWalkthroughStep,
-} from '../../src/shared/types';
+import type { DiagramComprehensionGuide, DiagramWalkthroughStep } from '../../src/shared/types';
 
 const GENERATED_PREFIX_RE = /^(?:mfhmfa_svg_\d+|mmd_render_\d+_\d+)-/;
 
@@ -52,10 +49,7 @@ export function extractRawMermaidNodeId(el: Element): string | null {
   return null;
 }
 
-function isEdgeBetweenFocusedNodes(
-  edgeKey: string,
-  focusedIds: Set<string>
-): boolean {
+function isEdgeBetweenFocusedNodes(edgeKey: string, focusedIds: Set<string>): boolean {
   const stripped = edgeKey.replace(GENERATED_PREFIX_RE, '');
   const match = stripped.match(/^L_(.+)_\d+$/);
   if (!match?.[1]) return false;
@@ -132,10 +126,7 @@ export function applySvgComprehensionState(
 
   svg.querySelectorAll(candidateSelectors).forEach((el) => {
     // Skip inner rect.actor when already wrapped in <g data-type="participant">
-    if (
-      el.tagName.toLowerCase() === 'rect' &&
-      el.closest('g[data-type="participant"]')
-    ) {
+    if (el.tagName.toLowerCase() === 'rect' && el.closest('g[data-type="participant"]')) {
       return;
     }
 
@@ -149,7 +140,7 @@ export function applySvgComprehensionState(
 
     const guideKey = guideNodes[rawId]
       ? rawId
-      : lowerGuideKeyMap.get(rawId.toLowerCase()) ?? rawId;
+      : (lowerGuideKeyMap.get(rawId.toLowerCase()) ?? rawId);
 
     el.setAttribute('data-mfhmfa-node', guideKey);
 
@@ -197,8 +188,7 @@ export function applySvgComprehensionState(
       svg.classList.add('mfhmfa-story-active');
 
       for (const { el, rawId, guideKey } of elementEntries) {
-        const isFocused =
-          focusedRawIds.has(rawId) || focusedGuideKeys.has(guideKey);
+        const isFocused = focusedRawIds.has(rawId) || focusedGuideKeys.has(guideKey);
 
         if (el.classList.contains('cluster')) {
           el.classList.add(isFocused ? 'mfhmfa-focus' : 'mfhmfa-cluster-soft');
@@ -213,7 +203,10 @@ export function applySvgComprehensionState(
         const isFocused =
           focusedRawIds.has(aid) ||
           focusedGuideKeys.has(aid) ||
-          Boolean(lowerSvgIdMap.get(aid.toLowerCase()) && focusedRawIds.has(lowerSvgIdMap.get(aid.toLowerCase())!));
+          Boolean(
+            lowerSvgIdMap.get(aid.toLowerCase()) &&
+              focusedRawIds.has(lowerSvgIdMap.get(aid.toLowerCase())!)
+          );
         line.classList.add(isFocused ? 'mfhmfa-focus' : 'mfhmfa-dim');
       });
 
@@ -221,16 +214,14 @@ export function applySvgComprehensionState(
       svg
         .querySelectorAll('path[data-edge="true"], g.edgePaths path, path.flowchart-link')
         .forEach((edgeEl) => {
-          const edgeKey =
-            edgeEl.getAttribute('data-id') || edgeEl.getAttribute('id') || '';
+          const edgeKey = edgeEl.getAttribute('data-id') || edgeEl.getAttribute('id') || '';
           const active = isEdgeBetweenFocusedNodes(edgeKey, focusedRawIds);
           edgeEl.classList.add(active ? 'mfhmfa-focus' : 'mfhmfa-dim');
         });
 
       svg.querySelectorAll('g.edgeLabel').forEach((labelGroup) => {
         const inner = labelGroup.querySelector('[data-id]');
-        const edgeKey =
-          inner?.getAttribute('data-id') || labelGroup.getAttribute('id') || '';
+        const edgeKey = inner?.getAttribute('data-id') || labelGroup.getAttribute('id') || '';
         const active = isEdgeBetweenFocusedNodes(edgeKey, focusedRawIds);
         labelGroup.classList.add(active ? 'mfhmfa-focus' : 'mfhmfa-dim');
       });
@@ -243,7 +234,7 @@ export function applySvgComprehensionState(
         msgLine.classList.add(active ? 'mfhmfa-focus' : 'mfhmfa-dim');
 
         const prev = msgLine.previousElementSibling;
-        if (prev && prev.classList.contains('messageText')) {
+        if (prev?.classList.contains('messageText')) {
           prev.classList.add(active ? 'mfhmfa-focus' : 'mfhmfa-dim');
         }
       });

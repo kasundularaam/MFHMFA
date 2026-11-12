@@ -1,13 +1,18 @@
+export { slugify } from './strings.js';
+
 export function extractSvgDimensions(
   svgMarkup: string
 ): { width: number; height: number } | null {
   const vbMatch = svgMarkup.match(/viewBox="([^"]+)"/i);
-  if (!vbMatch) return null;
-  const nums = vbMatch[1].trim().split(/[\s,]+/).map(Number);
-  if (nums.length !== 4 || !(nums[2] > 0) || !(nums[3] > 0)) return null;
+  if (!vbMatch?.[1]) return null;
+  const nums = vbMatch[1]
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (nums.length !== 4 || !(nums[2]! > 0) || !(nums[3]! > 0)) return null;
   return {
-    width: Math.ceil(nums[2]),
-    height: Math.ceil(nums[3]),
+    width: Math.ceil(nums[2]!),
+    height: Math.ceil(nums[3]!),
   };
 }
 
@@ -27,13 +32,4 @@ export function normalizeSvgIntrinsicDimensions(svgMarkup: string): string {
     }
     return `<svg${cleaned}>`;
   });
-}
-
-export function slugify(input: string, fallback = 'diagram'): string {
-  const cleaned = input
-    .toLowerCase()
-    .replace(/[^a-z0-9-_]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
-  return cleaned || fallback;
 }

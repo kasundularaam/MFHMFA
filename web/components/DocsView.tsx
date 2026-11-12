@@ -102,13 +102,13 @@ docker compose up -d --build
           <h1 id="doc-why">MFHMFA — Overview</h1>
           <p>
             <strong>MFHMFA</strong> (<em>Mermaid For Humans, Mermaid For Agents</em>) is an
-            interactive diagram workspace and Model Context Protocol (MCP) server for understanding
-            codebases with AI coding agents.
+            interactive diagram workspace and Model Context Protocol (MCP) server for
+            understanding codebases with AI coding agents.
           </p>
           <p>
-            AI coding agents can generate thousands of lines of code in minutes, leaving builders
-            owning systems that are hard to picture mentally. Standard static diagrams usually fall
-            into one of two traps:
+            AI coding agents can generate thousands of lines of code in minutes, leaving
+            builders owning systems that are hard to picture mentally. Standard static diagrams
+            usually fall into one of two traps:
           </p>
           <ul>
             <li>
@@ -122,30 +122,32 @@ docker compose up -d --build
           </ul>
           <p>
             MFHMFA keeps visual diagrams concise while attaching interactive walkthrough steps,
-            clickable component details, and linked sub-diagrams saved locally in your browser.
+            clickable component details, and linked sub-diagrams saved locally in your
+            browser&apos;s IndexedDB.
           </p>
 
           <h2 id="doc-how">2. Interactive Features</h2>
           <ul>
             <li>
-              <strong>Concise Views &amp; Sub-Diagram Zoom:</strong> Agents keep each view focused
-              (4–7 boxes with short labels) and link deeper subsystems via <code>childPath</code>.
-              Double-click any dashed box (or click <em>Zoom into&hellip;</em>) to open its child
-              diagram, and use the top-left breadcrumb to navigate back.
+              <strong>Concise Views &amp; Sub-Diagram Zoom:</strong> Agents keep each view
+              focused (4–7 boxes with short labels) and link deeper subsystems via{' '}
+              <code>childPath</code>. Double-click any dashed box (or click{' '}
+              <em>Zoom into&hellip;</em>) to open its child diagram, and use the top-left
+              breadcrumb to navigate back.
             </li>
             <li>
-              <strong>Step-by-Step Walkthroughs:</strong> Click <strong>Walk through</strong> (or
-              press <code>&larr;</code> / <code>&rarr;</code>) to highlight one step at a time while
-              unrelated branches dim out.
+              <strong>Step-by-Step Walkthroughs:</strong> Click <strong>Walkthrough</strong> (or
+              press <code>&larr;</code> / <code>&rarr;</code>) to highlight one step at a time
+              while unrelated branches dim out.
             </li>
             <li>
-              <strong>Component Details:</strong> Click any highlighted box to view how it works, a
-              concrete example, failure edge cases, and relevant source files.
+              <strong>Component Details:</strong> Click any highlighted box to view how it
+              works, a concrete example, failure edge cases, and relevant source files.
             </li>
             <li>
-              <strong>Visual Verification:</strong> When an agent calls <code>mermaid_render</code>,
-              it receives a 2x PNG preview and layout diagnostics so it can fix overlaps before
-              streaming the final diagram to your open tab.
+              <strong>Visual Verification:</strong> When an agent calls{' '}
+              <code>mermaid_render</code>, it receives a 2x PNG preview and layout diagnostics
+              so it can fix overlaps before streaming the final diagram to your open tab.
             </li>
           </ul>
 
@@ -181,13 +183,13 @@ docker compose up -d --build
 
           <h2 id="doc-vfs">4. Projects &amp; File History</h2>
           <p>
-            Projects, folders, <code>.mmd</code> diagrams, and walkthrough guides are saved locally
-            in your browser:
+            Projects, folders, <code>.mmd</code> diagrams, and walkthrough guides are saved
+            locally in your browser&apos;s IndexedDB (zero diagrams stored on the server):
           </p>
           <ul>
             <li>
-              <strong>Per-Project Isolation:</strong> Each MCP session is scoped to its own project
-              folder (detected from MCP workspace roots, local directory, or{' '}
+              <strong>Per-Project Isolation:</strong> Each MCP session is scoped to its own
+              project folder (detected from MCP workspace roots, local directory, or{' '}
               <code>?project=...</code>).
             </li>
             <li>
@@ -196,14 +198,10 @@ docker compose up -d --build
               <code>mermaid_read</code>.
             </li>
             <li>
-              <strong>File History:</strong> Rapid layout retries by the same agent merge cleanly,
-              and up to 5 recent versions per file are available from the <code>vN</code> history
-              menu in the tab bar. Only you can delete files, folders, or projects from the{' '}
-              <code>&bull;&bull;&bull;</code> menu in the Explorer.
-            </li>
-            <li>
-              <strong>Share Links:</strong> Copy a compressed link anytime from the top bar to share
-              your diagrams and walkthroughs directly via URL.
+              <strong>File History:</strong> Rapid layout retries by the same agent merge
+              cleanly, and up to 5 recent versions per file are available from the{' '}
+              <code>vN</code> history menu in the tab bar. Only you can delete files, folders,
+              or projects from the <code>&bull;&bull;&bull;</code> menu in the Explorer.
             </li>
           </ul>
 
@@ -224,7 +222,9 @@ docker compose up -d --build
                 <td>
                   <code>path?</code>, <code>project?</code>
                 </td>
-                <td>Lists folders and <code>.mmd</code> files in the current project.</td>
+                <td>
+                  Lists folders and <code>.mmd</code> files in the current project.
+                </td>
               </tr>
               <tr>
                 <td>
@@ -248,8 +248,8 @@ docker compose up -d --build
                   <code>scale?</code>, <code>outputPath?</code>
                 </td>
                 <td>
-                  Validates syntax, syncs the diagram and optional <code>guide</code> to your open
-                  tab, and returns a 2x PNG preview with layout diagnostics.
+                  Validates syntax, syncs the diagram and optional <code>guide</code> to your
+                  open tab, and returns a 2x PNG preview with layout diagnostics.
                 </td>
               </tr>
               <tr>
@@ -272,7 +272,8 @@ docker compose up -d --build
                   <code>code</code>
                 </td>
                 <td>
-                  Checks syntax and lint rules, returning line/column snippets and fix suggestions.
+                  Checks syntax and lint rules, returning line/column snippets and fix
+                  suggestions.
                 </td>
               </tr>
               <tr>
@@ -283,8 +284,8 @@ docker compose up -d --build
                   <code>code</code>, <code>outputPath</code>, <code>format?</code>
                 </td>
                 <td>
-                  Renders and saves diagram output to disk as <code>.png</code>, <code>.svg</code>,{' '}
-                  <code>.mmd</code>, or <code>.md</code>.
+                  Renders and saves diagram output to local disk (stdio / local dev) as{' '}
+                  <code>.png</code>, <code>.svg</code>, <code>.mmd</code>, or <code>.md</code>.
                 </td>
               </tr>
               <tr>
@@ -404,8 +405,8 @@ docker compose up -d --build
               <code>Ctrl/Cmd + E</code> — Switch between Preview and Code view
             </li>
             <li>
-              <code>&larr;</code> / <code>&rarr;</code> (in Preview) — Step through walkthrough (
-              <code>Esc</code> closes details or exits walkthrough)
+              <code>&larr;</code> / <code>&rarr;</code> (in Preview) — Step through walkthrough
+              (<code>Esc</code> closes details or exits walkthrough)
             </li>
             <li>
               Click / Double-click highlighted box — View details / Open linked child diagram
@@ -415,7 +416,7 @@ docker compose up -d --build
             </li>
             <li>Double-click file in Explorer — Rename file</li>
             <li>Middle-click open tab — Close tab</li>
-            <li>Mouse wheel / drag on canvas — Zoom and pan</li>
+            <li>Mouse wheel / drag on canvas — Cursor-centered zoom and pan</li>
           </ul>
         </article>
       </div>

@@ -35,7 +35,6 @@ export interface ServerStatus {
 
 export interface StatelessRenderResponse {
   renderId: string;
-  studioUrl: string | null;
   syncedToBrowser: boolean;
   title: string;
   project: string;

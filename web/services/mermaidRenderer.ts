@@ -1,8 +1,6 @@
+import DOMPurify from 'dompurify';
 import mermaid from 'mermaid';
-import {
-  extractSvgDimensions,
-  normalizeSvgIntrinsicDimensions,
-} from '../../src/shared/svg';
+import { extractSvgDimensions, normalizeSvgIntrinsicDimensions } from '../../src/shared/svg';
 import { getMermaidComfortConfig, type AppearanceMode } from '../theme/comfortTheme';
 
 export interface ClientRenderSuccess {
@@ -35,6 +33,25 @@ function getScratchContainer(): HTMLDivElement {
     document.body.appendChild(scratchEl);
   }
   return scratchEl;
+}
+
+function sanitizeMermaidSvg(rawSvg: string): string {
+  return DOMPurify.sanitize(rawSvg, {
+    USE_PROFILES: { svg: true, svgFilters: true, html: true },
+    ADD_TAGS: ['foreignObject'],
+    ADD_ATTR: [
+      'xmlns',
+      'xmlns:xlink',
+      'dominant-baseline',
+      'alignment-baseline',
+      'text-anchor',
+      'marker-end',
+      'marker-start',
+      'marker-mid',
+      'transform-origin',
+    ],
+    HTML_INTEGRATION_POINTS: { foreignobject: true },
+  });
 }
 
 export function getCachedClientRender(
@@ -70,7 +87,8 @@ export function renderMermaidClient(
       const out = await mermaid.render(uid, code, container);
       container.innerHTML = '';
 
-      const svg = normalizeSvgIntrinsicDimensions(out.svg);
+      const normalized = normalizeSvgIntrinsicDimensions(out.svg);
+      const svg = sanitizeMermaidSvg(normalized);
       const dimensions = extractSvgDimensions(svg);
       const result: ClientRenderSuccess = {
         ok: true,

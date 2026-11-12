@@ -1,11 +1,4 @@
 import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type RefObject,
-} from 'react';
-import {
   AlertCircle,
   ArrowRight,
   ChevronDown,
@@ -17,17 +10,14 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
-import type {
-  DiagramComprehensionGuide,
-  ParseErrorDetail,
-} from '../../src/shared/types';
-import type { CanvasTransitionKind } from '../hooks/useStudioController';
-import type { GraphBreadcrumbHop } from '../services/workspaceStorage';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import type { DiagramComprehensionGuide, ParseErrorDetail } from '../../src/shared/types';
+import type { GraphBreadcrumbHop } from '../../src/shared/vfs';
+import { graphTitleFromPath } from '../../src/shared/vfsPath';
+import { useCanvasViewport } from '../hooks/useCanvasViewport';
+import { useDragResize } from '../hooks/useDragResize';
+import { useUiStore, type CanvasTransitionKind } from '../store/uiStore';
 import { applySvgComprehensionState } from '../utils/svgComprehension';
-
-function formatCrumbFileName(filePath: string): string {
-  return (filePath.split('/').pop() || filePath).replace(/\.(mmd|mermaid)$/i, '');
-}
 
 interface PreviewCanvasProps {
   viewportRef: RefObject<HTMLDivElement | null>;
@@ -47,11 +37,6 @@ interface PreviewCanvasProps {
   onJumpToAncestor: (fileId: string) => void;
   onDrillToPath: (targetPath: string) => void;
   onCopyFilePath: (filePath: string) => void;
-  zoom: number;
-  pan: { x: number; y: number };
-  fitTrigger: number;
-  onChangeZoom: (updater: (prev: number) => number) => void;
-  onChangePan: (pan: { x: number; y: number }) => void;
   onFlipToCode: () => void;
 }
 
@@ -80,13 +65,14 @@ export function PreviewCanvas({
   onJumpToAncestor,
   onDrillToPath,
   onCopyFilePath,
-  zoom,
-  pan,
-  fitTrigger,
-  onChangeZoom,
-  onChangePan,
   onFlipToCode,
 }: PreviewCanvasProps) {
+  const zoom = useUiStore((s) => s.zoom);
+  const pan = useUiStore((s) => s.pan);
+  const fitTrigger = useUiStore((s) => s.fitTrigger);
+  const setZoom = useUiStore((s) => s.setZoom);
+  const setPan = useUiStore((s) => s.setPan);
+
   const [cameraGlide, setCameraGlide] = useState(false);
   const [outgoingLayer, setOutgoingLayer] = useState<FrozenLayer | null>(null);
   const [nodeLabels, setNodeLabels] = useState<Map<string, string>>(() => new Map());
@@ -97,6 +83,7 @@ export function PreviewCanvas({
   const activeStageRef = useRef<HTMLDivElement | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevFitTriggerRef = useRef(fitTrigger);
+  const dragOriginPanelHeightRef = useRef(panelBodyHeight);
 
   const prevSnapshotRef = useRef<{
     chartKey: string;
@@ -110,25 +97,32 @@ export function PreviewCanvas({
     pan,
   });
 
-  const dragRef = useRef({
-    active: false,
-    moved: false,
-    startX: 0,
-    startY: 0,
-    origX: 0,
-    origY: 0,
+  const { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, wasDraggedRecently } =
+    useCanvasViewport({
+      viewportRef,
+      zoom,
+      pan,
+      onChangeZoom: setZoom,
+      onChangePan: setPan,
+      onUserCameraGesture: () => {
+        if (cameraGlide) setCameraGlide(false);
+      },
+    });
+
+  const startPanelResize = useDragResize((_dx, dy) => {
+    const stageHeight =
+      stageLayoutRef.current?.getBoundingClientRect().height ?? window.innerHeight;
+    const maxBodyHeight = Math.max(240, stageHeight - 44);
+    const next = Math.min(maxBodyHeight, Math.max(32, dragOriginPanelHeightRef.current - dy));
+    setPanelBodyHeight(Math.round(next));
   });
 
   const steps = guide?.steps ?? [];
   const activeStep =
-    activeStepIndex !== null && steps[activeStepIndex]
-      ? steps[activeStepIndex]!
-      : null;
+    activeStepIndex !== null && steps[activeStepIndex] ? steps[activeStepIndex]! : null;
 
   const selectedDetail =
-    selectedNodeId && guide?.nodes?.[selectedNodeId]
-      ? guide.nodes[selectedNodeId]!
-      : null;
+    selectedNodeId && guide?.nodes?.[selectedNodeId] ? guide.nodes[selectedNodeId]! : null;
 
   useEffect(
     () => () => {
@@ -192,13 +186,11 @@ export function PreviewCanvas({
 
   const hasOverview = Boolean(guide?.gist);
   const hasSteps = steps.length > 0;
-  const showBottomPanel =
-    hasActiveFile && Boolean(renderedSvg) && (hasOverview || hasSteps);
+  const showBottomPanel = hasActiveFile && Boolean(renderedSvg) && (hasOverview || hasSteps);
   const isWalkthroughActive = Boolean(activeStep) || (!hasOverview && hasSteps);
 
   return (
     <div ref={stageLayoutRef} className="preview-stage-layout">
-      {/* VS Code-Style Plain Text Breadcrumb (root -> current file) */}
       {breadcrumbHops.length > 0 && (
         <nav
           className="vscode-breadcrumb"
@@ -206,7 +198,7 @@ export function PreviewCanvas({
           aria-label="Diagram breadcrumb"
         >
           {breadcrumbHops.map((hop) => {
-            const parentName = formatCrumbFileName(hop.parentFile.path);
+            const parentName = graphTitleFromPath(hop.parentFile.path);
             return (
               <span
                 key={`${hop.parentFile.id}-${hop.childFile.id}`}
@@ -226,55 +218,20 @@ export function PreviewCanvas({
           })}
 
           <span className="crumb-current">
-            {formatCrumbFileName(
-              breadcrumbHops[breadcrumbHops.length - 1]!.childFile.path
-            )}
+            {graphTitleFromPath(breadcrumbHops[breadcrumbHops.length - 1]!.childFile.path)}
           </span>
         </nav>
       )}
 
-      {/* Main Diagram Canvas */}
       <div
         ref={viewportRef}
         className="canvas-viewport"
-        onWheel={(e) => {
-          e.preventDefault();
-          if (cameraGlide) setCameraGlide(false);
-          const delta = e.deltaY < 0 ? 1.08 : 0.92;
-          onChangeZoom((z) => Number(Math.min(6, Math.max(0.15, z * delta)).toFixed(2)));
-        }}
-        onMouseDown={(e) => {
-          if (e.button !== 0) return;
-          if (cameraGlide) setCameraGlide(false);
-          dragRef.current = {
-            active: true,
-            moved: false,
-            startX: e.clientX,
-            startY: e.clientY,
-            origX: pan.x,
-            origY: pan.y,
-          };
-        }}
-        onMouseMove={(e) => {
-          if (!dragRef.current.active) return;
-          const dx = e.clientX - dragRef.current.startX;
-          const dy = e.clientY - dragRef.current.startY;
-          if (!dragRef.current.moved && Math.hypot(dx, dy) >= 5) {
-            dragRef.current.moved = true;
-          }
-          onChangePan({
-            x: dragRef.current.origX + dx,
-            y: dragRef.current.origY + dy,
-          });
-        }}
-        onMouseUp={() => {
-          dragRef.current.active = false;
-        }}
-        onMouseLeave={() => {
-          dragRef.current.active = false;
-        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onClick={(e) => {
-          if (dragRef.current.moved) return;
+          if (wasDraggedRecently()) return;
           const target = e.target as Element | null;
           const nodeEl = target?.closest?.('[data-mfhmfa-node]');
           if (nodeEl) {
@@ -349,7 +306,7 @@ export function PreviewCanvas({
               e.stopPropagation();
               onExitHistoricalVersion?.();
             }}
-            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <span>Viewing v{historicalVersion} — Back to latest</span>
           </div>
@@ -362,31 +319,28 @@ export function PreviewCanvas({
               e.stopPropagation();
               onFlipToCode();
             }}
-            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <AlertCircle size={16} />
             <span>
-              {parseError.line ? `Syntax error on line ${parseError.line}` : 'Syntax error'} — View
-              code
+              {parseError.line ? `Syntax error on line ${parseError.line}` : 'Syntax error'} —
+              View code
             </span>
           </div>
         )}
 
-        {/* Node Inspector Card */}
         {selectedNodeId && selectedDetail && (
           <aside
             className="node-inspector-card"
             data-testid="node-inspector-card"
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
             onWheel={(e) => e.stopPropagation()}
           >
             <div className="node-inspector-header">
               <div className="node-inspector-title-wrap">
-                <h3 className="node-inspector-title">
-                  {resolveDisplayLabel(selectedNodeId)}
-                </h3>
+                <h3 className="node-inspector-title">{resolveDisplayLabel(selectedNodeId)}</h3>
               </div>
               <button
                 type="button"
@@ -455,7 +409,6 @@ export function PreviewCanvas({
         )}
       </div>
 
-      {/* VS Code-Style Bottom Walkthrough Panel (overlaps canvas freely without shifting graph) */}
       {showBottomPanel && (
         <section
           className={`walkthrough-panel ${panelCollapsed ? 'collapsed' : ''}`}
@@ -466,26 +419,8 @@ export function PreviewCanvas({
             <div
               className="walkthrough-resizer"
               onMouseDown={(e) => {
-                e.preventDefault();
-                const startY = e.clientY;
-                const origH = panelBodyHeight;
-                const stageHeight =
-                  stageLayoutRef.current?.getBoundingClientRect().height ??
-                  window.innerHeight;
-                const maxBodyHeight = Math.max(240, stageHeight - 44);
-                const onMove = (ev: MouseEvent) => {
-                  const next = Math.min(
-                    maxBodyHeight,
-                    Math.max(32, origH + (startY - ev.clientY))
-                  );
-                  setPanelBodyHeight(Math.round(next));
-                };
-                const onUp = () => {
-                  window.removeEventListener('mousemove', onMove);
-                  window.removeEventListener('mouseup', onUp);
-                };
-                window.addEventListener('mousemove', onMove);
-                window.addEventListener('mouseup', onUp);
+                dragOriginPanelHeightRef.current = panelBodyHeight;
+                startPanelResize(e);
               }}
             />
           )}
@@ -564,9 +499,7 @@ export function PreviewCanvas({
                   <button
                     type="button"
                     className="panel-icon-btn"
-                    disabled={
-                      activeStepIndex !== null && activeStepIndex >= steps.length - 1
-                    }
+                    disabled={activeStepIndex !== null && activeStepIndex >= steps.length - 1}
                     onClick={() => {
                       setPanelCollapsed(false);
                       onChangeStepIndex(
@@ -596,10 +529,7 @@ export function PreviewCanvas({
           </div>
 
           {!panelCollapsed && (
-            <div
-              className="walkthrough-body"
-              style={{ height: `${panelBodyHeight}px` }}
-            >
+            <div className="walkthrough-body" style={{ height: `${panelBodyHeight}px` }}>
               {activeStep ? (
                 <div className="walkthrough-step-content">
                   <div className="story-step-title">{activeStep.title}</div>

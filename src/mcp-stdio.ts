@@ -4,24 +4,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StudioService } from './application/studioService.js';
-import {
-  LOCAL_WORKSPACE_CHANNEL,
-  PUBLIC_FALLBACK_STUDIO_URL,
-} from './config/env.js';
+import { LOCAL_WORKSPACE_CHANNEL } from './config/env.js';
 import { sanitizeWorkspaceToken } from './infrastructure/ephemeral/workspaceRelay.js';
 import { getSharedRenderEngine } from './infrastructure/renderer/chromiumEngine.js';
 import { createMermaidMcpServer } from './interfaces/mcp/createMcpServer.js';
-import {
-  normalizeAgentIdentity,
-  normalizeProjectName,
-} from './shared/agentIdentity.js';
+import { normalizeAgentIdentity, normalizeProjectName } from './shared/agentIdentity.js';
 import type {
   AgentSessionInfo,
   AgentStatusKind,
-  VfsLsResult,
-  VfsMoveResult,
-  VfsReadResult,
   VfsRpcQuery,
+  VfsRpcResultMap,
   WorkspaceRelayEvent,
 } from './shared/types.js';
 
@@ -39,11 +31,6 @@ function inferCwdProjectName(): string | null {
 }
 
 export async function runStdioMcpServer(): Promise<void> {
-  // Guard stdout strictly for MCP JSON-RPC frames
-  console.log = (...args: unknown[]) => {
-    console.error(...args);
-  };
-
   const engine = getSharedRenderEngine();
   const service = new StudioService({ engine });
   const stdioWorkspaceToken =
@@ -55,7 +42,6 @@ export async function runStdioMcpServer(): Promise<void> {
   let clientVersion: string | null = null;
   let currentProject: string | null =
     normalizeProjectName(process.env.MFHMFA_PROJECT) ?? inferCwdProjectName();
-  let localServerReachable = false;
 
   const buildSessionInfo = (status: AgentStatusKind): AgentSessionInfo => {
     const normalized = normalizeAgentIdentity(rawAgentName, 'mcp-stdio');
@@ -89,11 +75,10 @@ export async function runStdioMcpServer(): Promise<void> {
       });
       if (resp.ok) {
         const json = (await resp.json()) as { deliveredSubscribers?: number };
-        localServerReachable = true;
         return { reachable: true, delivered: json.deliveredSubscribers ?? 0 };
       }
     } catch {
-      localServerReachable = false;
+      // Local Studio HTTP server not running; PNG vision still works standalone
     }
     return { reachable: false, delivered: 0 };
   };
@@ -102,8 +87,7 @@ export async function runStdioMcpServer(): Promise<void> {
     service,
     {
       source: 'mcp-stdio',
-      getBaseUrl: () =>
-        localServerReachable ? service.baseUrl : PUBLIC_FALLBACK_STUDIO_URL,
+      allowLocalDiskWrite: true,
       getWorkspaceToken: () => stdioWorkspaceToken,
       getCallerMeta: () => ({
         sessionId,
@@ -127,7 +111,7 @@ export async function runStdioMcpServer(): Promise<void> {
         });
         return out.delivered;
       },
-      vfsBridge: async (query: VfsRpcQuery) => {
+      vfsBridge: async <Q extends VfsRpcQuery>(query: Q): Promise<VfsRpcResultMap[Q['op']]> => {
         let resp: Response;
         try {
           resp = await fetch(`${service.baseUrl}/api/workspace/vfs-query`, {
@@ -147,13 +131,12 @@ export async function runStdioMcpServer(): Promise<void> {
 
         const json = (await resp.json()) as {
           ok?: boolean;
-          result?: VfsLsResult | VfsReadResult | VfsMoveResult;
+          result?: VfsRpcResultMap[Q['op']];
           error?: string;
         };
         if (!resp.ok || !json.ok || !json.result) {
           throw new Error(json.error || `VFS ${query.op} failed`);
         }
-        localServerReachable = true;
         return json.result;
       },
     },
@@ -212,8 +195,7 @@ export async function runStdioMcpServer(): Promise<void> {
 }
 
 const isMain =
-  Boolean(process.argv[1]) &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  Boolean(process.argv[1]) && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isMain) {
   runStdioMcpServer().catch((err: unknown) => {

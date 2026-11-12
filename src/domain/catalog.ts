@@ -6,7 +6,8 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     name: 'AI Agent & MCP Architecture',
     category: 'Architecture',
     diagramType: 'flowchart-v2',
-    description: 'Multi-agent system connecting through MCP tools, validation engine, and live workspace.',
+    description:
+      'Multi-agent system connecting through MCP tools, validation engine, and live workspace.',
     theme: 'default',
     look: 'classic',
     code: `flowchart TB
@@ -22,19 +23,19 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
         RELAY["Pass-Through SSE Relay<br/>(0 Stored Diagrams)"]
     end
 
-    UI["Browser LocalStorage Studio<br/>(Chrome Project & Agent Tab Groups)"]
+    UI["Browser IndexedDB Studio<br/>(Project VFS & Interactive Guides)"]
 
     A1 & A2 & A3 <-->|"mermaid_render (PNG Vision)"| MCP
     MCP --> POOL & RELAY
     RELAY ==>|"Allocates Project / Agent Space"| UI`,
-
   },
   {
     id: 'sequence-oauth',
     name: 'OAuth 2.0 + PKCE Sequence',
     category: 'Sequence',
     diagramType: 'sequence',
-    description: 'End-to-end authentication handshake with activation bars, alt blocks, and notes.',
+    description:
+      'End-to-end authentication handshake with activation bars, alt blocks, and notes.',
     theme: 'default',
     code: `sequenceDiagram
     autonumber
@@ -177,7 +178,6 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
 
     RenderEnginePort <|.. ChromiumRenderEngine : implements
     StudioService o-- RenderEnginePort : delegates`,
-
   },
   {
     id: 'mindmap-product-strategy',
@@ -465,7 +465,10 @@ export function getSyntaxGuide(topic?: string): string {
       SYNTAX_GUIDES.class,
     ].join('\n\n---\n\n');
   }
-  const key = topic.toLowerCase().replace(/diagram|-v2|-beta/g, '').trim();
+  const key = topic
+    .toLowerCase()
+    .replace(/diagram|-v2|-beta/g, '')
+    .trim();
   if (SYNTAX_GUIDES[key]) {
     return `${SYNTAX_GUIDES[key]}\n\n---\n\n${SYNTAX_GUIDES.pitfalls}`;
   }

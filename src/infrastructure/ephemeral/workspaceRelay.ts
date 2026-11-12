@@ -1,15 +1,12 @@
 import crypto from 'node:crypto';
-import type {
-  WorkspaceEventListener,
-  WorkspaceRelayPort,
-} from '../../domain/ports.js';
+import type { WorkspaceEventListener, WorkspaceRelayPort } from '../../domain/ports.js';
+import { parseWorkspaceToken } from '../../shared/protocolSchemas.js';
 import type {
   RelayStats,
-  VfsLsResult,
-  VfsMoveResult,
-  VfsReadResult,
+  VfsRpcAnyResult,
   VfsRpcQuery,
   VfsRpcReply,
+  VfsRpcResultMap,
   WorkspaceRelayEvent,
 } from '../../shared/types.js';
 
@@ -25,23 +22,18 @@ interface ActiveSubscription {
 
 interface PendingRpcEntry {
   workspaceToken: string;
-  resolve: (val: VfsLsResult | VfsReadResult | VfsMoveResult) => void;
+  resolve: (val: VfsRpcAnyResult) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
-export function sanitizeWorkspaceToken(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  if (!/^[A-Za-z0-9_-]{4,64}$/.test(trimmed)) return null;
-  return trimmed;
-}
+export const sanitizeWorkspaceToken = parseWorkspaceToken;
 
 /**
  * Pure zero-storage bidirectional SSE relay.
  * Never stores diagrams or workspace trees in server memory — streams diagrams
  * to open browser tabs and proxies ephemeral `ls` / `read` / `mv` RPC calls
- * directly against browser `localStorage`.
+ * directly against browser IndexedDB.
  */
 export class StatelessWorkspaceRelay implements WorkspaceRelayPort {
   private readonly subscribers = new Map<string, Set<ActiveSubscription>>();
@@ -67,16 +59,16 @@ export class StatelessWorkspaceRelay implements WorkspaceRelayPort {
     return delivered;
   }
 
-  requestVfs(
+  requestVfs<Q extends VfsRpcQuery>(
     workspaceToken: string,
-    query: VfsRpcQuery,
+    query: Q,
     timeoutMs = DEFAULT_RPC_TIMEOUT_MS
-  ): Promise<VfsLsResult | VfsReadResult | VfsMoveResult> {
+  ): Promise<VfsRpcResultMap[Q['op']]> {
     const clean = sanitizeWorkspaceToken(workspaceToken);
     if (!clean) {
       return Promise.reject(
         new Error(
-          'No workspace token configured. Ask the user to copy their paired `?workspace=ws_...` MCP URL from MFHMFA Studio ("Copy MCP URL" in sidebar or Docs) so VFS tools (`ls`, `read`, `mv`) can access browser localStorage.'
+          'No workspace token configured. Ask the user to copy their paired `?workspace=ws_...` MCP URL from MFHMFA Studio ("Copy MCP URL" in sidebar or Docs) so VFS tools (`ls`, `read`, `mv`) can access their browser workspace.'
         )
       );
     }
@@ -85,7 +77,7 @@ export class StatelessWorkspaceRelay implements WorkspaceRelayPort {
     if (!subs || subs.size === 0) {
       return Promise.reject(
         new Error(
-          'Studio browser window is not currently open for this workspace (MFHMFA stores 0 diagrams on the server). Ask the user to open MFHMFA Studio in their browser so VFS tools (`ls`, `read`, `mv`) and live diagram sync can access browser localStorage.'
+          'Studio browser window is not currently open for this workspace (MFHMFA stores 0 diagrams on the server). Ask the user to open MFHMFA Studio in their browser so VFS tools (`ls`, `read`, `mv`) and live diagram sync can access their browser workspace.'
         )
       );
     }
@@ -96,7 +88,7 @@ export class StatelessWorkspaceRelay implements WorkspaceRelayPort {
 
     const requestId = `vfs_${crypto.randomUUID().slice(0, 12)}`;
 
-    return new Promise((resolve, reject) => {
+    return new Promise<VfsRpcResultMap[Q['op']]>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRpc.delete(requestId);
         reject(new Error(`Browser VFS ${query.op} timed out after ${timeoutMs}ms.`));
@@ -105,7 +97,7 @@ export class StatelessWorkspaceRelay implements WorkspaceRelayPort {
 
       this.pendingRpc.set(requestId, {
         workspaceToken: clean,
-        resolve,
+        resolve: (val) => resolve(val as VfsRpcResultMap[Q['op']]),
         reject,
         timer,
       });
