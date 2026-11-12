@@ -38,82 +38,82 @@ export const AGENT_ITERATION_COALESCE_MS = 90_000;
 export const WELCOME_CODE = `flowchart TB
   Agents(["Coding Agents"])
 
-  subgraph Server["Stateless Server (0 Stored Graphs)"]
-    Render[["PNG Renderer"]]
-    Relay["Live Pass-Through"]
+  subgraph Server["MFHMFA Server"]
+    Render[["Diagram Renderer"]]
+    Relay["Live Sync"]
   end
 
-  subgraph Browser["Your Browser (100% Local Storage)"]
+  subgraph Browser["Browser Workspace"]
     Studio["Interactive Canvas"]
-    VFS[("Project VFS")]
+    VFS[("Project Files")]
   end
 
   Agents -->|"1. Validate & render"| Render
-  Render -.->|"2. 2x Retina PNG"| Agents
-  Agents -->|"3. Stream graph"| Relay
-  Relay <==>|"4. Live sync + ls/read"| Studio
-  Studio <-->|"Last 5 versions"| VFS`;
+  Render -.->|"2. Preview image"| Agents
+  Agents -->|"3. Stream diagram"| Relay
+  Relay <==>|"4. Live sync"| Studio
+  Studio <-->|"Save & history"| VFS`;
 
 export const WELCOME_GUIDE: DiagramComprehensionGuide = {
-  gist: 'The server holds zero diagrams — agents verify layout via temporary PNGs while all folders, graphs, and history live in your browser.',
+  gist: 'Coding agents validate diagrams visually and stream interactive walkthroughs directly to your browser workspace.',
   steps: [
     {
-      title: '1. Agent renders & inspects PNG',
+      title: '1. Validate and preview',
       caption:
-        'Your coding agent sends Mermaid code to the server, receives a 2x Retina PNG to check visual layout, and the PNG buffer is discarded immediately.',
+        'Your coding agent sends Mermaid code to the renderer and receives a crisp preview image to check visual layout.',
       focusNodes: ['Agents', 'Render'],
     },
     {
-      title: '2. Live pass-through to your browser',
+      title: '2. Stream live to Studio',
       caption:
-        'Once valid, the server streams the graph + comprehension guide straight into your open browser tab without storing a copy on disk or in RAM.',
+        'Once verified, the diagram and its walkthrough guide stream straight into your open browser tab.',
       focusNodes: ['Agents', 'Relay', 'Studio'],
     },
     {
-      title: '3. Saved in your browser VFS',
+      title: '3. Explore and save locally',
       caption:
-        'Your browser coalesces rapid retries and saves up to the last 5 versions per file in localStorage. Agents run ls/read directly against this open tab.',
+        'Step through flows, click components for details, and browse recent file history in your browser.',
       focusNodes: ['Studio', 'VFS', 'Relay'],
     },
   ],
   nodes: {
     Agents: {
-      label: 'Coding Agents (Claude, Pi, Cursor)',
+      label: 'Coding Agents',
       summary:
-        'AI agents connect over MCP, inspect existing graphs with mermaid_ls / mermaid_read, and push interactive diagrams with Story Mode steps and node cards.',
-      example: 'mermaid_render({ path: "arch/overview.mmd", code, guide }) -> 2x PNG + live browser sync',
-      whatIf: 'If two agents work on different repositories, each session is jailed strictly to its own project folder.',
+        'AI coding agents connect via MCP, inspect existing files, and create diagrams with walkthrough steps and component notes.',
+      example: 'mermaid_render({ path: "arch/overview.mmd", code, guide })',
+      whatIf: 'Each agent session stays scoped to its own project folder.',
     },
     Render: {
-      label: 'Headless Chromium Pool',
+      label: 'Diagram Renderer',
       summary:
-        'A bounded pool of 4–16 isolated Chromium contexts validates syntax, renders 2x Retina PNGs for agent vision, clears DOM nodes after every call, and recycles workers after 150 ops.',
-      example: '1.2 KB Mermaid text -> ~180 KB PNG returned to agent -> 0 bytes retained on server',
-      whatIf: 'If all workers are busy, incoming renders wait in an in-memory queue; if a render hangs >12s, that worker is killed and replaced.',
+        'Headless Chromium workers validate syntax and render high-resolution PNG previews so agents can check layout.',
+      example: '1.2 KB Mermaid source -> 2x PNG preview + layout diagnostics',
+      whatIf: 'If all workers are busy, requests queue automatically; hung renders time out after 12s.',
       files: ['src/infrastructure/renderer/chromiumEngine.ts'],
     },
     Relay: {
-      label: 'Stateless SSE Relay',
+      label: 'Live Sync',
       summary:
-        'Forwards incoming diagrams to open browser tabs and proxies ephemeral ls, read, and mv queries down to your browser with a 2.5s timeout.',
-      example: 'mermaid_ls -> SSE query to browser -> JSON folder tree reply in ~10ms (0 stored diagrams)',
-      whatIf: 'Close all MFHMFA Studio browser tabs -> mermaid_ls and mermaid_read fail after 2.5s because the server stores nothing.',
+        'Streams updated diagrams to open Studio tabs and forwards file list, read, and rename requests.',
+      example: 'mermaid_ls -> live query to open tab -> folder tree response in ~10ms',
+      whatIf: 'If no Studio tab is open, live file queries time out after 2.5s until you open the app.',
       files: ['src/infrastructure/ephemeral/workspaceRelay.ts'],
     },
     Studio: {
-      label: 'Interactive Comprehension Canvas',
+      label: 'Interactive Canvas',
       summary:
-        'Renders crisp SVGs locally (caching the last 80 views in tab memory), spotlights Story Mode steps, and opens inspector cards when you click any box.',
-      example: 'Click any box to inspect examples & failure modes, or press Left/Right arrows to step through a flow.',
-      whatIf: 'Pause Live Sync in the sidebar -> incoming agent updates buffer safely in tab memory until you resume.',
+        'Renders diagrams locally, highlights walkthrough steps, and opens component details when you click a box.',
+      example: 'Use Left and Right arrows to step through a flow, or click any outlined box.',
+      whatIf: 'If you pause live updates in the sidebar, incoming changes wait until you resume.',
       files: ['web/components/PreviewCanvas.tsx', 'web/services/mermaidRenderer.ts'],
     },
     VFS: {
-      label: 'Browser localStorage VFS',
+      label: 'Project Files',
       summary:
-        'Persists all project trees, `.mmd` files, and interactive guides on your device under `mfhmfa-workspace-v4`.',
-      example: 'Rapid retries within 90s merge into 1 clean version; each graph keeps an immutable 5-version ring buffer.',
-      whatIf: 'Clear browser site data -> local diagrams are wiped unless exported or shared via a compressed `#z=` permalink.',
+        'Saves your projects, folders, diagrams, and recent file history locally in your browser.',
+      example: 'Keeps up to 5 recent versions per file so you can compare or restore earlier edits.',
+      whatIf: 'Clearing browser site data removes local files unless you exported them or copied a share link.',
       files: ['web/services/workspaceStorage.ts'],
     },
   },
@@ -479,8 +479,8 @@ export function initializeWorkspaceStorage(): WorkspaceState {
             sidebarOpen: parsed.sidebarOpen !== false,
             sidebarWidth:
               typeof parsed.sidebarWidth === 'number'
-                ? Math.min(440, Math.max(190, parsed.sidebarWidth))
-                : 256,
+                ? Math.min(480, Math.max(210, parsed.sidebarWidth))
+                : 268,
             openTabIds: Array.isArray(parsed.openTabIds) ? parsed.openTabIds : [],
             activeFileId: parsed.activeFileId ?? null,
             projects,
@@ -651,7 +651,7 @@ export function initializeWorkspaceStorage(): WorkspaceState {
     version: 4,
     workspaceId,
     sidebarOpen: true,
-    sidebarWidth: 256,
+    sidebarWidth: 268,
     openTabIds: [welcomeId],
     activeFileId: welcomeId,
     projects: [scratchpad],

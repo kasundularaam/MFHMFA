@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Code2, Eye, History, Plus, RotateCcw, X } from 'lucide-react';
 import type { OpenTabEntry, StageMode } from '../hooks/useStudioController';
-import {
-  getHeadVersion,
-  type GraphVersionRecord,
-  type VfsGraphFile,
-} from '../services/workspaceStorage';
+import type { GraphVersionRecord, VfsGraphFile } from '../services/workspaceStorage';
 
 interface TabBarProps {
   openTabs: OpenTabEntry[];
@@ -54,7 +50,6 @@ export function TabBar({
     activeEl?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [activeFile]);
 
-  // Disambiguate tabs that share the same filename in different folders/projects (just like VS Code)
   const labelCounts = new Map<string, number>();
   for (const entry of openTabs) {
     const base = (entry.file.path.split('/').pop() || entry.file.title).replace(
@@ -65,7 +60,7 @@ export function TabBar({
   }
 
   return (
-    <div className="tabbar" role="tablist" aria-label="Open editor tabs">
+    <div className="tabbar" role="tablist" aria-label="Open files">
       <div
         ref={stripRef}
         className="tabbar-strip"
@@ -77,7 +72,6 @@ export function TabBar({
       >
         {openTabs.map(({ file, project }) => {
           const isActive = activeFile?.id === file.id;
-          const head = getHeadVersion(file);
           const baseName = (file.path.split('/').pop() || file.title).replace(
             /\.(mmd|mermaid)$/i,
             ''
@@ -112,10 +106,10 @@ export function TabBar({
                   onSelectTab(file.id);
                 }
               }}
-              title={`${project.projectLabel}/${file.path} · v${file.currentVersion} (${head.authorLabel})`}
+              title={`${project.projectLabel}/${file.path}`}
             >
               {file.unread && (
-                <span className="tab-unread-dot" aria-label="New update" />
+                <span className="tab-unread-dot" aria-label="Updated" />
               )}
 
               <span className="tab-label">{baseName}</span>
@@ -126,14 +120,14 @@ export function TabBar({
               <button
                 type="button"
                 className="tab-close-btn"
-                aria-label={`Close ${baseName} tab`}
-                title="Close tab (keeps file in Explorer)"
+                aria-label={`Close ${baseName}`}
+                title="Close tab"
                 onClick={(e) => {
                   e.stopPropagation();
                   onCloseTab(file.id);
                 }}
               >
-                <X size={12} />
+                <X size={14} />
               </button>
             </div>
           );
@@ -143,14 +137,14 @@ export function TabBar({
           type="button"
           className="tab-add-btn"
           onClick={onNewTab}
-          title="New graph"
-          aria-label="New graph"
+          title="New file"
+          aria-label="New file"
         >
-          <Plus size={14} />
+          <Plus size={16} />
         </button>
       </div>
 
-      {/* Right Edge Actions: Version Pill + Single-Icon View Switcher */}
+      {/* Right Edge Actions: File History + View Switcher */}
       <div className="tabbar-right-actions">
         {activeFile && activeVersionRecord && (
           <div className="dropdown-wrap" onClick={(e) => e.stopPropagation()}>
@@ -158,19 +152,16 @@ export function TabBar({
               type="button"
               className={`version-pill ${isHistoricalVersion ? 'historical' : ''}`}
               onClick={() => setHistoryOpen((v) => !v)}
-              title="Immutable revision history (last 5 versions)"
+              title="File history"
+              aria-label="File history"
             >
-              <History size={11} />
-              <span>
-                v{activeVersionRecord.version} · {activeVersionRecord.authorBadge}
-              </span>
+              <History size={15} />
+              <span>v{activeVersionRecord.version}</span>
             </button>
 
             {historyOpen && (
               <div className="dropdown-menu version-menu">
-                <div className="version-menu-header">
-                  Last {activeFile.versions.length} Revisions (Max 5)
-                </div>
+                <div className="version-menu-header">File history</div>
                 {[...activeFile.versions].reverse().map((rev) => {
                   const isHead = rev.version === activeFile.currentVersion;
                   const isSelected = rev.version === activeVersionRecord.version;
@@ -188,25 +179,22 @@ export function TabBar({
                         }}
                       >
                         <span className="version-num">v{rev.version}</span>
-                        <span
-                          className={`tree-author-badge author-${rev.authorBadge}`}
-                        >
-                          {rev.authorBadge}
-                        </span>
-                        {isHead && <span className="version-head-tag">head</span>}
+                        <span className="version-author">{rev.authorLabel}</span>
+                        {isHead && <span className="version-head-tag">Current</span>}
                       </button>
 
                       {!isHead && (
                         <button
                           type="button"
                           className="version-restore-btn"
-                          title={`Restore v${rev.version} as new head`}
+                          title={`Restore v${rev.version}`}
+                          aria-label={`Restore v${rev.version}`}
                           onClick={() => {
                             onRestoreVersion(rev.version);
                             setHistoryOpen(false);
                           }}
                         >
-                          <RotateCcw size={11} />
+                          <RotateCcw size={14} />
                         </button>
                       )}
                     </div>
@@ -227,11 +215,11 @@ export function TabBar({
           }
           title={
             stageMode === 'preview'
-              ? 'Switch to Code view (Ctrl+E)'
-              : 'Switch to Preview (Ctrl+E)'
+              ? 'Code view (Ctrl+E)'
+              : 'Preview (Ctrl+E)'
           }
         >
-          {stageMode === 'preview' ? <Code2 size={15} /> : <Eye size={15} />}
+          {stageMode === 'preview' ? <Code2 size={17} /> : <Eye size={17} />}
           {stageMode === 'preview' && hasError && (
             <span className="tabbar-error-dot" />
           )}

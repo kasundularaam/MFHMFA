@@ -47,7 +47,7 @@ export function CodeEditorStage({
       </div>
 
       {!parseError && (
-        <div className="editor-status-quiet">{diagramType || 'mermaid'} · valid</div>
+        <div className="editor-status-quiet">{diagramType || 'Mermaid'}</div>
       )}
 
       {parseError && (
@@ -58,10 +58,10 @@ export function CodeEditorStage({
               color: 'var(--danger-fg)',
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
+              gap: 7,
             }}
           >
-            <AlertCircle size={14} />
+            <AlertCircle size={16} />
             <span>
               {parseError.line
                 ? `Line ${parseError.line}${parseError.column ? `:${parseError.column}` : ''} — `

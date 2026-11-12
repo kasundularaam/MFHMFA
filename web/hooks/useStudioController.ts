@@ -468,7 +468,7 @@ export function useStudioController() {
       return true;
     } catch {
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      notifyToast('Invalid permalink — opened local workspace');
+      notifyToast('Invalid share link');
       return false;
     }
   }, [activateStateAndRender, notifyToast, snapshotCurrentCamera]);
@@ -772,7 +772,7 @@ export function useStudioController() {
   }, []);
 
   const handleResizeSidebar = useCallback((nextWidth: number) => {
-    const clamped = Math.min(460, Math.max(190, Math.round(nextWidth)));
+    const clamped = Math.min(480, Math.max(210, Math.round(nextWidth)));
     setWorkspace((prev) => {
       const next = { ...prev, sidebarWidth: clamped };
       workspaceRef.current = next;
@@ -978,7 +978,7 @@ export function useStudioController() {
       });
 
       activateStateAndRender(nextState, null).catch(() => {});
-      notifyToast('Deleted graph');
+      notifyToast('File deleted');
     },
     [activateStateAndRender, notifyToast, snapshotCurrentCamera]
   );
@@ -1015,7 +1015,7 @@ export function useStudioController() {
       });
 
       activateStateAndRender(nextState, null).catch(() => {});
-      notifyToast(`Deleted folder "${folderPath}"`);
+      notifyToast('Folder deleted');
     },
     [activateStateAndRender, notifyToast, snapshotCurrentCamera]
   );
@@ -1057,7 +1057,7 @@ export function useStudioController() {
       });
 
       activateStateAndRender(nextState, null).catch(() => {});
-      notifyToast(`Removed project "${target?.projectLabel || projectKey}"`);
+      notifyToast('Project deleted');
     },
     [activateStateAndRender, notifyToast, snapshotCurrentCamera]
   );
@@ -1076,7 +1076,7 @@ export function useStudioController() {
       if (!cur.activeFileId) return;
       const restored = restoreGraphVersion(cur, cur.activeFileId, version);
       activateStateAndRender(restored.nextState, null).catch(() => {});
-      notifyToast(`Restored v${version} as latest revision`);
+      notifyToast(`Restored v${version}`);
     },
     [activateStateAndRender, notifyToast]
   );
@@ -1182,7 +1182,7 @@ export function useStudioController() {
         const targetRel = normalizeRelativeGraphPath(rawTargetPath);
         const targetFile = activeProject.files.find((f) => f.path === targetRel);
         if (!targetFile) {
-          notifyToast(`Sub-graph "${targetRel}" is not in this workspace yet`);
+          notifyToast(`File "${targetRel}" not found`);
           return;
         }
         if (activeFile && activeFile.id !== targetFile.id) {
@@ -1192,7 +1192,7 @@ export function useStudioController() {
         }
         handleOpenFile(targetFile.id);
       } catch (err: unknown) {
-        notifyToast(err instanceof Error ? err.message : 'Invalid sub-graph path');
+        notifyToast(err instanceof Error ? err.message : 'Invalid file path');
       }
     },
     [activeFile, activeProject, handleOpenFile, notifyToast]
@@ -1388,13 +1388,9 @@ export function useStudioController() {
         '',
         `${window.location.pathname}${window.location.search}${hashPart}`
       );
-      notifyToast(
-        flatItems.length > 1
-          ? `Copied stateless permalink (${flatItems.length} graphs)`
-          : 'Copied stateless permalink'
-      );
+      notifyToast('Link copied');
     } catch {
-      notifyToast('Failed to copy permalink');
+      notifyToast('Could not copy link');
     }
   }, [notifyToast]);
 
@@ -1409,11 +1405,11 @@ export function useStudioController() {
         seenRenderIdsRef.current.delete(diag.renderId);
         await applyIncomingDiagram(diag);
       }
-      notifyToast('Resumed live MCP sync');
+      notifyToast('Live updates resumed');
     } else {
       livePausedRef.current = true;
       setRelayState('paused');
-      notifyToast('Paused live MCP sync');
+      notifyToast('Live updates paused');
     }
   }, [applyIncomingDiagram, notifyToast]);
 
@@ -1429,7 +1425,7 @@ export function useStudioController() {
       workspaceRef.current = next;
       return next;
     });
-    notifyToast('Generated new private workspace key');
+    notifyToast('Workspace key updated');
   }, [notifyToast]);
 
   const handleBrandClick = useCallback(() => {

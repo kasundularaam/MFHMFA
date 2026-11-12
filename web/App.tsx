@@ -33,7 +33,7 @@ export function App() {
         onCopyCode={() => {
           if (!ctrl.code) return;
           navigator.clipboard.writeText(ctrl.code);
-          ctrl.notifyToast('Copied source');
+          ctrl.notifyToast('Copied code');
         }}
       />
 
@@ -47,10 +47,8 @@ export function App() {
               activeProjectKey={ctrl.activeProject?.projectKey ?? null}
               workspaceId={ctrl.workspaceId}
               relayState={ctrl.relayState}
-              hasBufferedLiveUpdate={ctrl.hasBufferedLiveUpdate}
               connectedAgents={ctrl.connectedAgents}
               liveProjectCounts={ctrl.liveProjectCounts}
-              storageStats={ctrl.storageStats}
               onResizeWidth={ctrl.handleResizeSidebar}
               onToggleProjectExpanded={ctrl.handleToggleProjectExpanded}
               onOpenFile={ctrl.handleOpenFile}

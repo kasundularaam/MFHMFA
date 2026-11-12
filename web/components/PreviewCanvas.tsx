@@ -161,7 +161,6 @@ export function PreviewCanvas({
     return () => window.removeEventListener('click', onDocClick);
   }, [openBranchHopIdx]);
 
-  // Cross-dissolve outgoing chart into incoming chart with zero blank frames
   useEffect(() => {
     const prev = prevSnapshotRef.current;
     if (prev.chartKey !== chartKey) {
@@ -185,7 +184,6 @@ export function PreviewCanvas({
     prevSnapshotRef.current = { chartKey, svg: renderedSvg, zoom, pan };
   }, [chartKey, renderedSvg, zoom, pan, transitionKind]);
 
-  // Apply Story Stepper spotlighting & clickable node affordances to active SVG DOM
   useLayoutEffect(() => {
     const { nodeDisplayLabels } = applySvgComprehensionState(activeStageRef.current, {
       guide,
@@ -273,7 +271,6 @@ export function PreviewCanvas({
         }
       }}
     >
-      {/* Outgoing frozen layer during chart switch (prevents empty-canvas blink) */}
       {outgoingLayer && (
         <div
           className={`canvas-stage canvas-layer-out mode-${outgoingLayer.mode}`}
@@ -284,7 +281,6 @@ export function PreviewCanvas({
         />
       )}
 
-      {/* Active diagram layer */}
       {renderedSvg ? (
         <div
           ref={activeStageRef}
@@ -300,7 +296,7 @@ export function PreviewCanvas({
       ) : !hasActiveFile ? (
         <div className="empty-agent-stage">
           <div className="empty-stage-watermark">
-            Select a graph in the Explorer or click <code>+</code> to create one
+            Select a file in the Explorer or click <code>+</code> to create a diagram
           </div>
         </div>
       ) : (
@@ -313,11 +309,11 @@ export function PreviewCanvas({
             color: 'var(--text-muted)',
           }}
         >
-          Switch to Code view to edit diagram
+          Switch to Code view to edit this diagram
         </div>
       )}
 
-      {/* Regular Component-Aware Hierarchy Breadcrumb */}
+      {/* Hierarchy Breadcrumb */}
       {breadcrumbHops.length > 0 && (
         <nav
           className="canvas-breadcrumb"
@@ -336,7 +332,7 @@ export function PreviewCanvas({
                   type="button"
                   className="crumb-link"
                   onClick={() => onJumpToAncestor(hop.parentFile.id)}
-                  title={`Go to ${hop.parentFile.title}`}
+                  title={`Open ${hop.parentFile.title}`}
                 >
                   {hop.parentFile.title}
                 </button>
@@ -355,18 +351,15 @@ export function PreviewCanvas({
                             e.stopPropagation();
                             setOpenBranchHopIdx((prev) => (prev === idx ? null : idx));
                           }}
-                          title={`Component in ${hop.parentFile.title} (${hop.siblingBranches.length} linked components)`}
+                          title="Switch component"
                         >
-                          <Box size={11} className="crumb-box-icon" />
+                          <Box size={13} className="crumb-box-icon" />
                           <span>{hop.viaComponentLabel}</span>
-                          <ChevronDown size={11} className="crumb-chevron" />
+                          <ChevronDown size={13} className="crumb-chevron" />
                         </button>
                       ) : (
-                        <span
-                          className="crumb-component"
-                          title={`Component in ${hop.parentFile.title}`}
-                        >
-                          <Box size={11} className="crumb-box-icon" />
+                        <span className="crumb-component">
+                          <Box size={13} className="crumb-box-icon" />
                           <span>{hop.viaComponentLabel}</span>
                         </span>
                       )}
@@ -376,9 +369,7 @@ export function PreviewCanvas({
                           className="crumb-branch-menu"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <div className="crumb-branch-menu-header">
-                            Components in {hop.parentFile.title}
-                          </div>
+                          <div className="crumb-branch-menu-header">Components</div>
                           {hop.siblingBranches.map((branch) => {
                             const isCurrent = branch.childFile.id === hop.childFile.id;
                             return (
@@ -395,15 +386,15 @@ export function PreviewCanvas({
                                   }
                                 }}
                               >
-                                <Box size={11} className="crumb-box-icon" />
+                                <Box size={13} className="crumb-box-icon" />
                                 <span className="crumb-branch-comp">
                                   {branch.componentLabel}
                                 </span>
-                                <ArrowRight size={10} className="crumb-branch-arrow" />
+                                <ArrowRight size={12} className="crumb-branch-arrow" />
                                 <span className="crumb-branch-target">
                                   {branch.childFile.title}
                                 </span>
-                                {isCurrent && <Check size={11} className="crumb-branch-check" />}
+                                {isCurrent && <Check size={13} className="crumb-branch-check" />}
                               </button>
                             );
                           })}
@@ -417,7 +408,7 @@ export function PreviewCanvas({
             );
           })}
 
-          <span className="crumb-current">{activeGraphTitle || 'Sub-graph'}</span>
+          <span className="crumb-current">{activeGraphTitle || 'Diagram'}</span>
         </nav>
       )}
 
@@ -430,7 +421,7 @@ export function PreviewCanvas({
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <span>Viewing historical revision v{historicalVersion} — Return to head</span>
+          <span>Viewing v{historicalVersion} — Back to latest</span>
         </div>
       )}
 
@@ -443,15 +434,15 @@ export function PreviewCanvas({
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <AlertCircle size={14} />
+          <AlertCircle size={16} />
           <span>
-            {parseError.line ? `Syntax error on line ${parseError.line}` : 'Syntax error'} — View in
-            Code
+            {parseError.line ? `Syntax error on line ${parseError.line}` : 'Syntax error'} — View
+            code
           </span>
         </div>
       )}
 
-      {/* Right-Side Progressive-Disclosure Node Inspector Card */}
+      {/* Node Inspector Card */}
       {selectedNodeId && selectedDetail && (
         <aside
           className="node-inspector-card"
@@ -463,7 +454,6 @@ export function PreviewCanvas({
         >
           <div className="node-inspector-header">
             <div className="node-inspector-title-wrap">
-              <span className="node-inspector-eyebrow">Component Details</span>
               <h3 className="node-inspector-title">
                 {resolveDisplayLabel(selectedNodeId)}
               </h3>
@@ -472,10 +462,10 @@ export function PreviewCanvas({
               type="button"
               className="icon-btn"
               onClick={() => onSelectNode(null)}
-              title="Close inspector (Esc)"
-              aria-label="Close inspector"
+              title="Close"
+              aria-label="Close"
             >
-              <X size={14} />
+              <X size={16} />
             </button>
           </div>
 
@@ -484,7 +474,7 @@ export function PreviewCanvas({
 
             {selectedDetail.example && (
               <div className="node-inspector-section">
-                <div className="node-inspector-label">Concrete Example</div>
+                <div className="node-inspector-label">Example</div>
                 <div className="node-inspector-example">{selectedDetail.example}</div>
               </div>
             )}
@@ -492,8 +482,8 @@ export function PreviewCanvas({
             {selectedDetail.whatIf && (
               <div className="node-inspector-section">
                 <div className="node-inspector-label hint">
-                  <TriangleAlert size={11} />
-                  <span>What Breaks If…</span>
+                  <TriangleAlert size={13} />
+                  <span>What breaks if…</span>
                 </div>
                 <div className="node-inspector-whatif">{selectedDetail.whatIf}</div>
               </div>
@@ -501,7 +491,7 @@ export function PreviewCanvas({
 
             {selectedDetail.files && selectedDetail.files.length > 0 && (
               <div className="node-inspector-section">
-                <div className="node-inspector-label">Source Files</div>
+                <div className="node-inspector-label">Files</div>
                 <div className="node-inspector-files">
                   {selectedDetail.files.map((fp) => (
                     <button
@@ -509,9 +499,9 @@ export function PreviewCanvas({
                       type="button"
                       className="node-file-chip"
                       onClick={() => onCopyFilePath(fp)}
-                      title="Click to copy file path"
+                      title="Copy path"
                     >
-                      <FileCode2 size={12} />
+                      <FileCode2 size={14} />
                       <span>{fp}</span>
                     </button>
                   ))}
@@ -525,16 +515,16 @@ export function PreviewCanvas({
                 className="btn node-drilldown-btn"
                 onClick={() => onDrillToPath(selectedDetail.childPath!)}
               >
-                <Layers size={13} />
+                <Layers size={15} />
                 <span>Zoom into {selectedDetail.childPath}</span>
-                <ArrowRight size={13} />
+                <ArrowRight size={15} />
               </button>
             )}
           </div>
         </aside>
       )}
 
-      {/* Bottom-Center Story Mode Stepper & Takeaway Dock */}
+      {/* Walkthrough & Overview Dock */}
       {showComprehensionBar && (
         <div
           className={`comprehension-dock ${activeStep ? 'stepping' : 'overview'}`}
@@ -551,15 +541,13 @@ export function PreviewCanvas({
                   <div className="comprehension-gist">{guide.gist}</div>
                 ) : (
                   <div className="comprehension-gist muted">
-                    Interactive guide attached — walk through step-by-step or click a box to inspect.
+                    Walk through step by step or click any highlighted box for details.
                   </div>
                 )}
                 {documentedNodeIds.length > 0 && (
                   <div className="comprehension-subhint">
-                    <Sparkles size={11} />
-                    <span>
-                      Click any outlined box ({documentedNodeIds.length}) for concrete examples & edge cases
-                    </span>
+                    <Sparkles size={13} />
+                    <span>Click any highlighted box for details</span>
                   </div>
                 )}
               </div>
@@ -570,10 +558,10 @@ export function PreviewCanvas({
                   className="btn sm story-start-btn"
                   data-testid="story-start-btn"
                   onClick={() => onChangeStepIndex(0)}
-                  title="Step through one concrete flow (Right Arrow)"
+                  title="Start walkthrough"
                 >
-                  <Play size={11} />
-                  <span>Walk Through ({steps.length})</span>
+                  <Play size={13} />
+                  <span>Walk through ({steps.length})</span>
                 </button>
               )}
             </div>
@@ -585,7 +573,7 @@ export function PreviewCanvas({
                 </span>
                 <span className="story-step-title">{activeStep.title}</span>
 
-                <div className="story-step-dots" role="tablist" aria-label="Story steps">
+                <div className="story-step-dots" role="tablist" aria-label="Walkthrough steps">
                   {steps.map((st, idx) => (
                     <button
                       key={`${st.title}-${idx}`}
@@ -602,7 +590,7 @@ export function PreviewCanvas({
                   type="button"
                   className="btn ghost sm story-exit-btn"
                   onClick={() => onChangeStepIndex(null)}
-                  title="Return to full overview (Esc)"
+                  title="Exit walkthrough"
                 >
                   Overview
                 </button>
@@ -624,7 +612,7 @@ export function PreviewCanvas({
                         onClick={() =>
                           onSelectNode(selectedNodeId === nid ? null : nid)
                         }
-                        title="Inspect component details"
+                        title="View details"
                       >
                         {resolveDisplayLabel(nid)}
                       </button>
@@ -640,9 +628,9 @@ export function PreviewCanvas({
                         activeStepIndex! <= 0 ? null : activeStepIndex! - 1
                       )
                     }
-                    title="Previous step (Left Arrow)"
+                    title="Previous step"
                   >
-                    <ChevronLeft size={13} />
+                    <ChevronLeft size={15} />
                     <span>{activeStepIndex! <= 0 ? 'Overview' : 'Prev'}</span>
                   </button>
                   <button
@@ -655,12 +643,12 @@ export function PreviewCanvas({
                           : null
                       )
                     }
-                    title="Next step (Right Arrow)"
+                    title="Next step"
                   >
                     <span>
                       {activeStepIndex! + 1 < steps.length ? 'Next' : 'Finish'}
                     </span>
-                    <ChevronRight size={13} />
+                    <ChevronRight size={15} />
                   </button>
                 </div>
               </div>
@@ -671,44 +659,52 @@ export function PreviewCanvas({
 
       <div className="floating-zoom-bar" onMouseDown={(e) => e.stopPropagation()}>
         <button
+          type="button"
           className="btn ghost sm"
           onClick={() => {
             setCameraGlide(true);
             onChangeZoom((z) => Number(Math.max(0.15, z - 0.14).toFixed(2)));
           }}
           title="Zoom out"
+          aria-label="Zoom out"
         >
-          <ZoomOut size={13} />
+          <ZoomOut size={15} />
         </button>
         <button
+          type="button"
           className="btn ghost sm"
           onClick={() => {
             setCameraGlide(true);
             onResetView();
           }}
-          title="100%"
+          title="Reset zoom"
+          aria-label="Reset zoom"
         >
           {Math.round(zoom * 100)}%
         </button>
         <button
+          type="button"
           className="btn ghost sm"
           onClick={() => {
             setCameraGlide(true);
             onChangeZoom((z) => Number(Math.min(6, z + 0.14).toFixed(2)));
           }}
           title="Zoom in"
+          aria-label="Zoom in"
         >
-          <ZoomIn size={13} />
+          <ZoomIn size={15} />
         </button>
         <button
+          type="button"
           className="btn ghost sm"
           onClick={() => {
             setCameraGlide(true);
             onFitCanvas();
           }}
-          title="Fit"
+          title="Fit to screen"
+          aria-label="Fit to screen"
         >
-          <Maximize2 size={13} />
+          <Maximize2 size={15} />
         </button>
       </div>
     </div>

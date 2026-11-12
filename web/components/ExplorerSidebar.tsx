@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderPlus,
   Layers,
+  MoreHorizontal,
   Pause,
   Pencil,
   Play,
@@ -20,10 +21,8 @@ import { parentDirOfPath } from '../../src/shared/vfsPath';
 import type { RelayConnectionState } from '../hooks/useStudioController';
 import {
   buildExplorerSubtree,
-  getHeadVersion,
   type ExplorerFileTreeNode,
   type ExplorerFolderNode,
-  type StorageAllocationStats,
   type VfsProjectRoot,
 } from '../services/workspaceStorage';
 
@@ -34,10 +33,8 @@ interface ExplorerSidebarProps {
   activeProjectKey: string | null;
   workspaceId: string;
   relayState: RelayConnectionState;
-  hasBufferedLiveUpdate: boolean;
   connectedAgents: AgentSessionInfo[];
   liveProjectCounts: Map<string, number>;
-  storageStats: StorageAllocationStats;
   onResizeWidth: (width: number) => void;
   onToggleProjectExpanded: (projectKey: string) => void;
   onOpenFile: (fileId: string) => void;
@@ -69,10 +66,34 @@ type InlinePromptState =
       oldPath: string;
     };
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(1)} KB`;
-}
+type ActiveRowMenu =
+  | {
+      kind: 'project';
+      key: string;
+      projectKey: string;
+      expanded: boolean;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'folder';
+      key: string;
+      projectKey: string;
+      folderPath: string;
+      folderName: string;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: 'file';
+      key: string;
+      projectKey: string;
+      fileId: string;
+      filePath: string;
+      baseLabel: string;
+      x: number;
+      y: number;
+    };
 
 export function ExplorerSidebar({
   width,
@@ -81,10 +102,8 @@ export function ExplorerSidebar({
   activeProjectKey,
   workspaceId,
   relayState,
-  hasBufferedLiveUpdate,
   connectedAgents,
   liveProjectCounts,
-  storageStats,
   onResizeWidth,
   onToggleProjectExpanded,
   onOpenFile,
@@ -102,6 +121,7 @@ export function ExplorerSidebar({
   const [agentsPaneOpen, setAgentsPaneOpen] = useState(true);
   const [inlinePrompt, setInlinePrompt] = useState<InlinePromptState | null>(null);
   const [draftValue, setDraftValue] = useState('');
+  const [activeMenu, setActiveMenu] = useState<ActiveRowMenu | null>(null);
   const promptInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -110,6 +130,36 @@ export function ExplorerSidebar({
       promptInputRef.current.select();
     }
   }, [inlinePrompt]);
+
+  useEffect(() => {
+    if (!activeMenu) return undefined;
+    const close = () => setActiveMenu(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveMenu(null);
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [activeMenu]);
+
+  const computeMenuCoords = (
+    e: ReactMouseEvent<HTMLButtonElement>,
+    estimatedHeight: number
+  ): { x: number; y: number } => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const menuWidth = 176;
+    const x = Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 12));
+    const fitsBelow = rect.bottom + 6 + estimatedHeight <= window.innerHeight - 8;
+    const y = fitsBelow
+      ? rect.bottom + 4
+      : Math.max(8, rect.top - estimatedHeight - 4);
+    return { x, y };
+  };
 
   const toggleFolder = (projectKey: string, folderPath: string) => {
     const key = `${projectKey}::${folderPath}`;
@@ -191,7 +241,7 @@ export function ExplorerSidebar({
   const renderInlineInput = (depth: number, placeholder: string) => (
     <div
       className="tree-inline-row"
-      style={{ paddingLeft: `${12 + depth * 13}px` }}
+      style={{ paddingLeft: `${14 + depth * 15}px` }}
       onClick={(e) => e.stopPropagation()}
     >
       <input
@@ -223,18 +273,13 @@ export function ExplorerSidebar({
     const isRenaming =
       inlinePrompt?.kind === 'rename-file' && inlinePrompt.fileId === file.id;
 
-    const head = getHeadVersion(file);
     const isActive = file.id === activeFileId;
     const baseLabel = (file.path.split('/').pop() || file.title).replace(
       /\.(mmd|mermaid)$/i,
       ''
     );
-
-    const roleHint = hasSubGraphs
-      ? `Overview (${children.length} sub-graph${children.length === 1 ? '' : 's'})`
-      : isChildGraph
-        ? 'Sub-graph'
-        : 'Graph';
+    const menuKey = `file::${file.id}`;
+    const isMenuOpen = activeMenu?.key === menuKey;
 
     return (
       <div
@@ -244,7 +289,7 @@ export function ExplorerSidebar({
         }`}
       >
         {isRenaming ? (
-          renderInlineInput(depth, 'graph-name.mmd')
+          renderInlineInput(depth, 'filename.mmd')
         ) : (
           <div
             data-explorer-path={`${project.projectKey}/${file.path}`}
@@ -252,10 +297,12 @@ export function ExplorerSidebar({
               hasSubGraphs ? 'parent' : isChildGraph ? 'child' : 'standalone'
             }
             className={`tree-row tree-file-row ${isActive ? 'active' : ''} ${
-              hasSubGraphs ? 'parent-overview-row' : ''
-            } ${isChildGraph ? 'child-subgraph-row' : ''}`}
+              isMenuOpen ? 'menu-open' : ''
+            } ${hasSubGraphs ? 'parent-overview-row' : ''} ${
+              isChildGraph ? 'child-subgraph-row' : ''
+            }`}
             style={{
-              paddingLeft: `${(hasSubGraphs ? 8 : 14) + depth * 13}px`,
+              paddingLeft: `${(hasSubGraphs ? 8 : 16) + depth * 15}px`,
             }}
             onClick={() => onOpenFile(file.id)}
             onDoubleClick={(e) => {
@@ -268,7 +315,7 @@ export function ExplorerSidebar({
               });
               setDraftValue(baseLabel);
             }}
-            title={`${roleHint}: ${project.projectLabel}/${file.path} (v${file.currentVersion}, updated by ${head.authorLabel})`}
+            title={`${project.projectLabel}/${file.path}`}
           >
             {hasSubGraphs && (
               <button
@@ -278,56 +325,52 @@ export function ExplorerSidebar({
                   e.stopPropagation();
                   toggleGraphChildren(file.id);
                 }}
-                aria-label={
-                  isGraphCollapsed ? 'Expand sub-graphs' : 'Collapse sub-graphs'
-                }
+                aria-label={isGraphCollapsed ? 'Expand' : 'Collapse'}
               >
                 {isGraphCollapsed ? (
-                  <ChevronRight size={11} className="tree-chevron" />
+                  <ChevronRight size={13} className="tree-chevron" />
                 ) : (
-                  <ChevronDown size={11} className="tree-chevron" />
+                  <ChevronDown size={13} className="tree-chevron" />
                 )}
               </button>
             )}
 
             {hasSubGraphs ? (
-              <Layers size={13} className="tree-file-icon overview-icon" />
+              <Layers size={15} className="tree-file-icon overview-icon" />
             ) : isChildGraph ? (
-              <CornerDownRight size={12} className="tree-file-icon child-icon" />
+              <CornerDownRight size={14} className="tree-file-icon child-icon" />
             ) : (
-              <FileCode size={13} className="tree-file-icon" />
+              <FileCode size={15} className="tree-file-icon" />
             )}
 
             <span className="tree-item-label">{baseLabel}</span>
             {file.unread && <span className="tab-unread-dot" />}
-            <span className={`tree-author-badge author-${head.authorBadge}`}>
-              {head.authorBadge}
-            </span>
 
             <div className="tree-row-actions" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                className="tree-action-btn"
-                title="Rename or move graph"
-                onClick={() => {
-                  setInlinePrompt({
-                    kind: 'rename-file',
+                className={`tree-action-btn tree-menu-trigger ${isMenuOpen ? 'open' : ''}`}
+                aria-label="More actions"
+                aria-expanded={isMenuOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isMenuOpen) {
+                    setActiveMenu(null);
+                    return;
+                  }
+                  const coords = computeMenuCoords(e, 84);
+                  setActiveMenu({
+                    kind: 'file',
+                    key: menuKey,
                     projectKey: project.projectKey,
                     fileId: file.id,
-                    oldPath: file.path,
+                    filePath: file.path,
+                    baseLabel,
+                    ...coords,
                   });
-                  setDraftValue(baseLabel);
                 }}
               >
-                <Pencil size={11} />
-              </button>
-              <button
-                type="button"
-                className="tree-action-btn danger"
-                title="Delete graph"
-                onClick={() => onDeleteGraph(project.projectKey, file.id)}
-              >
-                <Trash2 size={11} />
+                <MoreHorizontal size={16} />
               </button>
             </div>
           </div>
@@ -355,6 +398,8 @@ export function ExplorerSidebar({
       inlinePrompt?.kind === 'rename-folder' &&
       inlinePrompt.projectKey === project.projectKey &&
       inlinePrompt.oldPath === node.path;
+    const menuKey = `folder::${dirKey}`;
+    const isMenuOpen = activeMenu?.key === menuKey;
 
     return (
       <div key={node.path} className="tree-folder-group">
@@ -363,65 +408,46 @@ export function ExplorerSidebar({
         ) : (
           <div
             data-explorer-folder={`${project.projectKey}/${node.path}`}
-            className="tree-row tree-folder-row"
-            style={{ paddingLeft: `${10 + depth * 13}px` }}
+            className={`tree-row tree-folder-row ${isMenuOpen ? 'menu-open' : ''}`}
+            style={{ paddingLeft: `${10 + depth * 15}px` }}
             onClick={() => toggleFolder(project.projectKey, node.path)}
           >
             {isCollapsed ? (
-              <ChevronRight size={12} className="tree-chevron" />
+              <ChevronRight size={14} className="tree-chevron" />
             ) : (
-              <ChevronDown size={12} className="tree-chevron" />
+              <ChevronDown size={14} className="tree-chevron" />
             )}
             {isCollapsed ? (
-              <Folder size={13} className="tree-folder-icon" />
+              <Folder size={15} className="tree-folder-icon" />
             ) : (
-              <FolderOpen size={13} className="tree-folder-icon" />
+              <FolderOpen size={15} className="tree-folder-icon" />
             )}
             <span className="tree-item-label">{node.name}</span>
 
             <div className="tree-row-actions" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                className="tree-action-btn"
-                title="New graph in folder"
-                onClick={() =>
-                  startNewItem('new-file', project.projectKey, node.path)
-                }
-              >
-                <FilePlus2 size={11} />
-              </button>
-              <button
-                type="button"
-                className="tree-action-btn"
-                title="New subfolder"
-                onClick={() =>
-                  startNewItem('new-folder', project.projectKey, node.path)
-                }
-              >
-                <FolderPlus size={11} />
-              </button>
-              <button
-                type="button"
-                className="tree-action-btn"
-                title="Rename folder"
-                onClick={() => {
-                  setInlinePrompt({
-                    kind: 'rename-folder',
+                className={`tree-action-btn tree-menu-trigger ${isMenuOpen ? 'open' : ''}`}
+                aria-label="Folder actions"
+                aria-expanded={isMenuOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isMenuOpen) {
+                    setActiveMenu(null);
+                    return;
+                  }
+                  const coords = computeMenuCoords(e, 164);
+                  setActiveMenu({
+                    kind: 'folder',
+                    key: menuKey,
                     projectKey: project.projectKey,
-                    oldPath: node.path,
+                    folderPath: node.path,
+                    folderName: node.name,
+                    ...coords,
                   });
-                  setDraftValue(node.name);
                 }}
               >
-                <Pencil size={11} />
-              </button>
-              <button
-                type="button"
-                className="tree-action-btn danger"
-                title="Delete folder"
-                onClick={() => onDeleteFolder(project.projectKey, node.path)}
-              >
-                <Trash2 size={11} />
+                <MoreHorizontal size={16} />
               </button>
             </div>
           </div>
@@ -437,8 +463,8 @@ export function ExplorerSidebar({
               renderInlineInput(
                 depth + 1,
                 inlinePrompt.kind === 'new-file'
-                  ? 'graph-name.mmd'
-                  : 'subfolder-name'
+                  ? 'filename.mmd'
+                  : 'folder-name'
               )}
 
             {node.folders.map((sub) =>
@@ -455,34 +481,45 @@ export function ExplorerSidebar({
 
   return (
     <aside className="explorer-sidebar" style={{ width: `${width}px` }}>
-      {/* Top Header: EXPLORER */}
+      {/* Top Header: Explorer */}
       <div className="sidebar-section-header explorer-top-header">
         <span className="sidebar-section-title">EXPLORER</span>
         <div className="sidebar-header-actions">
           <button
             type="button"
             className="tree-action-btn visible"
-            title="New Graph"
+            title="New file"
+            aria-label="New file"
             onClick={() => startNewItem('new-file', targetTopProjectKey, '')}
           >
-            <FilePlus2 size={13} />
+            <FilePlus2 size={15} />
           </button>
           <button
             type="button"
             className="tree-action-btn visible"
-            title="New Folder"
+            title="New folder"
+            aria-label="New folder"
             onClick={() => startNewItem('new-folder', targetTopProjectKey, '')}
           >
-            <FolderPlus size={13} />
+            <FolderPlus size={15} />
           </button>
         </div>
       </div>
 
       {/* Scrollable Project Tree */}
-      <div className="explorer-tree" role="tree" aria-label="Diagram Explorer">
+      <div
+        className="explorer-tree"
+        role="tree"
+        aria-label="Diagram Explorer"
+        onScroll={() => {
+          if (activeMenu) setActiveMenu(null);
+        }}
+      >
         {projects.map((project) => {
           const liveCount = liveProjectCounts.get(project.projectKey) ?? 0;
           const treeRoot = buildExplorerSubtree(project, '');
+          const menuKey = `project::${project.projectKey}`;
+          const isMenuOpen = activeMenu?.key === menuKey;
 
           return (
             <div
@@ -491,19 +528,19 @@ export function ExplorerSidebar({
               data-project-key={project.projectKey}
             >
               <div
-                className="tree-row tree-project-row"
+                className={`tree-row tree-project-row ${isMenuOpen ? 'menu-open' : ''}`}
                 onClick={() => onToggleProjectExpanded(project.projectKey)}
               >
                 {project.expanded ? (
-                  <ChevronDown size={12} className="tree-chevron" />
+                  <ChevronDown size={14} className="tree-chevron" />
                 ) : (
-                  <ChevronRight size={12} className="tree-chevron" />
+                  <ChevronRight size={14} className="tree-chevron" />
                 )}
                 <span className="tree-project-label">{project.projectLabel}</span>
                 {liveCount > 0 && (
                   <span
                     className="project-live-badge"
-                    title={`${liveCount} coding agent(s) connected`}
+                    title={`${liveCount} connected`}
                   >
                     <span className="live-dot online" />
                     {liveCount}
@@ -516,37 +553,26 @@ export function ExplorerSidebar({
                 >
                   <button
                     type="button"
-                    className="tree-action-btn"
-                    title={`New graph in ${project.projectLabel}`}
-                    onClick={() => {
-                      if (!project.expanded) {
-                        onToggleProjectExpanded(project.projectKey);
+                    className={`tree-action-btn tree-menu-trigger ${isMenuOpen ? 'open' : ''}`}
+                    aria-label="Project actions"
+                    aria-expanded={isMenuOpen}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isMenuOpen) {
+                        setActiveMenu(null);
+                        return;
                       }
-                      startNewItem('new-file', project.projectKey, '');
+                      const coords = computeMenuCoords(e, 130);
+                      setActiveMenu({
+                        kind: 'project',
+                        key: menuKey,
+                        projectKey: project.projectKey,
+                        expanded: project.expanded,
+                        ...coords,
+                      });
                     }}
                   >
-                    <FilePlus2 size={11} />
-                  </button>
-                  <button
-                    type="button"
-                    className="tree-action-btn"
-                    title={`New folder in ${project.projectLabel}`}
-                    onClick={() => {
-                      if (!project.expanded) {
-                        onToggleProjectExpanded(project.projectKey);
-                      }
-                      startNewItem('new-folder', project.projectKey, '');
-                    }}
-                  >
-                    <FolderPlus size={11} />
-                  </button>
-                  <button
-                    type="button"
-                    className="tree-action-btn danger"
-                    title={`Delete project ${project.projectLabel}`}
-                    onClick={() => onDeleteProject(project.projectKey)}
-                  >
-                    <Trash2 size={11} />
+                    <MoreHorizontal size={16} />
                   </button>
                 </div>
               </div>
@@ -561,7 +587,7 @@ export function ExplorerSidebar({
                     renderInlineInput(
                       1,
                       inlinePrompt.kind === 'new-file'
-                        ? 'auth/oauth-flow.mmd'
+                        ? 'filename.mmd'
                         : 'folder-name'
                     )}
 
@@ -580,13 +606,7 @@ export function ExplorerSidebar({
                         inlinePrompt.kind === 'new-folder') &&
                       inlinePrompt.projectKey === project.projectKey &&
                       inlinePrompt.parentDir === ''
-                    ) && (
-                      <div className="tree-empty-hint">
-                        {liveCount > 0
-                          ? 'Connected · waiting for graphs'
-                          : 'Empty project'}
-                      </div>
-                    )}
+                    ) && <div className="tree-empty-hint">No files yet</div>}
                 </div>
               )}
             </div>
@@ -594,7 +614,169 @@ export function ExplorerSidebar({
         })}
       </div>
 
-      {/* VS Code-Style Bottom Pane: Connected Agents & Browser Storage */}
+      {/* Floating 3-Dot Action Menu */}
+      {activeMenu && (
+        <div
+          className="dropdown-menu explorer-context-menu"
+          role="menu"
+          style={{
+            position: 'fixed',
+            top: `${activeMenu.y}px`,
+            left: `${activeMenu.x}px`,
+            right: 'auto',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {activeMenu.kind === 'project' && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item"
+                onClick={() => {
+                  const { projectKey, expanded } = activeMenu;
+                  setActiveMenu(null);
+                  if (!expanded) onToggleProjectExpanded(projectKey);
+                  startNewItem('new-file', projectKey, '');
+                }}
+              >
+                <FilePlus2 size={15} />
+                <span>New file</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item"
+                onClick={() => {
+                  const { projectKey, expanded } = activeMenu;
+                  setActiveMenu(null);
+                  if (!expanded) onToggleProjectExpanded(projectKey);
+                  startNewItem('new-folder', projectKey, '');
+                }}
+              >
+                <FolderPlus size={15} />
+                <span>New folder</span>
+              </button>
+              <div className="dropdown-divider" />
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item danger"
+                onClick={() => {
+                  const { projectKey } = activeMenu;
+                  setActiveMenu(null);
+                  onDeleteProject(projectKey);
+                }}
+              >
+                <Trash2 size={15} />
+                <span>Delete project</span>
+              </button>
+            </>
+          )}
+
+          {activeMenu.kind === 'folder' && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item"
+                onClick={() => {
+                  const { projectKey, folderPath } = activeMenu;
+                  setActiveMenu(null);
+                  startNewItem('new-file', projectKey, folderPath);
+                }}
+              >
+                <FilePlus2 size={15} />
+                <span>New file</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item"
+                onClick={() => {
+                  const { projectKey, folderPath } = activeMenu;
+                  setActiveMenu(null);
+                  startNewItem('new-folder', projectKey, folderPath);
+                }}
+              >
+                <FolderPlus size={15} />
+                <span>New folder</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item"
+                onClick={() => {
+                  const { projectKey, folderPath, folderName } = activeMenu;
+                  setActiveMenu(null);
+                  setInlinePrompt({
+                    kind: 'rename-folder',
+                    projectKey,
+                    oldPath: folderPath,
+                  });
+                  setDraftValue(folderName);
+                }}
+              >
+                <Pencil size={15} />
+                <span>Rename</span>
+              </button>
+              <div className="dropdown-divider" />
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item danger"
+                onClick={() => {
+                  const { projectKey, folderPath } = activeMenu;
+                  setActiveMenu(null);
+                  onDeleteFolder(projectKey, folderPath);
+                }}
+              >
+                <Trash2 size={15} />
+                <span>Delete folder</span>
+              </button>
+            </>
+          )}
+
+          {activeMenu.kind === 'file' && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item"
+                onClick={() => {
+                  const { projectKey, fileId, filePath, baseLabel } = activeMenu;
+                  setActiveMenu(null);
+                  setInlinePrompt({
+                    kind: 'rename-file',
+                    projectKey,
+                    fileId,
+                    oldPath: filePath,
+                  });
+                  setDraftValue(baseLabel);
+                }}
+              >
+                <Pencil size={15} />
+                <span>Rename</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="dropdown-item danger"
+                onClick={() => {
+                  const { projectKey, fileId } = activeMenu;
+                  setActiveMenu(null);
+                  onDeleteGraph(projectKey, fileId);
+                }}
+              >
+                <Trash2 size={15} />
+                <span>Delete</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Bottom Pane: Connected Agents */}
       <div className="sidebar-agents-pane">
         <div
           className="sidebar-section-header clickable"
@@ -602,9 +784,9 @@ export function ExplorerSidebar({
         >
           <div className="sidebar-section-left">
             {agentsPaneOpen ? (
-              <ChevronDown size={12} className="tree-chevron" />
+              <ChevronDown size={14} className="tree-chevron" />
             ) : (
-              <ChevronRight size={12} className="tree-chevron" />
+              <ChevronRight size={14} className="tree-chevron" />
             )}
             <span className="sidebar-section-title">CONNECTED AGENTS</span>
             <span
@@ -627,14 +809,17 @@ export function ExplorerSidebar({
               }`}
               title={
                 relayState === 'paused'
-                  ? hasBufferedLiveUpdate
-                    ? 'Update queued — click to resume sync'
-                    : 'Resume live MCP sync'
-                  : 'Pause auto-focus'
+                  ? 'Resume live updates'
+                  : 'Pause live updates'
+              }
+              aria-label={
+                relayState === 'paused'
+                  ? 'Resume live updates'
+                  : 'Pause live updates'
               }
               onClick={onToggleLivePause}
             >
-              {relayState === 'paused' ? <Play size={11} /> : <Pause size={11} />}
+              {relayState === 'paused' ? <Play size={14} /> : <Pause size={14} />}
             </button>
           </div>
         </div>
@@ -647,11 +832,11 @@ export function ExplorerSidebar({
                 className="sidebar-copy-mcp-btn"
                 onClick={() => {
                   navigator.clipboard.writeText(pairedMcpUrl);
-                  onNotifyToast('Copied paired MCP URL');
+                  onNotifyToast('MCP URL copied');
                 }}
-                title="Copy paired MCP URL to connect Claude Code, Pi, or Cursor"
+                title="Copy MCP URL"
               >
-                <Copy size={11} />
+                <Copy size={14} />
                 <span>Copy MCP URL</span>
               </button>
             ) : (
@@ -671,14 +856,6 @@ export function ExplorerSidebar({
                 ))}
               </ul>
             )}
-
-            <div className="sidebar-storage-footer">
-              <span>localStorage {formatBytes(storageStats.bytesUsed)}</span>
-              <span>·</span>
-              <span>{storageStats.diagramCount} graphs</span>
-              <span>·</span>
-              <span>0 B server</span>
-            </div>
           </div>
         )}
       </div>

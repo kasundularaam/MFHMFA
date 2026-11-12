@@ -601,6 +601,43 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 5_000 }
         );
 
+        // Verify clean Explorer UI: no agent badges on file rows, no storage footer,
+        // `File history` tooltip on version pill, 3-dot context menu, Light theme, and Docs logo return!
+        const uiAudit = await wsPage.evaluate(() => ({
+          authorBadgesInTree: document.querySelectorAll('.explorer-tree .tree-author-badge')
+            .length,
+          storageFooter: document.querySelectorAll('.sidebar-storage-footer').length,
+          historyTitle: document.querySelector('.version-pill')?.getAttribute('title'),
+        }));
+        expect(uiAudit.authorBadgesInTree).toBe(0);
+        expect(uiAudit.storageFooter).toBe(0);
+        expect(uiAudit.historyTitle).toBe('File history');
+
+        await wsPage.evaluate(() => {
+          const trigger = document.querySelector(
+            '[data-explorer-path="project-a/database/session-er.mmd"] .tree-menu-trigger'
+          ) as HTMLElement | null;
+          trigger?.click();
+        });
+        await wsPage.waitForSelector('.explorer-context-menu');
+
+        // Toggle Light theme and navigate to Documentation, verifying no separate back button
+        await wsPage.click('button[aria-label="Light theme"]');
+        await wsPage.waitForFunction(
+          () => document.documentElement.dataset.mode === 'light',
+          { timeout: 3_000 }
+        );
+
+        await wsPage.click('button[aria-label="Documentation"]');
+        await wsPage.waitForSelector('.docs-page');
+        const topbarLeftButtonsOnDocs = await wsPage.evaluate(
+          () => document.querySelectorAll('.topbar-left button').length
+        );
+        expect(topbarLeftButtonsOnDocs).toBe(1); // Only the brand logo button
+
+        await wsPage.click('.brand-lockup');
+        await wsPage.waitForSelector('.explorer-sidebar');
+
         expect(started.service.getRelayStats().storedDiagrams).toBe(0);
       } finally {
         await Promise.all([

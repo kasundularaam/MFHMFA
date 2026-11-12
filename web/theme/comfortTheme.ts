@@ -24,28 +24,28 @@ export function getMermaidComfortConfig(mode: AppearanceMode) {
       background: isDark ? '#191918' : '#f5f3ee',
       fontFamily:
         '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
-      fontSize: '14px',
+      fontSize: '15px',
 
       primaryColor: isDark ? '#232321' : '#fcfbf8',
-      primaryTextColor: isDark ? '#d6d3cb' : '#282724',
-      primaryBorderColor: isDark ? '#45443e' : '#c5c0b5',
+      primaryTextColor: isDark ? '#dedbd3' : '#201f1c',
+      primaryBorderColor: isDark ? '#4a4943' : '#b8b2a6',
 
       secondaryColor: isDark ? '#1f1f1d' : '#edeae2',
-      secondaryTextColor: isDark ? '#c7c4bc' : '#383632',
-      secondaryBorderColor: isDark ? '#383732' : '#cfcac0',
+      secondaryTextColor: isDark ? '#cfccc4' : '#2e2c28',
+      secondaryBorderColor: isDark ? '#3d3c37' : '#c2bdb1',
 
       tertiaryColor: isDark ? '#1d1d1b' : '#ece9e1',
-      tertiaryTextColor: isDark ? '#c7c4bc' : '#383632',
-      tertiaryBorderColor: isDark ? '#33322e' : '#d4cfc5',
+      tertiaryTextColor: isDark ? '#cfccc4' : '#2e2c28',
+      tertiaryBorderColor: isDark ? '#383732' : '#c8c2b6',
 
-      lineColor: isDark ? '#7d7a72' : '#736f66',
-      textColor: isDark ? '#d6d3cb' : '#282724',
+      lineColor: isDark ? '#87847b' : '#666259',
+      textColor: isDark ? '#dedbd3' : '#201f1c',
       mainBkg: isDark ? '#232321' : '#fcfbf8',
-      nodeBorder: isDark ? '#45443e' : '#c2bdb2',
-      clusterBkg: isDark ? '#1d1d1b' : '#ece9e1',
-      clusterBorder: isDark ? '#33322e' : '#d4cfc5',
-      defaultLinkColor: isDark ? '#7d7a72' : '#736f66',
-      titleColor: isDark ? '#d6d3cb' : '#282724',
+      nodeBorder: isDark ? '#4a4943' : '#b8b2a6',
+      clusterBkg: isDark ? '#1d1d1b' : '#eae6dd',
+      clusterBorder: isDark ? '#383732' : '#c8c2b6',
+      defaultLinkColor: isDark ? '#87847b' : '#666259',
+      titleColor: isDark ? '#dedbd3' : '#201f1c',
       edgeLabelBackground: isDark ? '#191918' : '#f5f3ee',
 
       // Sequence diagrams
