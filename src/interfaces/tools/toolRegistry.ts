@@ -189,7 +189,7 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
     name: 'mermaid_render',
     title: 'Write, Validate, Render & Visually Inspect Mermaid Graph',
     description:
-      'Write or update a Mermaid graph at `path` inside your project working directory (creating subfolders automatically like `mkdir -p` and appending a new immutable version, keeping the last 5), validate syntax, and receive a 2x Retina PNG image (`image/png`) + layout diagnostics.',
+      'Write or update a Mermaid graph at `path` inside your project working directory (auto-creating folders and coalescing rapid iterative refinements by the same agent into a single clean revision), validate syntax, and receive a 2x Retina PNG (`image/png`) + layout diagnostics. IMPORTANT: Never output raw ```mermaid``` code or URLs in chat unless explicitly asked — visually verify the PNG until clean, ensure `syncedToBrowser` is true, and simply tell the user their graphs are ready on MFHMFA.',
     zodShape: {
       code: z.string().describe('Raw Mermaid diagram source code (without ```mermaid fences).'),
       path: z
@@ -247,6 +247,8 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
       const callerMeta = ctx.getCallerMeta?.();
       const effectiveAgent = args.agent?.trim() || callerMeta?.agentName || null;
 
+      const workspaceToken = ctx.getWorkspaceToken?.() ?? null;
+
       const res = await service.render(args.code, {
         path: args.path,
         title: args.title,
@@ -260,9 +262,27 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
         outputPath: args.outputPath,
         source: ctx.source,
         requestBaseUrl: ctx.getBaseUrl,
-        workspaceToken: ctx.getWorkspaceToken?.() ?? null,
+        workspaceToken,
+        includeStudioUrl: false,
         relayBridge: ctx.relayBridge,
       });
+
+      const syncedToBrowser = res.syncedSubscribers > 0;
+      const syncStatus = !res.valid
+        ? 'invalid'
+        : syncedToBrowser
+          ? 'synced_live'
+          : workspaceToken
+            ? 'browser_tab_closed'
+            : 'workspace_not_paired';
+
+      const presentationRule = !res.valid
+        ? undefined
+        : syncedToBrowser
+          ? 'Synced live to the user\'s MFHMFA Studio browser tab. Once you have visually verified the PNG and layoutDiagnostics, reply concisely that their diagram is ready on MFHMFA — do NOT output raw Mermaid source code or any URLs unless the user explicitly asks for raw code.'
+          : workspaceToken
+            ? 'No MFHMFA Studio browser tab is currently open for this workspace (MFHMFA stores 0 diagrams on the server — 100% browser localStorage). Ask the user to open MFHMFA Studio in their browser and tell you when ready so you can push the finalized diagram live. Do NOT output raw Mermaid source code or URLs unless explicitly asked.'
+            : 'No ?workspace=ws_... token is configured on this MCP connection, so MFHMFA cannot route diagrams to the user\'s browser tab. Ask the user to copy their paired MCP URL from MFHMFA Studio ("Copy MCP URL" in the sidebar or Docs) and reconnect. Do NOT output raw Mermaid source code or URLs unless explicitly asked.';
 
       return {
         ok: res.valid,
@@ -273,8 +293,9 @@ export const AGENT_TOOLS: readonly AgentToolDefinition<any>[] = [
           title: res.title,
           agent: res.agent,
           valid: res.valid,
-          studioUrl: res.studioUrl,
-          syncedToBrowser: res.syncedSubscribers > 0,
+          syncedToBrowser,
+          syncStatus,
+          ...(presentationRule ? { presentationRule } : {}),
           diagramType: res.diagramType,
           theme: res.theme,
           look: res.look,

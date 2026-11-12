@@ -76,7 +76,7 @@ export class StatelessWorkspaceRelay implements WorkspaceRelayPort {
     if (!clean) {
       return Promise.reject(
         new Error(
-          'No workspace token configured. Connect your MCP client with `?workspace=ws_...` from Studio Docs.'
+          'No workspace token configured. Ask the user to copy their paired `?workspace=ws_...` MCP URL from MFHMFA Studio ("Copy MCP URL" in sidebar or Docs) so VFS tools (`ls`, `read`, `mv`) can access browser localStorage.'
         )
       );
     }
@@ -85,7 +85,7 @@ export class StatelessWorkspaceRelay implements WorkspaceRelayPort {
     if (!subs || subs.size === 0) {
       return Promise.reject(
         new Error(
-          'Studio browser window is not currently open for this workspace. Open MFHMFA Studio in your browser so VFS tools (`ls`, `read`, `mv`) can access browser localStorage.'
+          'Studio browser window is not currently open for this workspace (MFHMFA stores 0 diagrams on the server). Ask the user to open MFHMFA Studio in their browser so VFS tools (`ls`, `read`, `mv`) and live diagram sync can access browser localStorage.'
         )
       );
     }

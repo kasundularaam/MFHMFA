@@ -90,6 +90,7 @@ export function createRenderRouter(
         source,
         requestBaseUrl,
         workspaceToken,
+        includeStudioUrl: source === 'web',
       });
 
       res.json({

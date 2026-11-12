@@ -135,10 +135,10 @@ docker compose up -d --build
             >
               [rotate]
             </button>
-            . Including <code>?workspace={workspaceId}</code> in your MCP URL routes diagrams
-            rendered by your agent directly into tabs in this browser over Server-Sent Events
-            (SSE), without needing links pasted in chat. If you omit <code>?workspace=...</code>,
-            all tools still work statelessly and return shareable URLs.
+            . Including <code>?workspace={workspaceId}</code> in your MCP URL pairs your terminal
+            agent with this browser&apos;s SSE channel so finalized diagrams stream directly into
+            your <code>localStorage</code> Explorer (keep a Studio tab open while your agent works
+            — MFHMFA stores 0 diagrams on the server).
           </p>
 
           <h3>mcp.json (Cursor, Antigravity, Windsurf, Claude Desktop)</h3>
@@ -234,9 +234,9 @@ docker compose up -d --build
                   <code>scale?</code>, <code>outputPath?</code>
                 </td>
                 <td>
-                  Creates parent folders, appends a new immutable revision in browser{' '}
-                  <code>localStorage</code>, validates syntax, and returns a 2x Retina PNG +
-                  layout diagnostics + <code>#z=</code> <code>studioUrl</code>.
+                  Creates parent folders, streams into browser <code>localStorage</code> (coalescing
+                  rapid retries by the same agent into 1 clean revision), validates syntax, and
+                  returns a 2x Retina PNG + layout diagnostics.
                 </td>
               </tr>
               <tr>

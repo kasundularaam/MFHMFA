@@ -274,6 +274,88 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
     expect(afterRestore.versions.map((v) => v.version)).toEqual([4, 5, 6, 7, 8]);
   });
 
+  it('coalesces rapid iterative renders by the same coding agent into a single clean version', () => {
+    let state: WorkspaceState = {
+      version: 4,
+      workspaceId: 'ws_coalesce_unit',
+      sidebarOpen: true,
+      sidebarWidth: 256,
+      openTabIds: [],
+      activeFileId: null,
+      projects: [],
+    };
+
+    const t0 = 1_700_000_000_000;
+
+    // Pi iterates 4 times within 30s while inspecting 2x Retina PNGs -> stays clean v1!
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      state = upsertGraphInVfs(state, {
+        projectName: 'MFHMFA',
+        path: 'architecture/memory-architecture.mmd',
+        code: `flowchart TB\n  Draft_${attempt}["Attempt ${attempt}"]`,
+        diagramType: 'flowchart-v2',
+        agentSlug: 'pi',
+        agentLabel: 'Pi',
+        agentShortLabel: 'Pi',
+        agentSessionId: 'sess-pi-1',
+        autoOpenTab: true,
+        autoFocus: true,
+        now: t0 + attempt * 5_000,
+      }).nextState;
+    }
+
+    const afterRetries = evaluateVfsRead(
+      state,
+      'MFHMFA',
+      'architecture/memory-architecture.mmd'
+    );
+    expect(afterRetries.currentVersion).toBe(1);
+    expect(afterRetries.versions.length).toBe(1);
+    expect(afterRetries.code).toContain('Attempt 4');
+
+    // Another agent (Claude Code) edits 10s later -> appends immutable v2!
+    state = upsertGraphInVfs(state, {
+      projectName: 'MFHMFA',
+      path: 'architecture/memory-architecture.mmd',
+      code: 'flowchart TB\n  Claude["Claude Update"]',
+      diagramType: 'flowchart-v2',
+      agentSlug: 'claude-code',
+      agentLabel: 'Claude Code',
+      agentShortLabel: 'Claude',
+      agentSessionId: 'sess-claude-1',
+      autoOpenTab: true,
+      autoFocus: true,
+      now: t0 + 30_000,
+    }).nextState;
+
+    // Claude returns 2 minutes later in a follow-up turn -> appends immutable v3!
+    state = upsertGraphInVfs(state, {
+      projectName: 'MFHMFA',
+      path: 'architecture/memory-architecture.mmd',
+      code: 'flowchart TB\n  ClaudeFollowup["Claude Follow-Up"]',
+      diagramType: 'flowchart-v2',
+      agentSlug: 'claude-code',
+      agentLabel: 'Claude Code',
+      agentShortLabel: 'Claude',
+      agentSessionId: 'sess-claude-1',
+      autoOpenTab: true,
+      autoFocus: true,
+      now: t0 + 180_000,
+    }).nextState;
+
+    const finalRead = evaluateVfsRead(
+      state,
+      'MFHMFA',
+      'architecture/memory-architecture.mmd'
+    );
+    expect(finalRead.currentVersion).toBe(3);
+    expect(finalRead.versions.map((v) => `${v.version}:${v.author}`)).toEqual([
+      '1:pi',
+      '2:claude',
+      '3:claude',
+    ]);
+  });
+
   it('resolves public origin safely from reverse-proxy headers and rejects host injection', () => {
     expect(
       resolveRequestBaseUrl(

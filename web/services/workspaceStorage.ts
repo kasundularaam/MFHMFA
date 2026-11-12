@@ -27,6 +27,7 @@ export const SCRATCHPAD_PROJECT_KEY = 'scratchpad';
 export const GENERAL_PROJECT_KEY = 'general';
 export const MAX_GRAPH_VERSIONS = 5;
 const HUMAN_EDIT_COALESCE_MS = 45_000;
+export const AGENT_ITERATION_COALESCE_MS = 90_000;
 
 export const WELCOME_CODE = `flowchart TB
   subgraph Explorer["VS Code Project Explorer (localStorage)"]
@@ -55,6 +56,7 @@ export interface GraphVersionRecord {
   authorSlug: string;
   authorLabel: string;
   authorBadge: string;
+  agentSessionId?: string | null;
   createdAt: number;
 }
 
@@ -668,6 +670,8 @@ export function allocateProjectSpace(
 
 /**
  * Writes/updates a `.mmd` graph in the project VFS using the immutable last-5 versions ring buffer.
+ * Rapid iterative renders of the same `path` by the same coding agent within 90s coalesce into
+ * the active head revision so layout self-corrections do not pollute version history.
  */
 export function upsertGraphInVfs(
   state: WorkspaceState,
@@ -681,8 +685,10 @@ export function upsertGraphInVfs(
     agentSlug: string;
     agentLabel: string;
     agentShortLabel?: string;
+    agentSessionId?: string | null;
     autoOpenTab: boolean;
     autoFocus: boolean;
+    now?: number;
   }
 ): { nextState: WorkspaceState; file: VfsGraphFile; projectKey: string } {
   const alloc = allocateProjectSpace(state, {
@@ -690,7 +696,7 @@ export function upsertGraphInVfs(
     previousProjectKey: params.previousProjectKey,
   });
 
-  const now = Date.now();
+  const now = params.now ?? Date.now();
   const projectKey = alloc.projectKey;
   const relPath = normalizeRelativeGraphPath(params.path);
   const displayTitle = params.title?.trim() || graphTitleFromPath(relPath);
@@ -735,16 +741,44 @@ export function upsertGraphInVfs(
       let nextVersions = prev.versions;
 
       if (head.code !== params.code || head.authorSlug !== authorSlug) {
-        nextVersionNum = prev.currentVersion + 1;
-        const newRec: GraphVersionRecord = {
-          version: nextVersionNum,
-          code: params.code,
-          authorSlug,
-          authorLabel,
-          authorBadge,
-          createdAt: now,
-        };
-        nextVersions = [...prev.versions, newRec].slice(-MAX_GRAPH_VERSIONS);
+        const canCoalesceAgentIteration =
+          !prev.isWelcome &&
+          authorSlug !== 'user' &&
+          head.authorSlug === authorSlug &&
+          (!params.agentSessionId ||
+            !head.agentSessionId ||
+            head.agentSessionId === params.agentSessionId) &&
+          now - head.createdAt < AGENT_ITERATION_COALESCE_MS;
+
+        if (canCoalesceAgentIteration) {
+          nextVersions = [
+            ...prev.versions.slice(0, -1),
+            {
+              ...head,
+              code: params.code,
+              authorLabel,
+              authorBadge,
+              ...(params.agentSessionId
+                ? { agentSessionId: params.agentSessionId }
+                : {}),
+              createdAt: now,
+            },
+          ];
+        } else {
+          nextVersionNum = prev.currentVersion + 1;
+          const newRec: GraphVersionRecord = {
+            version: nextVersionNum,
+            code: params.code,
+            authorSlug,
+            authorLabel,
+            authorBadge,
+            ...(params.agentSessionId
+              ? { agentSessionId: params.agentSessionId }
+              : {}),
+            createdAt: now,
+          };
+          nextVersions = [...prev.versions, newRec].slice(-MAX_GRAPH_VERSIONS);
+        }
       }
 
       const updated: VfsGraphFile = {
@@ -776,6 +810,9 @@ export function upsertGraphInVfs(
             authorSlug,
             authorLabel,
             authorBadge,
+            ...(params.agentSessionId
+              ? { agentSessionId: params.agentSessionId }
+              : {}),
             createdAt: now,
           },
         ],

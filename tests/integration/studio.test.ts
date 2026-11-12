@@ -11,11 +11,6 @@ import { ListRootsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { resolveChromePath } from '../../src/infrastructure/renderer/browserDiscovery.js';
 import { ChromiumRenderEngine } from '../../src/infrastructure/renderer/chromiumEngine.js';
 import { startStudioServer, type StartedStudioServer } from '../../src/server.js';
-import {
-  buildPermalinkUrl,
-  decodePermalinkPayload,
-  extractHashToken,
-} from '../../src/shared/permalink.js';
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -160,19 +155,19 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         project: string;
         path: string;
         agent: string;
-        studioUrl: string;
+        studioUrl?: string;
         syncedToBrowser: boolean;
+        syncStatus: string;
+        presentationRule: string;
       };
       expect(meta.valid).toBe(true);
       expect(meta.agent).toBe('Claude Code');
       expect(meta.project).toBe('Billing Platform');
       expect(meta.path).toBe('payments/checkout-flow.mmd');
       expect(meta.syncedToBrowser).toBe(true);
-
-      const decodedLink = await decodePermalinkPayload(extractHashToken(meta.studioUrl)!);
-      expect(decodedLink.project).toBe('Billing Platform');
-      expect(decodedLink.path).toBe('payments/checkout-flow.mmd');
-      expect(decodedLink.agent).toBe('Claude Code');
+      expect(meta.syncStatus).toBe('synced_live');
+      expect(meta.studioUrl).toBeUndefined();
+      expect(meta.presentationRule).toContain('do NOT output raw Mermaid source code or any URLs');
 
       await readUntil('payments/checkout-flow.mmd');
       expect(started.service.getRelayStats().storedDiagrams).toBe(0);
@@ -298,7 +293,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
     }
   }, 60_000);
 
-  it('connects cleanly over Stdio MCP transport with zero stdout pollution and #z= links', async () => {
+  it('connects cleanly over Stdio MCP transport with zero stdout pollution and no #z= URL spam', async () => {
     const projectRoot = path.resolve(__dirname, '../..');
     const stdioTransport = new StdioClientTransport({
       command: path.join(projectRoot, 'node_modules/.bin/tsx'),
@@ -324,7 +319,9 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
     expect(previewRes.isError).toBeFalsy();
     const parts = previewRes.content as Array<{ type: string; text?: string; data?: string }>;
     const bridgedMeta = JSON.parse(parts[0].text!) as {
-      studioUrl: string;
+      studioUrl?: string;
+      syncStatus: string;
+      syncedToBrowser: boolean;
       agent: string;
       project: string;
       path: string;
@@ -332,7 +329,9 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
     expect(bridgedMeta.agent).toBe('Pi');
     expect(bridgedMeta.project).toBe('MFHMFA');
     expect(bridgedMeta.path).toBe('schema/agent-er.mmd');
-    expect(bridgedMeta.studioUrl).toContain(`${started.baseUrl}/#z=`);
+    expect(bridgedMeta.studioUrl).toBeUndefined();
+    expect(bridgedMeta.syncedToBrowser).toBe(false);
+    expect(bridgedMeta.syncStatus).toBe('browser_tab_closed');
 
     await stdioClient.close();
   }, 35_000);

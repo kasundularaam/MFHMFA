@@ -456,6 +456,7 @@ export function useStudioController() {
         agentSlug: diag.agentSlug,
         agentLabel: diag.agentLabel,
         agentShortLabel: diag.agentShortLabel,
+        agentSessionId: diag.agentSessionId,
         autoOpenTab: true,
         autoFocus: canAutoFocus,
       });

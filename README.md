@@ -16,11 +16,14 @@ Zero-storage Mermaid workspace and Model Context Protocol (MCP) server. Gives co
 
 ### Hosted (Zero Install)
 
+1. Open **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** and click **Copy MCP URL** (bottom-left of the Explorer sidebar, or under **Docs**) to get your browser's paired `?workspace=ws_...` URL.
+2. Add it to your MCP client:
+
 ```json
 {
   "mcpServers": {
     "mfhmfa": {
-      "url": "https://mfhmfa.kasun.si/mcp"
+      "url": "https://mfhmfa.kasun.si/mcp?workspace=ws_YOUR_TOKEN"
     }
   }
 }
@@ -30,13 +33,13 @@ Or via CLI:
 
 ```bash
 # Pi Coding Agent
-pi mcp add mfhmfa --url "https://mfhmfa.kasun.si/mcp" --exposure deferred
+pi mcp add mfhmfa --url "https://mfhmfa.kasun.si/mcp?workspace=ws_YOUR_TOKEN" --exposure deferred
 
 # Claude Code
-claude mcp add --transport http mfhmfa "https://mfhmfa.kasun.si/mcp"
+claude mcp add --transport http mfhmfa "https://mfhmfa.kasun.si/mcp?workspace=ws_YOUR_TOKEN"
 ```
 
-To have agent-rendered diagrams open automatically as tabs in your browser without pasting links, open **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** → **Docs** and copy your paired `?workspace=ws_...` MCP URL.
+Keep **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** open in a browser tab while working — agents validate and visually inspect diagrams via 2x Retina PNGs, coalesce rapid layout retries into a single clean revision, and stream finalized graphs straight into your browser's `localStorage` without dumping Mermaid code or URLs into your terminal.
 
 ### Local Stdio
 
@@ -59,7 +62,7 @@ To have agent-rendered diagrams open automatically as tabs in your browser witho
 | :--- | :--- |
 | `mermaid_ls` | List folders and `.mmd` graphs inside the agent's jailed project working directory (`diagramType`, `version`, `author`). |
 | `mermaid_read` | Read `.mmd` source and 5-version immutable history of an existing graph in the working project. |
-| `mermaid_render` | Write/append an immutable graph revision at `path` (e.g. `auth/oauth-flow.mmd`), render 2x Retina PNG (`image/png` vision), and return layout diagnostics + `#z=` `studioUrl`. |
+| `mermaid_render` | Write/update a graph at `path` (e.g. `auth/oauth-flow.mmd`), coalesce rapid agent retries into 1 clean revision in browser `localStorage`, and return 2x Retina PNG (`image/png` vision) + layout diagnostics. |
 | `mermaid_mv` | Move or rename a graph or subfolder within the working project while preserving version history. |
 | `mermaid_validate` | Check syntax and static lint rules; returns diagram type, error line/column snippet, and targeted fix hints. |
 | `mermaid_export` | Render and write Mermaid source to `.png`, `.svg`, `.mmd`, or `.md`. |

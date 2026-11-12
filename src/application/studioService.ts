@@ -57,6 +57,7 @@ export interface StatelessRenderInput extends RenderOptions {
   source?: CallerSource;
   requestBaseUrl?: string | (() => string | undefined);
   workspaceToken?: string | null;
+  includeStudioUrl?: boolean;
   relayBridge?: (diagram: DiagramRelayPayload) => Promise<number>;
 }
 
@@ -278,18 +279,20 @@ export class StudioService {
         }
       }
 
-      const rawBase =
-        typeof options.requestBaseUrl === 'function'
-          ? options.requestBaseUrl()
-          : options.requestBaseUrl;
-      const cleanBase = (rawBase || this.baseUrl).replace(/\/+$/, '');
-      studioUrl = await buildPermalinkUrl(cleanBase, {
-        code,
-        title,
-        path: relPath,
-        project,
-        agent: agent.label,
-      });
+      if (options.includeStudioUrl) {
+        const rawBase =
+          typeof options.requestBaseUrl === 'function'
+            ? options.requestBaseUrl()
+            : options.requestBaseUrl;
+        const cleanBase = (rawBase || this.baseUrl).replace(/\/+$/, '');
+        studioUrl = await buildPermalinkUrl(cleanBase, {
+          code,
+          title,
+          path: relPath,
+          project,
+          agent: agent.label,
+        });
+      }
     }
 
     return {
