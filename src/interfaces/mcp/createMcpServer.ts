@@ -34,7 +34,7 @@ export function createMermaidMcpServer(
         'Interactive visual learning tool: use MFHMFA whenever helping the user understand, explain, learn, or debug a concept, research paper, codebase, bug, or design tradeoff. Call `get_playbook` first to load the mode guide.',
         '1. Call `get_playbook` with `mode` ("concept" | "paper" | "codebase" | "bug" | "tradeoff") to load the tailored cognitive-science teaching blueprint, workspace views, and the user\'s live Studio selection.',
         '2. Build clean 4–7 box views via `render_view` with an interactive `guide` (`gist`, `steps` or contrasting `flows`, `nodes`, optional `childPath`), visually inspect the returned 2x PNG + `layoutDiagnostics`, and iterate at the same `path` until clean.',
-        '3. Never output raw ```mermaid``` code blocks or URLs in chat unless explicitly asked — once `syncedToBrowser` is true, summarize concisely and let the user step through the interactive view in MFHMFA Studio.',
+        '3. Never output raw ```mermaid``` code blocks or URLs in chat unless explicitly asked. Once `syncedToBrowser` is true, summarize concisely and let the user step through the interactive view in MFHMFA Studio.',
       ].join(' '),
     }
   );
@@ -255,7 +255,7 @@ export function createMermaidMcpServer(
               '1. Call `get_playbook` with the appropriate `mode` ("concept" | "paper" | "codebase" | "bug" | "tradeoff") to load the teaching blueprint and inspect existing workspace views.',
               '2. Keep each view to ~4–7 concise boxes (2–5 plain words per box) and pass `guide: { gist, steps (or flows), nodes }` on `render_view` so the user can step through flows, see concrete traces, click boxes for details, and zoom into `childPath` sub-views.',
               '3. Visually inspect the returned 2x Retina PNG image and `layoutDiagnostics`, re-running `render_view` at the same `path` until layout and legibility are clean.',
-              '4. Do NOT output raw ```mermaid``` code blocks or any URLs in chat — once `syncedToBrowser` is true, concisely inform the user their views are ready on MFHMFA.',
+              '4. Do NOT output raw ```mermaid``` code blocks or any URLs in chat. Once `syncedToBrowser` is true, concisely inform the user their views are ready on MFHMFA.',
             ].join('\n'),
           },
         },

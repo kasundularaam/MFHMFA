@@ -81,8 +81,8 @@ export function createDefaultScratchpadProject(
 ): VfsProjectRoot {
   const welcomeFile: VfsGraphFile = {
     id: 'file-welcome',
-    path: legacyCode ? 'scratchpad.mmd' : 'architecture-overview.mmd',
-    title: legacyCode ? 'scratchpad' : 'architecture-overview',
+    path: legacyCode ? 'scratchpad.mmd' : 'welcome.mmd',
+    title: legacyCode ? 'scratchpad' : 'welcome',
     diagramType: 'flowchart-v2',
     unread: false,
     isWelcome: !legacyCode,

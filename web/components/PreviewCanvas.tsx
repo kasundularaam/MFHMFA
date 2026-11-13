@@ -87,7 +87,7 @@ export function PreviewCanvas({
   const [outgoingLayer, setOutgoingLayer] = useState<FrozenLayer | null>(null);
   const [nodeLabels, setNodeLabels] = useState<Map<string, string>>(() => new Map());
   const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [panelBodyHeight, setPanelBodyHeight] = useState(240);
+  const [panelBodyHeight, setPanelBodyHeight] = useState(176);
   const [revealedCheckKey, setRevealedCheckKey] = useState<string | null>(null);
 
   const stageLayoutRef = useRef<HTMLDivElement | null>(null);
@@ -123,8 +123,8 @@ export function PreviewCanvas({
   const startPanelResize = useDragResize((_dx, dy) => {
     const stageHeight =
       stageLayoutRef.current?.getBoundingClientRect().height ?? window.innerHeight;
-    const maxBodyHeight = Math.max(240, stageHeight - 44);
-    const next = Math.min(maxBodyHeight, Math.max(32, dragOriginPanelHeightRef.current - dy));
+    const maxBodyHeight = Math.max(160, stageHeight - 180);
+    const next = Math.min(maxBodyHeight, Math.max(56, dragOriginPanelHeightRef.current - dy));
     setPanelBodyHeight(Math.round(next));
   });
 
@@ -371,7 +371,7 @@ export function PreviewCanvas({
             }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <span>Viewing v{historicalVersion} — Back to latest</span>
+            <span>Viewing v{historicalVersion} · Back to latest</span>
           </div>
         )}
 
@@ -386,7 +386,7 @@ export function PreviewCanvas({
           >
             <AlertCircle size={16} />
             <span>
-              {parseError.line ? `Syntax error on line ${parseError.line}` : 'Syntax error'} —
+              {parseError.line ? `Syntax error on line ${parseError.line}` : 'Syntax error'} ·
               View code
             </span>
           </div>
@@ -496,43 +496,45 @@ export function PreviewCanvas({
           )}
 
           <div className="walkthrough-header">
-            <div className="walkthrough-tabs" role="tablist">
-              {hasOverview && (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={!isWalkthroughActive}
-                  className={`walkthrough-tab ${!isWalkthroughActive ? 'active' : ''}`}
-                  onClick={() => {
-                    setPanelCollapsed(false);
-                    onChangeStepIndex(null);
-                  }}
-                >
-                  Overview
-                </button>
-              )}
+            <div className="walkthrough-header-main">
+              <div className="walkthrough-tabs" role="tablist">
+                {hasOverview && (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={!isWalkthroughActive}
+                    className={`walkthrough-tab ${!isWalkthroughActive ? 'active' : ''}`}
+                    onClick={() => {
+                      setPanelCollapsed(false);
+                      onChangeStepIndex(null);
+                    }}
+                  >
+                    Overview
+                  </button>
+                )}
 
-              {hasSteps && (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={isWalkthroughActive}
-                  data-testid="story-start-btn"
-                  className={`walkthrough-tab ${isWalkthroughActive ? 'active' : ''}`}
-                  onClick={() => {
-                    setPanelCollapsed(false);
-                    if (activeStepIndex === null) {
-                      onChangeStepIndex(0);
-                    }
-                  }}
-                >
-                  <span>Walkthrough</span>
-                  <span className="walkthrough-tab-count">{steps.length}</span>
-                </button>
-              )}
-            </div>
+                {hasSteps && (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={isWalkthroughActive}
+                    data-testid="story-start-btn"
+                    className={`walkthrough-tab ${isWalkthroughActive ? 'active' : ''}`}
+                    onClick={() => {
+                      setPanelCollapsed(false);
+                      if (activeStepIndex === null) {
+                        onChangeStepIndex(0);
+                      }
+                    }}
+                  >
+                    <span>Walkthrough</span>
+                    <span className="walkthrough-tab-count">{steps.length}</span>
+                  </button>
+                )}
+              </div>
 
-            <div className="walkthrough-toolbar">
+              {hasSteps && <span className="walkthrough-header-sep" aria-hidden="true" />}
+
               {!isWalkthroughActive && hasSteps && (
                 <button
                   type="button"
@@ -579,44 +581,48 @@ export function PreviewCanvas({
                     </div>
                   )}
 
-                  <span className="walkthrough-step-counter">
-                    Step {(effectiveStepIndex ?? 0) + 1} / {steps.length}
-                  </span>
-                  <button
-                    type="button"
-                    className="panel-icon-btn"
-                    disabled={(effectiveStepIndex ?? 0) <= 0}
-                    onClick={() => {
-                      setPanelCollapsed(false);
-                      onChangeStepIndex(Math.max(0, (effectiveStepIndex ?? 0) - 1));
-                    }}
-                    title="Previous step (Left arrow)"
-                    aria-label="Previous step"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="panel-icon-btn"
-                    disabled={
-                      effectiveStepIndex !== null && effectiveStepIndex >= steps.length - 1
-                    }
-                    onClick={() => {
-                      setPanelCollapsed(false);
-                      onChangeStepIndex(
-                        effectiveStepIndex === null
-                          ? 0
-                          : Math.min(steps.length - 1, effectiveStepIndex + 1)
-                      );
-                    }}
-                    title="Next step (Right arrow)"
-                    aria-label="Next step"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
+                  <div className="walkthrough-stepper-group">
+                    <button
+                      type="button"
+                      className="panel-icon-btn"
+                      disabled={(effectiveStepIndex ?? 0) <= 0}
+                      onClick={() => {
+                        setPanelCollapsed(false);
+                        onChangeStepIndex(Math.max(0, (effectiveStepIndex ?? 0) - 1));
+                      }}
+                      title="Previous step (Left arrow)"
+                      aria-label="Previous step"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span className="walkthrough-step-counter">
+                      Step {(effectiveStepIndex ?? 0) + 1} / {steps.length}
+                    </span>
+                    <button
+                      type="button"
+                      className="panel-icon-btn"
+                      disabled={
+                        effectiveStepIndex !== null && effectiveStepIndex >= steps.length - 1
+                      }
+                      onClick={() => {
+                        setPanelCollapsed(false);
+                        onChangeStepIndex(
+                          effectiveStepIndex === null
+                            ? 0
+                            : Math.min(steps.length - 1, effectiveStepIndex + 1)
+                        );
+                      }}
+                      title="Next step (Right arrow)"
+                      aria-label="Next step"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
                 </div>
               )}
+            </div>
 
+            <div className="walkthrough-toolbar">
               <button
                 type="button"
                 className="panel-icon-btn"

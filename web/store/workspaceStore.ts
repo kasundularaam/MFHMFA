@@ -49,7 +49,7 @@ export interface OpenTabEntry {
 function reportPersistenceError(): void {
   useUiStore
     .getState()
-    .notifyToast('Browser storage is full or unavailable — export important diagrams');
+    .notifyToast('Browser storage is full or unavailable. Export important diagrams.');
 }
 
 function snapshotCameraIntoState(state: WorkspaceState): WorkspaceState {

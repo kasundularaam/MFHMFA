@@ -1,7 +1,7 @@
 {
   "name": "mfhmfa",
   "version": "2.0.0",
-  "description": "MFHMFA (Mermaid For Humans, Mermaid For Agents) — Stateless Mermaid chart studio, parallel headless validation/rendering engine, REST tool API, and MCP server.",
+  "description": "MFHMFA: Interactive visual learning workspace and zero-storage MCP server.",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -41,18 +41,19 @@ claude mcp add --transport http mfhmfa "${pairedMcpUrl}"`;
   const restCallSnippet = `curl -X POST "${baseUrl}/api/tools/call?workspace=${workspaceId}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "name": "mermaid_render",
+    "name": "render_view",
     "arguments": {
       "project": "Order Service",
       "path": "checkout/order-pipeline.mmd",
       "code": "flowchart LR\\n  Cart[\\"Cart\\"] --> Pay[\\"Payment\\"] --> Ship[\\"Fulfill\\"]",
       "guide": {
-        "gist": "Orders enter fulfillment only after payment succeeds.",
+        "gist": "Orders only move to fulfillment after payment is confirmed.",
         "steps": [
           {
-            "title": "1. Authorize payment",
-            "caption": "Cart submits order total to Payment before fulfillment.",
-            "focusNodes": ["Cart", "Pay"]
+            "title": "1. Charge customer",
+            "caption": "Cart sends the order total to Payment and waits for confirmation.",
+            "focusNodes": ["Cart", "Pay"],
+            "trace": "orderId=ord_42 | amount=$48.00 -> 200 Authorized"
           }
         ]
       }
@@ -72,16 +73,16 @@ docker compose up -d --build
           <div className="docs-nav-heading">Contents</div>
           <ul>
             <li>
-              <a href="#doc-why">1. Overview</a>
+              <a href="#doc-overview">1. Overview</a>
             </li>
             <li>
-              <a href="#doc-how">2. Interactive Features</a>
+              <a href="#doc-mcp">2. MCP Setup</a>
             </li>
             <li>
-              <a href="#doc-mcp">3. MCP Setup</a>
+              <a href="#doc-how">3. How Views Work</a>
             </li>
             <li>
-              <a href="#doc-vfs">4. Projects &amp; File History</a>
+              <a href="#doc-storage">4. Projects &amp; Storage</a>
             </li>
             <li>
               <a href="#doc-tools">5. MCP Tools</a>
@@ -99,61 +100,22 @@ docker compose up -d --build
         </nav>
 
         <article className="docs-body">
-          <h1 id="doc-why">MFHMFA — Overview</h1>
+          <h1 id="doc-overview">MFHMFA Overview</h1>
           <p>
-            <strong>MFHMFA</strong> (<em>Mermaid For Humans, Mermaid For Agents</em>) is an
-            interactive diagram workspace and Model Context Protocol (MCP) server for
-            understanding codebases with AI coding agents.
+            <strong>MFHMFA</strong> is an interactive visual learning workspace and MCP server
+            you pair with your AI agent. Use it when you want to understand a{' '}
+            <strong>concept</strong>, <strong>research paper</strong>, <strong>codebase</strong>
+            , <strong>bug</strong>, or <strong>design tradeoff</strong>.
           </p>
           <p>
-            AI coding agents can generate thousands of lines of code in minutes, leaving
-            builders owning systems that are hard to picture mentally. Standard static diagrams
-            usually fall into one of two traps:
-          </p>
-          <ul>
-            <li>
-              <strong>Too Technical:</strong> Crowded boxes filled with framework jargon and
-              internal identifiers that overload working memory.
-            </li>
-            <li>
-              <strong>Too Abstract:</strong> Vague high-level boxes that hide real data flow,
-              payloads, and what happens when something fails.
-            </li>
-          </ul>
-          <p>
-            MFHMFA keeps visual diagrams concise while attaching interactive walkthrough steps,
-            clickable component details, and linked sub-diagrams saved locally in your
-            browser&apos;s IndexedDB.
+            Instead of pasting a giant diagram into chat, your agent checks the layout visually
+            and streams a small 4–7 box diagram to this tab, complete with step-by-step
+            walkthroughs, clickable box notes, and linked sub-diagrams.
           </p>
 
-          <h2 id="doc-how">2. Interactive Features</h2>
-          <ul>
-            <li>
-              <strong>Concise Views &amp; Sub-Diagram Zoom:</strong> Agents keep each view
-              focused (4–7 boxes with short labels) and link deeper subsystems via{' '}
-              <code>childPath</code>. Double-click any dashed box (or click{' '}
-              <em>Zoom into&hellip;</em>) to open its child diagram, and use the top-left
-              breadcrumb to navigate back.
-            </li>
-            <li>
-              <strong>Step-by-Step Walkthroughs:</strong> Click <strong>Walkthrough</strong> (or
-              press <code>&larr;</code> / <code>&rarr;</code>) to highlight one step at a time
-              while unrelated branches dim out.
-            </li>
-            <li>
-              <strong>Component Details:</strong> Click any highlighted box to view how it
-              works, a concrete example, failure edge cases, and relevant source files.
-            </li>
-            <li>
-              <strong>Visual Verification:</strong> When an agent calls{' '}
-              <code>mermaid_render</code>, it receives a 2x PNG preview and layout diagnostics
-              so it can fix overlaps before streaming the final diagram to your open tab.
-            </li>
-          </ul>
-
-          <h2 id="doc-mcp">3. MCP Setup</h2>
+          <h2 id="doc-mcp">2. MCP Setup</h2>
           <p>
-            Your workspace token for this browser is <code>{workspaceId}</code>{' '}
+            Your workspace key for this browser is <code>{workspaceId}</code>{' '}
             <button
               type="button"
               className="plain-link-btn"
@@ -162,8 +124,8 @@ docker compose up -d --build
             >
               [Generate new key]
             </button>
-            . Connect your coding agent with <code>?workspace={workspaceId}</code> and keep this
-            browser tab open while working so live updates sync straight to your workspace.
+            . Add <code>?workspace={workspaceId}</code> to your MCP client and keep this tab
+            open while working so new views stream straight into your browser.
           </p>
 
           <h3>mcp.json (Cursor, Antigravity, Windsurf, Claude Desktop)</h3>
@@ -181,27 +143,59 @@ docker compose up -d --build
             Legacy SSE MCP clients are also supported at <code>{baseUrl}/mcp/sse</code>.
           </p>
 
-          <h2 id="doc-vfs">4. Projects &amp; File History</h2>
+          <h2 id="doc-how">3. How Views Work</h2>
+          <ul>
+            <li>
+              <strong>Teaching Modes:</strong> Agents call <code>get_playbook</code> first with{' '}
+              <code>concept</code>, <code>paper</code>, <code>codebase</code>, <code>bug</code>,
+              or <code>tradeoff</code> so the diagram structure matches what you are learning.
+            </li>
+            <li>
+              <strong>Step-by-Step Walkthroughs:</strong> Click <strong>Walkthrough</strong> (or
+              press <code>&larr;</code> / <code>&rarr;</code>) to highlight one step at a time,
+              switch between scenario tabs (such as <em>Normal Flow</em> vs. <em>Bug Trace</em>
+              ), inspect concrete data values, and test yourself on optional check questions.
+            </li>
+            <li>
+              <strong>Clickable Boxes:</strong> Labels on boxes stay short (2–5 plain words).
+              Click any outlined box to read what happens there, its official technical term or
+              equation, a concrete example, what breaks at the edges, and source file or paper
+              references.
+            </li>
+            <li>
+              <strong>Sub-Diagram Zoom:</strong> Deeper subsystems live in separate{' '}
+              <code>.mmd</code> files linked via <code>childPath</code>. Double-click any dashed
+              box (or click <em>Zoom into&hellip;</em>) to open its sub-diagram, and use the
+              top-left breadcrumb to jump back.
+            </li>
+            <li>
+              <strong>Live Selection Context:</strong> When you select a box or pause on a step,
+              your agent can see what you are looking at via <code>list_views</code> or{' '}
+              <code>get_playbook</code> when you ask follow-up questions like{' '}
+              <em>&ldquo;explain this box deeper&rdquo;</em>.
+            </li>
+          </ul>
+
+          <h2 id="doc-storage">4. Projects &amp; Storage</h2>
           <p>
-            Projects, folders, <code>.mmd</code> diagrams, and walkthrough guides are saved
-            locally in your browser&apos;s IndexedDB (zero diagrams stored on the server):
+            Nothing is saved on the server. All projects, folders, <code>.mmd</code> files, and
+            walkthrough guides stay in your browser&apos;s IndexedDB:
           </p>
           <ul>
             <li>
-              <strong>Per-Project Isolation:</strong> Each MCP session is scoped to its own
-              project folder (detected from MCP workspace roots, local directory, or{' '}
+              <strong>Per-Project Folders:</strong> Each MCP session is scoped to its own
+              project folder (detected from MCP workspace roots, local folder name, or{' '}
               <code>?project=...</code>).
             </li>
             <li>
-              <strong>Multi-Agent Collaboration:</strong> Multiple agents working on the same
-              repository can browse and update shared files via <code>mermaid_ls</code> and{' '}
-              <code>mermaid_read</code>.
+              <strong>5-Version History:</strong> Quick layout retries by the same agent merge
+              into a single version, and up to 5 recent versions per file are kept in the{' '}
+              <code>vN</code> history menu on the tab bar.
             </li>
             <li>
-              <strong>File History:</strong> Rapid layout retries by the same agent merge
-              cleanly, and up to 5 recent versions per file are available from the{' '}
-              <code>vN</code> history menu in the tab bar. Only you can delete files, folders,
-              or projects from the <code>&bull;&bull;&bull;</code> menu in the Explorer.
+              <strong>You Control Deletion:</strong> Agents can list, read, create, update, and
+              rename views inside their project, while only you can delete files, folders, or
+              projects from the Explorer menu.
             </li>
           </ul>
 
@@ -217,30 +211,20 @@ docker compose up -d --build
             <tbody>
               <tr>
                 <td>
-                  <code>mermaid_ls</code>
+                  <code>get_playbook</code>
                 </td>
                 <td>
-                  <code>path?</code>, <code>project?</code>
+                  <code>mode</code>, <code>syntax?</code>, <code>project?</code>
                 </td>
                 <td>
-                  Lists folders and <code>.mmd</code> files in the current project.
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <code>mermaid_read</code>
-                </td>
-                <td>
-                  <code>path</code>, <code>version?</code>
-                </td>
-                <td>
-                  Reads the <code>.mmd</code> source, walkthrough <code>guide</code>, and file
-                  history of an existing diagram.
+                  Loads the guide for <code>concept</code>, <code>paper</code>,{' '}
+                  <code>codebase</code>, <code>bug</code>, or <code>tradeoff</code>, plus
+                  current project files and your active Studio selection.
                 </td>
               </tr>
               <tr>
                 <td>
-                  <code>mermaid_render</code>
+                  <code>render_view</code>
                 </td>
                 <td>
                   <code>code</code>, <code>path?</code>, <code>title?</code>,{' '}
@@ -248,66 +232,57 @@ docker compose up -d --build
                   <code>scale?</code>, <code>outputPath?</code>
                 </td>
                 <td>
-                  Validates syntax, syncs the diagram and optional <code>guide</code> to your
-                  open tab, and returns a 2x PNG preview with layout diagnostics.
+                  Validates Mermaid syntax, returns a 2x PNG preview + layout warnings to the
+                  agent, and streams the view and <code>guide</code> live to your open tab.
                 </td>
               </tr>
               <tr>
                 <td>
-                  <code>mermaid_mv</code>
+                  <code>list_views</code>
                 </td>
                 <td>
-                  <code>from</code>, <code>to</code>
+                  <code>path?</code>, <code>project?</code>
                 </td>
                 <td>
-                  Moves or renames a file or folder while preserving history and updating linked{' '}
-                  <code>childPath</code> / <code>parentPath</code> references.
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <code>mermaid_validate</code>
-                </td>
-                <td>
-                  <code>code</code>
-                </td>
-                <td>
-                  Checks syntax and lint rules, returning line/column snippets and fix
-                  suggestions.
+                  Lists folders and <code>.mmd</code> files in the current project, along with
+                  which view, step, or box you currently have selected.
                 </td>
               </tr>
               <tr>
                 <td>
-                  <code>mermaid_export</code>
+                  <code>read_view</code>
+                </td>
+                <td>
+                  <code>path</code>, <code>version?</code>, <code>project?</code>
+                </td>
+                <td>
+                  Reads the <code>.mmd</code> source, attached <code>guide</code>, and 5-version
+                  history of an existing view.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>move_view</code>
+                </td>
+                <td>
+                  <code>from</code>, <code>to</code>, <code>project?</code>
+                </td>
+                <td>
+                  Moves or renames a file or folder while keeping version history and updating
+                  linked <code>childPath</code> / <code>parentPath</code> paths.
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>export_view</code>
                 </td>
                 <td>
                   <code>code</code>, <code>outputPath</code>, <code>format?</code>
                 </td>
                 <td>
-                  Renders and saves diagram output to local disk (stdio / local dev) as{' '}
+                  Renders and saves output to local disk (stdio / local dev) as{' '}
                   <code>.png</code>, <code>.svg</code>, <code>.mmd</code>, or <code>.md</code>.
                 </td>
-              </tr>
-              <tr>
-                <td>
-                  <code>mermaid_syntax_guide</code>
-                </td>
-                <td>
-                  <code>topic?</code>
-                </td>
-                <td>
-                  Returns syntax and layout reference guides (<code>comprehension</code>,{' '}
-                  <code>pitfalls</code>, <code>flowchart</code>, <code>sequence</code>,{' '}
-                  <code>er</code>, <code>state</code>, <code>class</code>, <code>mindmap</code>,{' '}
-                  <code>gantt</code>, or <code>all</code>).
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <code>mermaid_list_templates</code>
-                </td>
-                <td>—</td>
-                <td>Returns starter Mermaid templates across 11 diagram categories.</td>
               </tr>
             </tbody>
           </table>
@@ -325,7 +300,7 @@ docker compose up -d --build
 
           <h2 id="doc-http">6. HTTP Tool API</h2>
           <p>
-            For custom function-calling integrations without an MCP client, fetch schemas from{' '}
+            For custom tool-calling integrations without an MCP client, fetch schemas from{' '}
             <code>GET {baseUrl}/api/tools/schemas</code> and call tools via{' '}
             <code>POST {baseUrl}/api/tools/call</code>:
           </p>
@@ -334,19 +309,19 @@ docker compose up -d --build
           <p>Additional HTTP endpoints:</p>
           <ul>
             <li>
-              <code>POST /api/validate</code> — JSON body{' '}
+              <code>POST /api/validate</code>: JSON body{' '}
               <code>&#123; &quot;code&quot;: &quot;...&quot; &#125;</code>
             </li>
             <li>
-              <code>POST /api/render</code> — SVG and base64 PNG render
+              <code>POST /api/render</code>: Stateless SVG and base64 PNG render
             </li>
             <li>
-              <code>GET /api/status</code> — Server health and active session status
+              <code>GET /api/status</code>: Server health and worker pool status
             </li>
           </ul>
 
           <h2 id="doc-selfhost">7. Self-Hosting</h2>
-          <p>Run the full stack in Docker:</p>
+          <p>Run in Docker on port 48333:</p>
           <PlainPre code={dockerSnippet} />
 
           <table className="plain-table">
@@ -396,27 +371,27 @@ docker compose up -d --build
           <h2 id="doc-keys">8. Shortcuts</h2>
           <ul>
             <li>
-              Click the top-left <strong>MFHMFA</strong> logo — Return to the studio workspace
+              Click the top-left <strong>MFHMFA</strong> logo: Return from Docs to the studio
             </li>
             <li>
-              <code>Ctrl/Cmd + B</code> — Toggle Explorer sidebar
+              <code>Ctrl/Cmd + B</code>: Show or hide Explorer sidebar
             </li>
             <li>
-              <code>Ctrl/Cmd + E</code> — Switch between Preview and Code view
+              <code>Ctrl/Cmd + E</code>: Switch between Preview and Code view
             </li>
             <li>
-              <code>&larr;</code> / <code>&rarr;</code> (in Preview) — Step through walkthrough
-              (<code>Esc</code> closes details or exits walkthrough)
+              <code>&larr;</code> / <code>&rarr;</code> (in Preview): Step through walkthrough (
+              <code>Esc</code> closes box details or exits walkthrough)
             </li>
             <li>
-              Click / Double-click highlighted box — View details / Open linked child diagram
+              Click / Double-click outlined box: Open box details / Zoom into linked child view
             </li>
             <li>
-              <code>Alt + 1..9</code> — Switch to open tab 1–9
+              <code>Alt + 1..9</code>: Switch to open tab 1-9
             </li>
-            <li>Double-click file in Explorer — Rename file</li>
-            <li>Middle-click open tab — Close tab</li>
-            <li>Mouse wheel / drag on canvas — Cursor-centered zoom and pan</li>
+            <li>Double-click file in Explorer: Rename file</li>
+            <li>Middle-click open tab: Close tab</li>
+            <li>Mouse wheel / drag on canvas: Zoom around cursor and pan</li>
           </ul>
         </article>
       </div>

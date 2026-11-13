@@ -290,3 +290,82 @@
   }
 }
 
+/* ============================================================================
+   Mobile Explanation Page (<= 720px)
+   ============================================================================ */
+.mobile-info-page {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-canvas);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-info-body {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 28px 22px 56px;
+  font-size: 15px;
+  line-height: 1.68;
+  color: var(--text-primary);
+}
+
+.mobile-eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.mobile-info-body h1 {
+  margin: 0 0 14px;
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: -0.015em;
+}
+
+.mobile-info-body h2 {
+  margin: 28px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-line);
+  font-size: 16.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.mobile-info-body p {
+  margin: 0 0 14px;
+}
+
+.mobile-info-body ul,
+.mobile-info-body ol {
+  margin: 0 0 16px;
+  padding-left: 20px;
+}
+
+.mobile-info-body li {
+  margin: 8px 0;
+}
+
+.mobile-info-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13.5px;
+}
+
+.mobile-info-body a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mobile-footer-note {
+  margin-top: 26px !important;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-line);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+

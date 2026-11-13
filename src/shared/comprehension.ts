@@ -164,7 +164,9 @@ export const WalkthroughStepToolSchema = z.object({
   title: z.string().describe('Short step headline (e.g. "1. Append to log").'),
   caption: z
     .string()
-    .describe('1–2 plain-English sentences narrating what happens at this step.'),
+    .describe(
+      '1–2 short, natural sentences explaining what happens here in plain everyday words (no AI filler or buzzwords).'
+    ),
   focusNodes: z
     .array(z.string())
     .describe('Exact Mermaid node or participant IDs spotlighted at this step.'),
@@ -204,7 +206,9 @@ export const NodeDetailToolSchema = z.object({
     ),
   summary: z
     .string()
-    .describe('1–2 plain-English sentences explaining the concrete mechanism at this box.'),
+    .describe(
+      '1–2 short, direct sentences explaining what happens at this box in plain human words.'
+    ),
   example: z
     .string()
     .optional()
@@ -230,7 +234,9 @@ export const ComprehensionGuideToolSchema = z
     gist: z
       .string()
       .optional()
-      .describe('1-sentence core takeaway (problem solved + key mechanism).'),
+      .describe(
+        '1–2 plain sentences stating what problem this solves and how it works (direct human tone, no slogans).'
+      ),
     parentPath: z
       .string()
       .optional()

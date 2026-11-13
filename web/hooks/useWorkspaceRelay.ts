@@ -13,7 +13,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 
 const LOCAL_WORKSPACE_CHANNEL = 'local_workspace';
 
-export function useWorkspaceRelay(): void {
+export function useWorkspaceRelay(enabled = true): void {
   const hydrated = useWorkspaceStore((s) => s.hydrated);
   const workspaceId = useWorkspaceStore((s) => s.workspace.workspaceId);
 
@@ -25,9 +25,17 @@ export function useWorkspaceRelay(): void {
   if (!handledRpcIdsRef.current) handledRpcIdsRef.current = new BoundedIdSet(500);
   if (!announcedSessionsRef.current) announcedSessionsRef.current = new BoundedIdSet(250);
 
-  // Hydrate IndexedDB workspace & fetch server status once on boot
+  // Sync saved theme attribute immediately on every device
   useEffect(() => {
-    document.documentElement.dataset.mode = useUiStore.getState().appearanceMode;
+    const mode = useUiStore.getState().appearanceMode;
+    document.documentElement.dataset.mode = mode;
+    document.documentElement.style.colorScheme = mode;
+  }, []);
+
+  // Hydrate IndexedDB workspace & fetch server status only when desktop Studio is active
+  useEffect(() => {
+    if (!enabled) return undefined;
+
     void useWorkspaceStore.getState().hydrate();
 
     studioApi
@@ -40,7 +48,7 @@ export function useWorkspaceRelay(): void {
     };
     window.addEventListener('pagehide', onPageHide);
     return () => window.removeEventListener('pagehide', onPageHide);
-  }, []);
+  }, [enabled]);
 
   // Reset dedupe caches when workspaceId rotates
   useEffect(() => {
@@ -49,10 +57,10 @@ export function useWorkspaceRelay(): void {
     announcedSessionsRef.current?.clear();
   }, [workspaceId]);
 
-  // Connect SSE stream only AFTER IndexedDB hydration completes so VFS RPCs
-  // (`mermaid_ls`, `mermaid_read`, `mermaid_mv`) always see hydrated state.
+  // Connect SSE stream only on desktop AFTER IndexedDB hydration completes so VFS RPCs
+  // (`list_views`, `read_view`, `move_view`) always see hydrated state.
   useEffect(() => {
-    if (!hydrated) return undefined;
+    if (!enabled || !hydrated) return undefined;
 
     const channels: string[] = [workspaceId];
     const searchParams = new URLSearchParams(window.location.search);
@@ -164,5 +172,5 @@ export function useWorkspaceRelay(): void {
         es.close();
       }
     };
-  }, [hydrated, workspaceId]);
+  }, [enabled, hydrated, workspaceId]);
 }

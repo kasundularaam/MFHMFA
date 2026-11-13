@@ -27,9 +27,11 @@ const DocsView = lazy(() =>
   import('./components/DocsView').then((m) => ({ default: m.DocsView }))
 );
 import { ExplorerSidebar } from './components/ExplorerSidebar';
+import { MobileInfoPage } from './components/MobileInfoPage';
 import { PreviewCanvas } from './components/PreviewCanvas';
 import { TabBar } from './components/TabBar';
 import { TopBar } from './components/TopBar';
+import { useIsMobileViewport } from './hooks/useIsMobileViewport';
 import { useMermaidRenderSync } from './hooks/useMermaidRenderSync';
 import { useStudioShortcuts } from './hooks/useStudioShortcuts';
 import { useWorkspaceRelay } from './hooks/useWorkspaceRelay';
@@ -37,21 +39,54 @@ import { studioApi } from './services/studioClient';
 import { useUiStore, type CanvasTransitionKind } from './store/uiStore';
 import { useWorkspaceStore, type OpenTabEntry } from './store/workspaceStore';
 
+const STAGE_PADDING_PX = 48;
+const VIEWPORT_FIT_MARGIN_PX = 20;
+const MIN_AUTO_FIT_ZOOM = 0.15;
+const MAX_AUTO_FIT_ZOOM = 1.3;
+
+function resolveDiagramSize(
+  vp: HTMLDivElement | null,
+  dimensions: { width: number; height: number } | null
+): { width: number; height: number } | null {
+  if (dimensions && dimensions.width > 0 && dimensions.height > 0) {
+    return dimensions;
+  }
+  const svg = vp?.querySelector('.canvas-stage svg') as SVGSVGElement | null;
+  if (!svg) return null;
+  const vb = svg.viewBox?.baseVal;
+  if (vb && vb.width > 0 && vb.height > 0) {
+    return { width: Math.ceil(vb.width), height: Math.ceil(vb.height) };
+  }
+  const wAttr = Number.parseFloat(svg.getAttribute('width') || '');
+  const hAttr = Number.parseFloat(svg.getAttribute('height') || '');
+  if (wAttr > 0 && hAttr > 0) {
+    return { width: Math.ceil(wAttr), height: Math.ceil(hAttr) };
+  }
+  return null;
+}
+
 function computeViewportFitZoom(
   vp: HTMLDivElement | null,
-  w: number,
-  h: number
+  dimensions: { width: number; height: number } | null
 ): number | null {
-  if (!vp || vp.clientWidth === 0 || vp.clientHeight === 0) return null;
-  const vw = Math.max(280, vp.clientWidth - 88);
-  const vh = Math.max(200, vp.clientHeight - 80);
-  const fit = Math.min(1, Math.max(0.22, Math.min(vw / (w + 48), vh / (h + 48))));
-  return Number(fit.toFixed(2));
+  if (!vp || vp.clientWidth <= 0 || vp.clientHeight <= 0) return null;
+  const size = resolveDiagramSize(vp, dimensions);
+  if (!size) return null;
+
+  const availW = Math.max(64, vp.clientWidth - VIEWPORT_FIT_MARGIN_PX);
+  const availH = Math.max(64, vp.clientHeight - VIEWPORT_FIT_MARGIN_PX);
+  const stageW = size.width + STAGE_PADDING_PX;
+  const stageH = size.height + STAGE_PADDING_PX;
+
+  const rawFit = Math.min(availW / stageW, availH / stageH);
+  const clamped = Math.min(MAX_AUTO_FIT_ZOOM, Math.max(MIN_AUTO_FIT_ZOOM, rawFit));
+  return Number(clamped.toFixed(2));
 }
 
 export function App() {
-  useWorkspaceRelay();
-  useMermaidRenderSync();
+  const isMobile = useIsMobileViewport();
+  useWorkspaceRelay(!isMobile);
+  useMermaidRenderSync(!isMobile);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
@@ -86,6 +121,7 @@ export function App() {
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
   const drillStack = useUiStore((s) => s.drillStack);
   const renderedSvg = useUiStore((s) => s.renderedSvg);
+  const renderedKey = useUiStore((s) => s.renderedKey);
   const diagramType = useUiStore((s) => s.diagramType);
   const parseError = useUiStore((s) => s.parseError);
   const dimensions = useUiStore((s) => s.dimensions);
@@ -138,11 +174,15 @@ export function App() {
   const code = activeVersionRecord?.code ?? '';
   const activeGuide = activeVersionRecord?.guide;
   const title = activeFile?.title ?? null;
-  const chartKey = activeFile
-    ? `${activeFile.id}:v${activeVersionRecord?.version ?? activeFile.currentVersion}`
-    : 'empty-stage';
+  const activeVersionNumber = activeFile
+    ? (activeVersionRecord?.version ?? activeFile.currentVersion)
+    : 1;
+  const chartKey = activeFile ? `${activeFile.id}:v${activeVersionNumber}` : 'empty-stage';
+  const expectedRenderedKey = activeFile
+    ? `${activeFile.id}:v${activeVersionNumber}:${appearanceMode}:${code.length}`
+    : '';
 
-  useStudioShortcuts(activeGuide);
+  useStudioShortcuts(activeGuide, !isMobile);
 
   const connectedAgents = useMemo(
     () => Object.values(connectedAgentsMap),
@@ -242,36 +282,51 @@ export function App() {
     prevFileIdRef.current = activeFileId;
   }, [activeFileId, ancestorChain, projectHierarchy]);
 
-  // Fit diagram cleanly into viewport whenever a new un-fitted diagram renders
+  // Fit diagram into the available canvas height & width as soon as its own SVG + bottom panel mount
   useLayoutEffect(() => {
     if (
+      !isMobile &&
       page === 'studio' &&
       stageMode === 'preview' &&
       needsViewportFit &&
-      dimensions &&
-      activeFile
+      activeFile &&
+      renderedSvg &&
+      renderedKey === expectedRenderedKey
     ) {
-      const fit = computeViewportFitZoom(
-        viewportRef.current,
-        dimensions.width,
-        dimensions.height
-      );
+      const vp = viewportRef.current;
+      const fit = computeViewportFitZoom(vp, dimensions);
       if (fit !== null) {
         markViewportFitted(fit);
+        return undefined;
+      }
+      if (vp && typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => {
+          const retryFit = computeViewportFitZoom(vp, dimensions);
+          if (retryFit !== null) {
+            ro.disconnect();
+            markViewportFitted(retryFit);
+          }
+        });
+        ro.observe(vp);
+        return () => ro.disconnect();
       }
     }
-  }, [page, stageMode, needsViewportFit, dimensions, activeFile, markViewportFitted]);
+    return undefined;
+  }, [
+    isMobile,
+    page,
+    stageMode,
+    needsViewportFit,
+    activeFile,
+    renderedSvg,
+    renderedKey,
+    expectedRenderedKey,
+    dimensions,
+    markViewportFitted,
+  ]);
 
   const handleFitCanvas = useCallback(() => {
-    if (!dimensions) {
-      triggerFitCanvas(1);
-      return;
-    }
-    const fit = computeViewportFitZoom(
-      viewportRef.current,
-      dimensions.width,
-      dimensions.height
-    );
+    const fit = computeViewportFitZoom(viewportRef.current, dimensions);
     triggerFitCanvas(fit ?? 1);
   }, [dimensions, triggerFitCanvas]);
 
@@ -307,7 +362,7 @@ export function App() {
   const handleExportPng = useCallback(async () => {
     if (!code.trim()) return;
     const serverTheme = appearanceMode === 'dark' ? 'dark' : 'neutral';
-    const serverBg = appearanceMode === 'dark' ? '#191918' : '#f5f3ee';
+    const serverBg = appearanceMode === 'dark' ? '#191918' : '#f5f1e9';
     try {
       const res = await studioApi.renderServer({
         code,
@@ -346,6 +401,7 @@ export function App() {
   return (
     <div className="studio-shell">
       <TopBar
+        isMobile={isMobile}
         page={page}
         onChangePage={setPage}
         sidebarOpen={workspace.sidebarOpen}
@@ -367,7 +423,9 @@ export function App() {
         }}
       />
 
-      {page === 'studio' ? (
+      {isMobile ? (
+        <MobileInfoPage repoUrl={serverStatus?.repoUrl} />
+      ) : page === 'studio' ? (
         <div className="workspace-body">
           {workspace.sidebarOpen && (
             <ExplorerSidebar

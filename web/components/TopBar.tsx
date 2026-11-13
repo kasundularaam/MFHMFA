@@ -7,6 +7,7 @@ import { ActionMenu, DropdownItem } from './DropdownMenu';
 const DEFAULT_GITHUB_URL = 'https://github.com/kasundularaam/MFHMFA';
 
 interface TopBarProps {
+  isMobile?: boolean;
   page: StudioPage;
   onChangePage: (page: StudioPage) => void;
   sidebarOpen: boolean;
@@ -23,6 +24,7 @@ interface TopBarProps {
 }
 
 export function TopBar({
+  isMobile = false,
   page,
   onChangePage,
   sidebarOpen,
@@ -40,7 +42,7 @@ export function TopBar({
   return (
     <header className="topbar">
       <div className="topbar-left">
-        {page === 'studio' && (
+        {!isMobile && page === 'studio' && (
           <button
             type="button"
             className={`icon-btn ${sidebarOpen ? 'active' : ''}`}
@@ -54,15 +56,14 @@ export function TopBar({
 
         <button
           type="button"
-          className="brand-lockup"
-          onClick={onBrandClick}
-          style={{ cursor: page === 'docs' ? 'pointer' : 'default' }}
-          title={page === 'docs' ? 'Home' : 'MFHMFA'}
+          className={`brand-lockup ${!isMobile && page === 'docs' ? 'clickable' : ''}`.trim()}
+          onClick={isMobile ? undefined : onBrandClick}
+          title={!isMobile && page === 'docs' ? 'Home' : 'MFHMFA'}
         >
-          <BrandLogo height={21} className="brand-logo" />
+          <BrandLogo height={isMobile ? 19 : 21} className="brand-logo" />
         </button>
 
-        {page === 'studio' && !sidebarOpen && connectedAgentCount > 0 && (
+        {!isMobile && page === 'studio' && !sidebarOpen && connectedAgentCount > 0 && (
           <button
             type="button"
             className="live-pill active"
@@ -76,15 +77,16 @@ export function TopBar({
       </div>
 
       <div className="topbar-center">
-        {page === 'studio' ? (
-          activeBreadcrumb && <span className="topbar-breadcrumb">{activeBreadcrumb}</span>
-        ) : (
-          <span className="topbar-page-title">Documentation</span>
-        )}
+        {!isMobile &&
+          (page === 'studio' ? (
+            activeBreadcrumb && <span className="topbar-breadcrumb">{activeBreadcrumb}</span>
+          ) : (
+            <span className="topbar-page-title">Documentation</span>
+          ))}
       </div>
 
       <div className="topbar-right">
-        {page === 'studio' && (
+        {!isMobile && page === 'studio' && (
           <ActionMenu
             align="end"
             trigger={
@@ -105,15 +107,17 @@ export function TopBar({
           </ActionMenu>
         )}
 
-        <button
-          type="button"
-          className={`icon-btn ${page === 'docs' ? 'active' : ''}`}
-          onClick={() => onChangePage(page === 'docs' ? 'studio' : 'docs')}
-          title="Documentation"
-          aria-label="Documentation"
-        >
-          <BookOpen size={18} />
-        </button>
+        {!isMobile && (
+          <button
+            type="button"
+            className={`icon-btn ${page === 'docs' ? 'active' : ''}`}
+            onClick={() => onChangePage(page === 'docs' ? 'studio' : 'docs')}
+            title="Documentation"
+            aria-label="Documentation"
+          >
+            <BookOpen size={18} />
+          </button>
+        )}
 
         <button
           type="button"

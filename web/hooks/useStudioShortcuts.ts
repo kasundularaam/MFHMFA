@@ -4,7 +4,10 @@ import type { DiagramComprehensionGuide } from '../../src/shared/types';
 import { useUiStore } from '../store/uiStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
-export function useStudioShortcuts(activeGuide: DiagramComprehensionGuide | undefined): void {
+export function useStudioShortcuts(
+  activeGuide: DiagramComprehensionGuide | undefined,
+  enabled = true
+): void {
   const page = useUiStore((s) => s.page);
   const stageMode = useUiStore((s) => s.stageMode);
   const activeFlowId = useUiStore((s) => s.activeFlowId);
@@ -12,6 +15,7 @@ export function useStudioShortcuts(activeGuide: DiagramComprehensionGuide | unde
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     const onKeyDown = (e: KeyboardEvent) => {
       if (page !== 'studio') return;
 
@@ -89,5 +93,5 @@ export function useStudioShortcuts(activeGuide: DiagramComprehensionGuide | unde
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeFlowId, activeGuide, activeStepIndex, page, selectedNodeId, stageMode]);
+  }, [enabled, activeFlowId, activeGuide, activeStepIndex, page, selectedNodeId, stageMode]);
 }

@@ -202,7 +202,7 @@ export function TabBar({
           aria-label={stageMode === 'preview' ? 'Switch to Code view' : 'Switch to Preview'}
         >
           {stageMode === 'preview' ? <Code2 size={17} /> : <Eye size={17} />}
-          {hasError && <span className="error-indicator-dot" />}
+          {hasError && <span className="tabbar-error-dot" />}
         </button>
 
         {stageMode === 'preview' && activeFile && (

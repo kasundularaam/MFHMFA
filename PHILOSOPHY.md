@@ -1,81 +1,65 @@
 # MFHMFA Philosophy
 
-**Mermaid For Humans, Mermaid For Agents.**
-
-MFHMFA is not a box-drawing utility. It is a **codebase comprehension instrument** designed around how the human brain actually builds mental models of complex software systems with the help of AI coding agents.
+MFHMFA is built to help people understand unfamiliar topics with AI agents, whether that is a new algorithm, a research paper, a codebase, a tricky bug, or an architecture tradeoff.
 
 ---
 
-## 1. The Real Bottleneck: Code Is Cheap, Understanding Is Expensive
+## 1. Why Raw AI Diagrams Often Fail
 
-AI coding agents can generate thousands of lines of working software across unfamiliar stacks in minutes. That created a new, quiet crisis: **builders increasingly own systems they cannot mentally simulate.**
+AI agents can write thousands of lines of code or summarize a dense paper in seconds. That makes it easy to read a smooth explanation, nod along, and realize ten minutes later that you still cannot picture how the thing actually works.
 
-When you ask an AI agent *"How does this system work?"* or *"Draw me a diagram of how memory is managed"*, standard tools fail in one of two predictable ways:
+When you ask an AI agent for a diagram, static charts usually miss in one of two ways:
 
-1. **The Jargon Dump (Too Technical)**
-   The agent mirrors the codebase's implementation vocabulary—15 boxes packed with variable names, framework primitives, and 20-word labels. If you do not already know that domain stack, every unfamiliar term consumes a slot of working memory until your brain bounces off the diagram completely.
-2. **The Toy Metaphor (Too Abstract)**
-   When asked to "simplify", the agent strips away the actual mechanism and leaves vague marketing boxes (*"Live Messenger passes data to Smart Storage"*). The words are easy, **but causality disappears**. You still cannot answer basic questions like *"Where is the bytes buffer right now?"* or *"What breaks if I close my browser tab?"*
+1. **Too crowded with jargon**
+   The agent copies variable names, equations, or internal service names straight onto 15 boxes. If those terms are new to you, your working memory fills up just decoding the labels before you ever see how the pieces interact.
+2. **Too simplified to be useful**
+   When you ask the agent to simplify, it removes the actual mechanism and draws vague boxes (*"Messenger sends data to Storage"*). The words are easy, yet you still cannot answer basic questions like *"What bytes move here?"* or *"What breaks if this request times out?"*
 
-**Understanding is neither memorizing variable names nor reading simplified summaries.**
-Understanding means **holding a runnable simulation in your head**: *Given input X, what moves where, how big is it, when is it freed, and what breaks when component Y fails?*
-
----
-
-## 2. Our Benchmark: The Dogfood Comprehension Test
-
-We measure MFHMFA by a single rule:
-
-> **If a builder who does not specialize in a codebase's tech stack can open MFHMFA with an AI agent and genuinely understand how the system works—including its failure modes—then MFHMFA succeeds. If the diagram looks pretty but the human still feels foggy, MFHMFA failed.**
-
-Mermaid syntax alone cannot pass this test, because a single static diagram forces every reader onto one flat altitude with all time steps frozen at once. MFHMFA pairs Mermaid's clean declarative layout with **interactive comprehension layers** grounded in cognitive science.
+Understanding something means being able to trace it in your head: *given one concrete input, what happens first, how does the data change at each step, and what happens when part of it fails?*
 
 ---
 
-## 3. Five Cognitive Science Pillars
+## 2. Five Research-Grounded Design Choices
 
-Every feature and agent instruction in MFHMFA maps directly to replicated research on human learning and visual cognition:
+Every feature and agent instruction in MFHMFA comes from established research on human memory and learning:
 
-### Pillar 1 — Working Memory Limits (~4–7 Chunks per View)
-*Basis: Cognitive Load Theory (John Sweller, 1988); Working Memory Capacity (Nelson Cowan, 2001); Visual Information-Seeking Mantra (Ben Shneiderman, 1996).*
+### 1. Keep each view to 4–7 boxes, and zoom in for details
+*Research basis: Working Memory Capacity (Nelson Cowan, 2001); Cognitive Load Theory (John Sweller, 1988); Visual Information-Seeking Mantra: overview first, zoom and filter, then details on demand (Ben Shneiderman, 1996).*
 
-Humans can hold roughly **4 to 6 novel interacting elements** in working memory at once. Putting 14 subsystems onto one canvas guarantees overload.
-- **In MFHMFA:** Our diagnostics nudge agents to keep each graph to **4–7 core boxes**. Deeper subsystems live in linked child `.mmd` files (`childPath` / `parentPath`), giving you **Google-Maps style zoom-in and zoom-out** instead of one giant poster.
+People can hold roughly **4 to 6 new interacting items** in working memory at once. Putting 15 subsystems onto one flat canvas guarantees overload.
+- **In MFHMFA:** Layout checks nudge agents to keep each view to **4–7 core boxes**. Deeper subsystems live in separate `.mmd` views linked via `childPath` and `parentPath`, so you can zoom in where you care and jump back out via the breadcrumb.
 
-### Pillar 2 — Dual Coding (Separate Shapes from Explanations)
-*Basis: Dual Coding Theory (Allan Paivio, 1971).*
+### 2. Keep box labels short; put explanations on click
+*Research basis: Dual Coding Theory (Allan Paivio, 1971).*
 
-The brain processes **spatial topology** (boxes, positions, flow direction) and **verbal prose** through two separate cognitive channels. Cramming 20 words inside a box jams both channels simultaneously—turning a map into a cramped paragraph.
-- **In MFHMFA:** Visual boxes stay ultra-short (**2–5 plain words**). Rich verbal details move into **Clickable Node Inspector Cards** that open on demand without cluttering the canvas.
+The brain processes **spatial layout** (shapes, positions, direction of flow) and **reading prose** through two separate channels. Stuffing a 20-word sentence inside a diagram box jams both channels at once.
+- **In MFHMFA:** Box labels stay short (**2–5 plain words**). Official technical terms, equations, and full explanations live inside **clickable box cards** (`term`, `summary`, `example`, `whatIf`, `refs`) that open only when you click a box.
 
-### Pillar 3 — Segmenting & Signaling (Stories Before Maps)
-*Basis: Multimedia Learning Principles (Richard Mayer, 2001–2009).*
+### 3. Step through flows one hop at a time (and compare scenarios)
+*Research basis: Segmenting and Signaling Principles in multimedia learning (Richard Mayer, 2001–2009); Contrasting Cases in transfer learning (John Bransford & Daniel Schwartz, 1999).*
 
-Controlled studies consistently show that learners understand complex mechanisms far better when a diagram is revealed in **user-paced causal steps** (`Next →`) with visual spotlighting, rather than presented as a static wall of arrows where the eye must hunt for where to start.
-- **In MFHMFA:** Agents attach **Story Mode (`steps`)** to diagrams. Stepping forward dims unrelated branches and spotlights *only* the active components and connecting arrows while narrating one concrete flow from start to finish.
+Learners follow complex systems much faster when a diagram is revealed in **user-paced steps** (`Next →`) with visual highlighting, and when contrasting cases are shown on the same structure rather than described separately.
+- **In MFHMFA:** Walkthroughs (`steps`) dim unrelated branches and highlight only the active boxes and arrows for the current step. When comparing two behaviors (like *Normal Write* vs. *Crash Recovery*, or *Baseline* vs. *Paper's Method*), agents attach multiple scenario tabs (`flows`) on the same diagram.
 
-### Pillar 4 — Concrete Traces & Counterfactuals ("What Breaks If…")
-*Basis: Concreteness Fading (Jerome Bruner, 1966); Mental Models & Causal Interventions (Philip Johnson-Laird, 1983; Judea Pearl).*
+### 4. Trace concrete values, ask "what breaks if…", and test predictions
+*Research basis: Concreteness Fading (Jerome Bruner, 1966); Mental Models & counterfactual reasoning (Philip Johnson-Laird, 1983); Testing / Retrieval Practice Effect (Henry Roediger & Jeffrey Karpicke, 2006).*
 
-Engineers habitually explain systems backwards: *abstract architecture first, concrete example never*. Humans learn in the opposite direction: **watch one concrete item with real numbers move through the system first**, then test boundaries via **counterfactuals** (*"What happens if X closes, fills up, or times out?"*).
-- **In MFHMFA:** Every Node Inspector card focuses on three universal anchors:
-  1. **Plain Mechanism** — What physically happens here (inputs, outputs, lifetimes).
-  2. **Concrete Example** — Real payload shapes, KB/MB sizes, counts, or millisecond timings.
-  3. **What Breaks If…** — Exact behavior when a tab closes, a queue fills, or a worker crashes.
+Abstract summaries rarely stick on their own. People build durable mental models by watching **one concrete example with real numbers** move through a system, checking what breaks at the boundaries, and making a quick prediction before seeing the answer.
+- **In MFHMFA:** Walkthrough steps carry concrete runtime or math traces (`trace`), box cards show real input-to-output examples (`example`) and boundary failures (`whatIf`), and key steps include a click-to-reveal check question (`check`).
 
-### Pillar 5 — Universal Mechanics Over Forced Personalization
-*Basis: Avoiding the LLM "Forced-Analogy Trap" (Feynman / 3Blue1Brown Principle).*
+### 5. Write like a human, without forced analogies
+*Research basis: Explaining through concrete physical mechanics rather than stretched metaphors (Richard Feynman).*
 
-When AI tools try to personalize explanations based on a user's job title (e.g. *"User works in AI/ML"*), they routinely caricature the learner—inventing convoluted domain metaphors (*"Imagine browser storage as ring-sharded KV-cache attention..."*) for simple concepts while assuming zero knowledge everywhere else.
-- **In MFHMFA:** We deliberately avoid persona-guessing in core explanations. Like 3Blue1Brown or Richard Feynman, agents are instructed to use **universal physical verbs** (*sends, holds for 20m, overwrites, deletes*), **concrete quantities**, and **step-by-step traces** that click for *any* curious human regardless of background.
+AI models often default to stiff textbook filler, buzzword slogans, or awkward job-based analogies. Humans think carefully about each word and say things plainly once they have the whole idea in mind.
+- **In MFHMFA:** Playbooks instruct agents to write short, direct sentences using everyday words and concrete verbs (*sends, waits 2s, overwrites, drops*), skipping filler and forced metaphors so any curious reader can follow along.
 
 ---
 
-## 4. Architectural Principles
+## 3. Workspace Principles
 
-1. **Zero Server Storage (100% Browser `IndexedDB`)**
-   Your architecture maps belong on your machine, not in someone else's database. The MFHMFA server is a pure pass-through SSE bridge + ephemeral PNG renderer (`0` stored diagrams). Your Virtual Diagram Filesystem (`mfhmfa-db`), 5-version immutable ring buffer, and comprehension guides live entirely in your browser's IndexedDB.
-2. **Vision-Closed Loop for Agents**
-   Agents should never dump broken Mermaid code or raw URLs into chat. Every `mermaid_render` call validates syntax, renders a **2x Retina PNG** in an isolated headless Chromium slot for the agent's own vision model to inspect, checks layout + cognitive load diagnostics, coalesces rapid layout retries into one clean revision, and streams the finished interactive diagram straight to your open Studio tab.
-3. **Human Sovereignty Over the Workspace**
-   Multiple coding agents (`Claude Code`, `Pi`, `Cursor`, `Antigravity`) collaborate inside jailed per-project directories (`mermaid_ls`, `mermaid_read`, `mermaid_render`, `mermaid_mv`), but **only humans can delete** diagrams, folders, or projects.
+1. **Zero diagrams stored on the server**
+   Your notes and diagrams belong on your computer. The MFHMFA server only checks layouts in headless Chromium and relays live events over SSE (`0` stored diagrams). Your projects, `.mmd` files, guides, and 5-version history stay in your browser's `IndexedDB`.
+2. **Agents check their own layout before stopping**
+   Every `render_view` call validates syntax, returns a 2x PNG preview for the agent's vision model to inspect, flags crowded layouts, merges rapid retries at the same path into one clean version, and streams the result to your open tab without pasting raw Mermaid blocks into chat.
+3. **Only you delete your work**
+   Multiple coding agents (`Claude Code`, `Pi`, `Cursor`, `Antigravity`) can work inside their own project folders (`get_playbook`, `list_views`, `read_view`, `render_view`, `move_view`), while deleting files, folders, or projects is reserved for you in the browser UI.

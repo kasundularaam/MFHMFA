@@ -7,27 +7,27 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     category: 'Architecture',
     diagramType: 'flowchart-v2',
     description:
-      'Multi-agent system connecting through MCP tools, validation engine, and live workspace.',
+      'Coding agents connecting through MCP tools, headless layout checks, and browser storage.',
     theme: 'default',
     look: 'classic',
     code: `flowchart TB
-    subgraph Agents["AI Coding Agents"]
-        A1["Claude Code · Project A"]
-        A2["Pi · Project A"]
-        A3["Cursor · Project B"]
+    Agents(["AI Agents"])
+
+    subgraph Server["MFHMFA Server"]
+        MCP["MCP Tools"]
+        Pool["Chromium Pool"]
+        Relay["SSE Relay"]
     end
 
-    subgraph Engine["MFHMFA Zero-Storage Engine"]
-        MCP["MCP Server<br/>(Stdio + Streamable HTTP)"]
-        POOL["Parallel Chromium Pool<br/>(Parse + SVG + 2x Retina PNG)"]
-        RELAY["Pass-Through SSE Relay<br/>(0 Stored Diagrams)"]
+    subgraph Browser["Browser Workspace"]
+        Canvas["Studio Canvas"]
+        Store[("IndexedDB")]
     end
 
-    UI["Browser IndexedDB Studio<br/>(Project VFS & Interactive Guides)"]
-
-    A1 & A2 & A3 <-->|"mermaid_render (PNG Vision)"| MCP
-    MCP --> POOL & RELAY
-    RELAY ==>|"Allocates Project / Agent Space"| UI`,
+    Agents <-->|"render_view (2x PNG)"| MCP
+    MCP --> Pool & Relay
+    Relay <==>|"Live sync"| Canvas
+    Canvas <-->|"5-version history"| Store`,
   },
   {
     id: 'sequence-oauth',
@@ -187,24 +187,23 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     description: 'Radial mindmap with rounded, cloud, and hexagon node shapes.',
     theme: 'forest',
     code: `mindmap
-  root((Mermaid Studio))
+  root((MFHMFA Studio))
     Engine
-      Headless Chrome
-      Instant Validation
-      2x Retina PNG
-      Layout Diagnostics
-    AI Agent Access
+      Headless Chromium
+      Syntax Checks
+      2x PNG Preview
+      Layout Warnings
+    Agent Access
       MCP Server
         Stdio Transport
         Streamable HTTP
-        ImageContent Vision
-      REST Tool Schemas
-      OpenAI Tool Schema
-    Web Workspace
-      CodeMirror 6 Editor
-      Live WebSocket Sync
-      Pan and Zoom Canvas
-      Version Snapshots`,
+        Learning Playbooks
+      REST Tool API
+    Browser Workspace
+      Walkthrough Steps
+      Live SSE Sync
+      Node Detail Cards
+      IndexedDB History`,
   },
   {
     id: 'gantt-release-plan',
@@ -221,16 +220,16 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     section Core Engine
     Parser & Lint Diagnostics   :done,    eng1, 2026-05-01, 5d
     Retina Screenshot Pipeline  :done,    eng2, after eng1, 4d
-    Versioned SQLite Store      :active,  eng3, after eng2, 4d
+    Stateless SSE Relay         :active,  eng3, after eng2, 4d
 
     section Agent Ecosystem
     MCP Stdio + HTTP Server     :crit,    mcp1, 2026-05-08, 6d
-    Vision Loop Prompt Pack     :         mcp2, after mcp1, 3d
+    Learning Mode Playbooks     :         mcp2, after mcp1, 3d
     REST Tool Schemas           :         mcp3, after mcp1, 4d
 
     section Web Studio
-    Eye-Comfort Studio Canvas   :         ui1,  2026-05-10, 6d
-    Live Agent Activity Stream  :         ui2,  after ui1, 4d
+    Browser IndexedDB Workspace :         ui1,  2026-05-10, 6d
+    Walkthrough & Node Cards    :         ui2,  after ui1, 4d
     GA Release Milestone        :milestone, m1, after ui2, 0d`,
   },
   {
@@ -276,8 +275,8 @@ export const MERMAID_TEMPLATES: MermaidTemplate[] = [
     quadrant-4 Complex Utilities
     Vision PNG Inspection: [0.28, 0.92]
     Syntax Fix Hints: [0.22, 0.84]
-    Live WebSocket Sync: [0.42, 0.86]
-    Version History Diff: [0.58, 0.72]
+    Live SSE Sync: [0.42, 0.86]
+    Contrasting Flow Tabs: [0.38, 0.88]
     Hand-Drawn Sketch Mode: [0.18, 0.64]
     Multi-Page PDF Deck: [0.82, 0.44]`,
   },
@@ -417,7 +416,7 @@ mindmap
       Pan & Zoom
     Backend
       Headless Chrome
-      SQLite WAL
+      SSE Stream
 \`\`\`
 - Hierarchy is strictly controlled by consistent 2-space indentation.`,
 
@@ -431,26 +430,32 @@ gantt
     MCP Tools    :active, t2, after t1, 4d
 \`\`\``,
 
-  comprehension: `# Human Comprehension Guide (Cognitive Load, Story Mode & Progressive Disclosure)
+  comprehension: `# Human Comprehension Guide (Small Views, Walkthroughs & Plain Writing)
 
-MFHMFA is a **codebase comprehension tool**, not just a box drawer. Follow these universal cognitive-science rules:
+Call \`get_playbook\` first with \`mode\` (\`"concept"\`, \`"paper"\`, \`"codebase"\`, \`"bug"\`, or \`"tradeoff"\`), then build views with \`render_view\`:
 
-1. **Working Memory Limit (4–7 Nodes per View)**:
-   - Keep each diagram to **4–7 core boxes** with **2–5 plain-English words** per box.
-   - Never cram raw variable names, framework jargon, or 15-word paragraphs inside box labels (Dual Coding Principle).
-   - For larger systems, render a clean overview first, then create focused child \`.mmd\` graphs linked via \`guide.nodes[nodeId].childPath\` (and set \`guide.parentPath\` on each child graph).
+1. **Keep Each View Small (4–7 Boxes, 2–5 Plain Words per Box)**:
+   - Humans hold ~4–6 items in working memory at once. Keep box labels short and in everyday English.
+   - Never stuff sentences, equations, or raw identifiers into box labels. Put the formal term or symbol in \`guide.nodes[nodeId].term\`.
+   - For deeper parts, create linked child \`.mmd\` views using \`guide.nodes[nodeId].childPath\` (and set \`guide.parentPath\` on each child).
 
-2. **Story Mode Stepper (\`guide.steps\`) — Concrete Trace First**:
-   - Humans understand unfamiliar systems by watching **one concrete request/item move step-by-step**, not by staring at a static wall of arrows.
-   - Attach 3–6 ordered \`steps\` (\`{ title, caption, focusNodes: ["NodeA", "NodeB"] }\`). Include a boundary or failure step when helpful.
+2. **Write Like a Human**:
+   - Write \`gist\`, \`caption\`, \`summary\`, and \`whatIf\` in short, plain sentences with concrete verbs.
+   - Skip AI filler, buzzwords, dramatic intros, and forced analogies.
 
-3. **Clickable Node Inspector (\`guide.nodes\`) — Mechanics + Counterfactuals**:
-   - Attach \`nodes\` keyed by exact Mermaid node ID:
-     - \`summary\`: 1–2 plain sentences explaining what physically happens here (avoid forced domain analogies).
-     - \`example\`: Concrete input -> output with real sizes, counts, or timings (e.g. \`"1 KB Mermaid text -> 180 KB PNG -> deleted immediately"\`).
-     - \`whatIf\`: Counterfactual boundary test (\`"What breaks or happens if this closes, fills up, or times out?"\`).
-     - \`files\`: Relevant source file paths in the repo.
-     - \`childPath\`: Optional relative \`.mmd\` path for click-to-zoom subsystem drill-down.`,
+3. **Step-by-Step Walkthroughs (\`guide.steps\` or \`guide.flows\`)**:
+   - Trace **one concrete example** step-by-step (\`{ title, caption, focusNodes, trace?, check? }\`).
+   - Use \`guide.flows\` when comparing 2–4 scenarios on the same map (e.g. *Normal Path* vs. *Bug Trace*, or *Baseline* vs. *Paper's Method*).
+   - Add \`check: { question, answer }\` on a key step so the user can test their understanding before clicking reveal.
+
+4. **Clickable Node Cards (\`guide.nodes\`)**:
+   - Key by exact Mermaid node ID:
+     - \`term\`: Official technical term, class name, or equation.
+     - \`summary\`: 1–2 plain sentences on what happens here.
+     - \`example\`: Concrete input -> output with real numbers, sizes, shapes, or timings.
+     - \`whatIf\`: What breaks or degrades when something fails or hits a limit.
+     - \`refs\`: Repo file paths, paper sections (\`"§3.2"\`), or spec links.
+     - \`childPath\`: Relative \`.mmd\` path to zoom into.`,
 };
 
 export function getSyntaxGuide(topic?: string): string {

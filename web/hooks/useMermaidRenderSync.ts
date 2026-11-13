@@ -11,7 +11,7 @@ import { useWorkspaceStore } from '../store/workspaceStore';
  * so switching tabs, restoring history, theme toggles, and CodeMirror edits
  * all share one consistent render & `parseError` flow.
  */
-export function useMermaidRenderSync(): void {
+export function useMermaidRenderSync(enabled = true): void {
   const hydrated = useWorkspaceStore((s) => s.hydrated);
   const workspace = useWorkspaceStore((s) => s.workspace);
   const selectedVersion = useWorkspaceStore((s) => s.selectedVersion);
@@ -31,7 +31,7 @@ export function useMermaidRenderSync(): void {
   const prevFileKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!hydrated) return undefined;
+    if (!enabled || !hydrated) return undefined;
 
     if (!activeFile) {
       prevFileKeyRef.current = null;
@@ -39,7 +39,9 @@ export function useMermaidRenderSync(): void {
       return undefined;
     }
 
+    const verNum = activeVerRecord?.version ?? activeFile.currentVersion;
     const fileKey = `${activeFileId}::${selectedVersion ?? 'head'}::${appearanceMode}`;
+    const renderedKey = `${activeFileId}:v${verNum}:${appearanceMode}:${code.length}`;
     const isFileOrThemeSwitch = prevFileKeyRef.current !== fileKey;
     prevFileKeyRef.current = fileKey;
 
@@ -60,6 +62,7 @@ export function useMermaidRenderSync(): void {
     if (cached) {
       useUiStore.getState().setRenderSuccess({
         svg: cached.svg,
+        renderedKey,
         diagramType: cached.diagramType,
         dimensions: cached.dimensions,
       });
@@ -79,6 +82,7 @@ export function useMermaidRenderSync(): void {
       if (outcome.ok) {
         useUiStore.getState().setRenderSuccess({
           svg: outcome.svg,
+          renderedKey,
           diagramType: outcome.diagramType,
           dimensions: outcome.dimensions,
         });
@@ -119,5 +123,14 @@ export function useMermaidRenderSync(): void {
       void runRender();
     }, delayMs);
     return () => clearTimeout(timer);
-  }, [hydrated, activeFile, activeFileId, selectedVersion, code, appearanceMode, stageMode]);
+  }, [
+    enabled,
+    hydrated,
+    activeFile,
+    activeFileId,
+    selectedVersion,
+    code,
+    appearanceMode,
+    stageMode,
+  ]);
 }

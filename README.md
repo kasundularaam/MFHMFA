@@ -4,51 +4,39 @@
   <img alt="MFHMFA" src="./web/public/logo.svg" height="56" />
 </picture>
 
-**Mermaid For Humans, Mermaid For Agents.**
+Live Studio: **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** · Hosted MCP: `https://mfhmfa.kasun.si/mcp` · **[Philosophy →](./PHILOSOPHY.md)**
 
-Live Studio: **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** · Hosted MCP: `https://mfhmfa.kasun.si/mcp` · **[Read the Philosophy →](./PHILOSOPHY.md)**
-
-MFHMFA is a **zero-server-storage Codebase Comprehension Studio** and Model Context Protocol (MCP) server. It helps humans genuinely understand unfamiliar codebases with AI coding agents—turning raw Mermaid charts into **interactive step-by-step walkthroughs**, **clickable component cards**, and **zoomable sub-graphs** stored 100% in your browser.
+MFHMFA is an interactive visual learning workspace and Model Context Protocol (MCP) server you use alongside your AI agent. Use it to understand a **concept**, **research paper**, **codebase**, **bug**, or **design tradeoff** through small, step-by-step diagrams saved locally in your browser.
 
 ---
 
-## Why MFHMFA Exists
+## Why MFHMFA
 
-AI coding agents can write thousands of lines of code in minutes, leaving builders with a new bottleneck: **owning systems they cannot mentally simulate.**
+When you ask an AI agent to draw a diagram, raw Mermaid charts usually miss in one of two ways:
+- **Too crowded:** 15 boxes stuffed with class names, equations, or long sentences that are hard to hold in your head at once.
+- **Too vague:** High-level boxes (*"Service talks to Storage"*) that hide actual data shapes, order of execution, and what happens when something fails.
 
-When you ask an AI agent to explain or diagram a codebase, raw diagrams usually fail in one of two ways:
-- **Too Technical (Jargon Overload):** 15 boxes stuffed with framework buzzwords and variable names that overflow human working memory.
-- **Too Abstract (Vague Metaphors):** Over-simplified boxes (*"Messenger sends to Storage"*) that strip away causality, sizes, and failure modes.
-
-MFHMFA is built around **proven cognitive science principles of human learning** (see **[PHILOSOPHY.md](./PHILOSOPHY.md)**): keep each view within the ~4–7 chunk working-memory limit, separate clean visual topology from rich explanations on click, trace one concrete flow step-by-step, and ground every box in real examples and *"what breaks if…"* edge cases.
+MFHMFA keeps the visual diagram small (4-7 boxes with short plain labels) and puts the real mechanics into interactive layers you control, grounded in cognitive science research on how people actually learn (see **[PHILOSOPHY.md](./PHILOSOPHY.md)**).
 
 ---
 
 ## What It Does
 
-- **Story Mode Stepper (`◀ Step 1 / N ▶`):** Instead of staring at a frozen wall of arrows, press `Walk Through` (or `←` / `→`) to spotlight one causal step at a time while unrelated branches dim out.
-- **Clickable Node Inspector:** Boxes on the canvas stay clean (2–5 plain words). Click any outlined box to inspect its **plain mechanism**, **concrete payload/timing example**, **"What Breaks If…" edge case**, and **source file paths**.
-- **Google-Maps Sub-Graph Zoom:** Double-click dashed subsystem boxes (or click *Zoom into…*) to drill down into linked child `.mmd` diagrams and jump back via the top-left breadcrumb.
-- **Agent Vision + Cognitive Load Linter:** When an agent calls `mermaid_render`, it receives a **2x Retina PNG** to visually check for overlaps *plus* diagnostics warning if a graph crams too many nodes or words into one view.
-- **Zero Server Storage (Browser IndexedDB VFS):** All project folders, `.mmd` files, interactive guides, and 5-version immutable revision histories live asynchronously in your browser's `IndexedDB` (`0` diagrams stored on the server).
-
----
-
-## How It Works
-
-1. **Pair Your Browser Tab:** Open **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** and click **Copy MCP URL** to get your browser's private `?workspace=ws_...` link.
-2. **Ask Your Coding Agent:** Ask Claude Code, Pi, Cursor, or Antigravity *"How does auth / memory / billing work in this repo?"*
-3. **Self-Verified Live Sync:** Behind the scenes, the agent inspects your project VFS (`mermaid_ls` / `mermaid_read`), renders clean 4–7 box graphs with attached comprehension guides (`guide.steps`, `guide.nodes`), visually verifies the 2x Retina PNG, coalesces rapid layout retries into a single revision, and streams the result live into your open tab—without dumping raw Mermaid code or URLs into your terminal.
-4. **Explore Interactively:** Step through Story Mode with `←` / `→`, click boxes to inspect concrete examples & failure modes, and zoom into child sub-graphs.
+- **5 Learning Playbooks:** Agents load a mode-specific guide first (`concept`, `paper`, `codebase`, `bug`, or `tradeoff`) so a research paper walkthrough, a race-condition trace, and a repo overview are each structured the right way.
+- **Step-by-Step Walkthroughs (`←` / `→`):** Step through one hop at a time while unrelated branches dim out, switch between contrasting scenarios (such as *Normal Flow* vs. *Bug Trace*), inspect concrete runtime values, and test yourself on quick check questions.
+- **Clickable Box Cards:** Click any outlined box to read a plain explanation, its formal technical term or equation, a concrete input/output example, what breaks at boundary conditions, and exact file or paper references.
+- **Sub-Diagram Zoom:** Keep each view focused and double-click dashed boxes (or click *Zoom into…*) to open linked child `.mmd` views, then jump back using the top breadcrumb.
+- **Visual Layout Check for Agents:** Every `render_view` call gives the agent a 2x PNG preview and layout warnings so it can fix overlaps or wordy labels before stopping.
+- **Saved in Your Browser:** Zero diagrams are stored on the server. All projects, `.mmd` files, walkthrough guides, and up to 5 recent versions per file live in your browser's `IndexedDB`.
 
 ---
 
 ## Quick Start (MCP Setup)
 
-### Hosted (Zero Install)
+### Hosted (No Install)
 
-1. Open **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** and click **Copy MCP URL** (bottom-left of the Explorer sidebar, or under **Docs**).
-2. Register the paired URL in your coding agent:
+1. Open **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** on your computer and click **Copy MCP URL** (under **Connected Agents** in the sidebar, or in **Docs**).
+2. Add the paired URL to your coding agent:
 
 ```json
 {
@@ -60,7 +48,7 @@ MFHMFA is built around **proven cognitive science principles of human learning**
 }
 ```
 
-Or via CLI:
+Or register via CLI:
 
 ```bash
 # Pi Coding Agent
@@ -70,7 +58,7 @@ pi mcp add mfhmfa --url "https://mfhmfa.kasun.si/mcp?workspace=ws_YOUR_TOKEN" --
 claude mcp add --transport http mfhmfa "https://mfhmfa.kasun.si/mcp?workspace=ws_YOUR_TOKEN"
 ```
 
-Keep **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** open in a browser tab while working—your browser tab *is* the storage engine.
+Keep **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** open in a desktop browser tab while working so your agent can read and stream views live.
 
 ### Local Stdio
 
@@ -91,14 +79,12 @@ Keep **[mfhmfa.kasun.si](https://mfhmfa.kasun.si)** open in a browser tab while 
 
 | Tool | Purpose |
 | :--- | :--- |
-| `mermaid_ls` | List folders and `.mmd` graphs inside the agent's jailed project working directory (`diagramType`, `version`, `stepCount`, `author`). |
-| `mermaid_read` | Read `.mmd` source, attached comprehension `guide`, and 5-version immutable history of an existing graph. |
-| `mermaid_render` | Write/update a `.mmd` graph + interactive `guide` (`gist`, `steps`, `nodes`, `childPath`), coalesce rapid retries in browser `IndexedDB`, and return a 2x Retina PNG + layout/cognitive diagnostics. |
-| `mermaid_mv` | Move or rename a graph or subfolder within the working project while preserving version history and automatically updating `childPath` / `parentPath` links. |
-| `mermaid_validate` | Check syntax and static lint rules (including Dual-Coding dense label checks); returns error line/column snippet and fix hints. |
-| `mermaid_export` | Render and write Mermaid source to disk as `.png`, `.svg`, `.mmd`, or `.md`. |
-| `mermaid_syntax_guide` | Comprehension rules (`comprehension`) plus escaping & layout guides (`pitfalls`, `flowchart`, `sequence`, `er`, `state`, `class`, `mindmap`, `gantt`). |
-| `mermaid_list_templates` | Curated starter Mermaid templates across 11 diagram categories. |
+| `get_playbook` | Load the teaching guide for `concept`, `paper`, `codebase`, `bug`, or `tradeoff`, along with current project views and what you have selected in Studio. |
+| `render_view` | Create or update a `.mmd` view and interactive `guide` (`gist`, `steps` or `flows`, `nodes`, `childPath`), merge rapid retries in browser `IndexedDB`, and return a 2x PNG + layout warnings. |
+| `list_views` | List folders and `.mmd` files in the current project folder, plus your active view, step, and selected box in Studio. |
+| `read_view` | Read the `.mmd` source, attached `guide`, and 5-version history of an existing view. |
+| `move_view` | Move or rename a file or folder within the project while keeping version history and updating `childPath` / `parentPath` links. |
+| `export_view` | Render and save Mermaid source to local disk as `.png`, `.svg`, `.mmd`, or `.md` when running locally. |
 
 - **Resources:** `mermaid://guides/pitfalls`, `mermaid://templates`, `mermaid://templates/{id}`
 - **Prompt:** `design-and-verify-diagram`
@@ -130,8 +116,8 @@ npm run dev
 npm run build
 npm start
 
-# Typecheck & test suite (Unit + Headless Browser/MCP E2E)
-npm run typecheck
+# Lint, typecheck & test suite (Unit + Headless Browser/MCP E2E)
+npm run check
 npm test
 ```
 
@@ -139,7 +125,7 @@ npm test
 
 ## HTTP Tool API
 
-For custom OpenAI / Anthropic / Gemini function-calling loops without an MCP client:
+For custom tool-calling integrations without an MCP client:
 
 - `GET https://mfhmfa.kasun.si/api/tools/schemas`
 - `POST https://mfhmfa.kasun.si/api/tools/call?workspace=ws_YOUR_TOKEN`
@@ -148,18 +134,19 @@ For custom OpenAI / Anthropic / Gemini function-calling loops without an MCP cli
 curl -X POST "https://mfhmfa.kasun.si/api/tools/call?workspace=ws_YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "mermaid_render",
+    "name": "render_view",
     "arguments": {
       "project": "Order Service",
       "path": "checkout/order-pipeline.mmd",
-      "code": "flowchart LR\n  Cart[\"Cart\"] --> Pay[\"Payment\"] --> Ship[\"Fulfillment\"]",
+      "code": "flowchart LR\n  Cart[\"Cart\"] --> Pay[\"Payment\"] --> Ship[\"Fulfill\"]",
       "guide": {
-        "gist": "Orders only enter fulfillment after payment confirmation.",
+        "gist": "Orders only move to fulfillment after payment is confirmed.",
         "steps": [
           {
             "title": "1. Charge customer",
-            "caption": "Cart total is sent to Payment and held until confirmed.",
-            "focusNodes": ["Cart", "Pay"]
+            "caption": "Cart sends the order total to Payment and waits for confirmation.",
+            "focusNodes": ["Cart", "Pay"],
+            "trace": "orderId=ord_42 | amount=$48.00 -> 200 Authorized"
           }
         ]
       }

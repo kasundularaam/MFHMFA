@@ -3,7 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MFHMFA — Mermaid For Humans, Mermaid For Agents</title>
+    <title>MFHMFA</title>
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem('mermaid-studio-mode') === 'light' ? 'light' : 'dark';
+          document.documentElement.dataset.mode = mode;
+          document.documentElement.style.colorScheme = mode;
+        } catch (e) {
+          document.documentElement.dataset.mode = 'dark';
+        }
+      })();
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #191918;
+        color: #dfdbd3;
+      }
+      html[data-mode='light'],
+      html[data-mode='light'] body {
+        background-color: #f5f1e9;
+        color: #23201a;
+      }
+    </style>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>

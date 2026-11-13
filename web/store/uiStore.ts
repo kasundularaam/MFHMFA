@@ -33,6 +33,7 @@ export interface UiStoreState {
   drillStack: string[];
 
   renderedSvg: string;
+  renderedKey: string;
   diagramType: string | null;
   parseError: ParseErrorDetail | null;
   dimensions: { width: number; height: number } | null;
@@ -61,6 +62,7 @@ export interface UiStoreState {
 
   setRenderSuccess: (payload: {
     svg: string;
+    renderedKey: string;
     diagramType: string | null;
     dimensions: { width: number; height: number } | null;
     requestFit?: boolean;
@@ -89,6 +91,7 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
   drillStack: [],
 
   renderedSvg: '',
+  renderedKey: '',
   diagramType: 'flowchart-v2',
   parseError: null,
   dimensions: null,
@@ -109,6 +112,7 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
       // ignore
     }
     document.documentElement.dataset.mode = next;
+    document.documentElement.style.colorScheme = next;
     set({ appearanceMode: next });
   },
 
@@ -151,9 +155,10 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
       return { drillStack: idx >= 0 ? s.drillStack.slice(0, idx) : s.drillStack };
     }),
 
-  setRenderSuccess: ({ svg, diagramType, dimensions, requestFit }) =>
+  setRenderSuccess: ({ svg, renderedKey, diagramType, dimensions, requestFit }) =>
     set((s) => ({
       renderedSvg: svg,
+      renderedKey,
       diagramType,
       dimensions,
       parseError: null,
@@ -164,12 +169,14 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
   setRenderError: (parseError) =>
     set({
       renderedSvg: '',
+      renderedKey: '',
       parseError,
     }),
 
   clearRenderStage: () =>
     set({
       renderedSvg: '',
+      renderedKey: '',
       parseError: null,
       dimensions: null,
     }),

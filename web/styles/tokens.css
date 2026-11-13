@@ -1,67 +1,129 @@
 :root,
 :root[data-mode='dark'] {
+  /* Warm stone low-chroma surfaces (OKLCH ~82deg, avoids OLED black smear & blue-light scatter) */
   --bg-canvas: #191918;
-  --bg-bar: #151514;
-  --bg-popover: #1d1d1b;
-  --bg-elevated: #232321;
-  --bg-hover: #2b2b28;
-  --bg-menu-hover: rgba(255, 255, 255, 0.07);
-  --bg-active: #30302d;
-  --border-line: #282825;
-  --border-strong: #3a3935;
-  --text-primary: #dedbd3;
-  --text-secondary: #9c9990;
-  --text-muted: #706e67;
-  --btn-primary-bg: #d4d1c9;
-  --btn-primary-fg: #181817;
-  --btn-primary-hover: #e2dfd7;
-  --danger-fg: #d68b83;
-  --danger-bg: rgba(195, 95, 85, 0.14);
-  --danger-border: rgba(195, 95, 85, 0.3);
-  --hint-fg: #cbb88d;
-  --hint-bg: rgba(180, 155, 100, 0.11);
-  --hint-border: rgba(180, 155, 100, 0.28);
-  --live-fg: #94bd9f;
-  --live-dot: #6eb384;
-  --live-bg: rgba(95, 165, 118, 0.12);
-  --live-bg-hover: rgba(95, 165, 118, 0.2);
-  --live-border: rgba(95, 165, 118, 0.28);
-  --tab-accent: #8fa693;
-  --shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.42);
+  --bg-bar: #161513;
+  --bg-popover: #211f1d;
+  --bg-elevated: #282622;
+  --bg-hover: #312f2b;
+  --bg-menu-hover: rgba(255, 250, 240, 0.075);
+  --bg-active: #383631;
+  --border-line: #2e2c28;
+  --border-strong: #46433e;
+
+  /* APCA-calibrated negative-polarity typography (Lc -84 / -71 / -58 / -41) */
+  --text-primary: #dfdbd3;
+  --text-reading: #ccc8bf;
+  --text-secondary: #b3afa7;
+  --text-muted: #928e87;
+
+  --btn-primary-bg: #dad6ce;
+  --btn-primary-fg: #181816;
+  --btn-primary-hover: #e5e1d9;
+
+  /* Distinct low-chroma semantic accents (Okabe-Ito colorblind-safe separation) */
+  --focus-accent: #81b5ca;
+  --focus-bg: rgba(129, 181, 202, 0.14);
+  --focus-border: rgba(129, 181, 202, 0.34);
+  --tab-accent: #81b5ca;
+
+  --select-accent: #8ccfe0;
+  --select-glow: rgba(140, 207, 224, 0.22);
+
+  --drill-fg: #a3b0d9;
+  --drill-bg: rgba(163, 176, 217, 0.12);
+  --drill-bg-hover: rgba(163, 176, 217, 0.2);
+  --drill-border: rgba(163, 176, 217, 0.32);
+
+  /* Node canvas state fills & >= 3:1 WCAG 1.4.11 borders */
+  --node-interactive-border: #7d7971;
+  --node-hover-fill: #2c3133;
+  --node-focus-fill: #212b2f;
+  --node-select-fill: #233035;
+
+  /* Live connected status (reserved strictly for active agent presence) */
+  --live-fg: #94c8a1;
+  --live-dot: #6fb684;
+  --live-bg: rgba(111, 182, 132, 0.12);
+  --live-bg-hover: rgba(111, 182, 132, 0.2);
+  --live-border: rgba(111, 182, 132, 0.28);
+
+  /* Edge-case warnings ("What breaks if...") & historical banner */
+  --hint-fg: #daba86;
+  --hint-bg: rgba(210, 172, 108, 0.11);
+  --hint-border: rgba(210, 172, 108, 0.28);
+
+  /* Syntax errors & destructive actions */
+  --danger-fg: #e4948c;
+  --danger-bg: rgba(210, 102, 92, 0.14);
+  --danger-border: rgba(210, 102, 92, 0.32);
+
+  --shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.44);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 :root[data-mode='light'] {
-  --bg-canvas: #f5f3ee;
-  --bg-bar: #ebe7df;
-  --bg-popover: #fcfbf8;
-  --bg-elevated: #e2ded4;
-  --bg-hover: #d8d3c8;
-  --bg-menu-hover: rgba(32, 31, 28, 0.065);
-  --bg-active: #faf9f5;
-  --border-line: #d9d4c9;
-  --border-strong: #c4beb1;
-  --text-primary: #201f1c;
-  --text-secondary: #524f49;
-  --text-muted: #76726a;
-  --btn-primary-bg: #2c2b28;
-  --btn-primary-fg: #f7f5f0;
-  --btn-primary-hover: #3d3b37;
-  --danger-fg: #a13d34;
-  --danger-bg: rgba(175, 62, 52, 0.1);
-  --danger-border: rgba(175, 62, 52, 0.26);
-  --hint-fg: #695326;
-  --hint-bg: rgba(160, 130, 65, 0.11);
-  --hint-border: rgba(160, 130, 65, 0.28);
-  --live-fg: #2f6140;
-  --live-dot: #388250;
-  --live-bg: rgba(56, 130, 80, 0.1);
-  --live-bg-hover: rgba(56, 130, 80, 0.17);
-  --live-border: rgba(56, 130, 80, 0.28);
-  --tab-accent: #447250;
-  --shadow-menu: 0 10px 28px rgba(30, 28, 24, 0.12);
+  /* Warm unbleached paper surfaces (ISO 9241-303 L* ~94.8, eliminates pure-white glare) */
+  --bg-canvas: #f5f1e9;
+  --bg-bar: #ebe6dc;
+  --bg-popover: #faf8f3;
+  --bg-elevated: #e2ddd2;
+  --bg-hover: #d8d2c6;
+  --bg-menu-hover: rgba(35, 32, 26, 0.065);
+  --bg-active: #faf7f2;
+  --border-line: #d4cec2;
+  --border-strong: #b8b1a4;
+
+  /* APCA-calibrated positive-polarity ink (Lc +95 / +85 / +81 / +64) */
+  --text-primary: #23201a;
+  --text-reading: #35312b;
+  --text-secondary: #4f4b44;
+  --text-muted: #6b675f;
+
+  --btn-primary-bg: #2b2924;
+  --btn-primary-fg: #f7f4ed;
+  --btn-primary-hover: #3c3933;
+
+  /* Distinct low-chroma semantic accents */
+  --focus-accent: #296177;
+  --focus-bg: rgba(41, 97, 119, 0.1);
+  --focus-border: rgba(41, 97, 119, 0.28);
+  --tab-accent: #296177;
+
+  --select-accent: #1b5369;
+  --select-glow: rgba(27, 83, 105, 0.16);
+
+  --drill-fg: #465480;
+  --drill-bg: rgba(70, 84, 128, 0.09);
+  --drill-bg-hover: rgba(70, 84, 128, 0.16);
+  --drill-border: rgba(70, 84, 128, 0.28);
+
+  /* Node canvas state fills & >= 3:1 WCAG 1.4.11 borders */
+  --node-interactive-border: #767065;
+  --node-hover-fill: #eef3f5;
+  --node-focus-fill: #eaf2f5;
+  --node-select-fill: #e4eff3;
+
+  /* Live connected status */
+  --live-fg: #2a613c;
+  --live-dot: #367d4d;
+  --live-bg: rgba(54, 125, 77, 0.1);
+  --live-bg-hover: rgba(54, 125, 77, 0.17);
+  --live-border: rgba(54, 125, 77, 0.28);
+
+  /* Edge-case warnings ("What breaks if...") */
+  --hint-fg: #704c13;
+  --hint-bg: rgba(165, 122, 42, 0.11);
+  --hint-border: rgba(165, 122, 42, 0.28);
+
+  /* Syntax errors & destructive actions */
+  --danger-fg: #933732;
+  --danger-bg: rgba(168, 58, 50, 0.1);
+  --danger-border: rgba(168, 58, 50, 0.28);
+
+  --shadow-menu: 0 10px 28px rgba(32, 29, 23, 0.12);
 }
 
 * {
@@ -82,7 +144,7 @@ body,
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 220ms var(--ease-out), color 220ms var(--ease-out);
+  transition: background-color 200ms var(--ease-out), color 200ms var(--ease-out);
 }
 
 button,
@@ -170,6 +232,5 @@ textarea {
   width: 100%;
   height: 100%;
   background: var(--bg-canvas);
-  transition: background-color 220ms var(--ease-out);
+  transition: background-color 200ms var(--ease-out);
 }
-

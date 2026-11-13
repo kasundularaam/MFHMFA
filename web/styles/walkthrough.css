@@ -1,16 +1,14 @@
 /* ============================================================================
-   VS Code-Style Docked Bottom Walkthrough Panel
+   Docked Bottom Walkthrough Panel (Ergonomic Left-Grouped Controls & 68ch Measure)
    ============================================================================ */
 .walkthrough-panel {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  flex-shrink: 0;
   z-index: 25;
   background: var(--bg-bar);
   border-top: 1px solid var(--border-line);
   user-select: text;
-  transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out);
+  transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out);
 }
 
 .walkthrough-resizer {
@@ -25,13 +23,13 @@
 
 .walkthrough-resizer:hover,
 .walkthrough-resizer:active {
-  background: color-mix(in srgb, var(--tab-accent) 40%, transparent);
+  background: color-mix(in srgb, var(--focus-accent) 42%, transparent);
 }
 
 .walkthrough-header {
-  height: 36px;
-  min-height: 36px;
-  padding: 0 10px 0 16px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 10px 0 18px;
   display: flex;
   align-items: stretch;
   justify-content: space-between;
@@ -44,10 +42,32 @@
   border-bottom: none;
 }
 
+.walkthrough-header-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.walkthrough-header-main::-webkit-scrollbar {
+  display: none;
+}
+
 .walkthrough-tabs {
   display: flex;
   align-items: stretch;
-  gap: 18px;
+  height: 100%;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.walkthrough-header-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border-line);
+  flex-shrink: 0;
 }
 
 .walkthrough-tab {
@@ -74,7 +94,7 @@
 
 .walkthrough-tab.active {
   color: var(--text-primary);
-  box-shadow: inset 0 -2px 0 var(--tab-accent);
+  box-shadow: inset 0 -2px 0 var(--focus-accent);
 }
 
 .walkthrough-tab-count {
@@ -93,14 +113,15 @@
 }
 
 .walkthrough-tab.active .walkthrough-tab-count {
-  background: var(--live-bg);
-  color: var(--live-fg);
+  background: var(--focus-bg);
+  color: var(--focus-accent);
 }
 
 .walkthrough-toolbar {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .walkthrough-start-link {
@@ -108,33 +129,36 @@
   align-items: center;
   gap: 5px;
   height: 26px;
-  padding: 0 9px;
-  border-radius: 5px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--focus-border);
+  background: var(--focus-bg);
+  color: var(--focus-accent);
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 530;
   cursor: pointer;
-  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+  flex-shrink: 0;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out);
 }
 
 .walkthrough-start-link:hover {
-  background: var(--bg-elevated);
+  border-color: var(--focus-accent);
   color: var(--text-primary);
 }
 
 .walkthrough-step-controls {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
+  flex-shrink: 0;
 }
 
 .walkthrough-flow-pills {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-right: 10px;
+  gap: 3px;
+  margin-right: 6px;
   padding: 2px;
   border-radius: 6px;
   background: var(--bg-canvas);
@@ -142,13 +166,13 @@
 }
 
 .walkthrough-flow-pill {
-  height: 22px;
-  padding: 0 8px;
+  height: 23px;
+  padding: 0 9px;
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: var(--text-muted);
-  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -160,20 +184,33 @@
 }
 
 .walkthrough-flow-pill.active {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  background: var(--focus-bg);
+  color: var(--focus-accent);
+  font-weight: 560;
+}
+
+.walkthrough-stepper-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 2px;
+  border-radius: 6px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-line);
 }
 
 .walkthrough-step-counter {
+  padding: 0 6px;
   font-size: 12.5px;
+  font-weight: 520;
   font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-  margin-right: 4px;
+  color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .panel-icon-btn {
-  width: 26px;
-  height: 26px;
+  width: 25px;
+  height: 25px;
   border-radius: 5px;
   border: none;
   background: transparent;
@@ -197,22 +234,22 @@
 
 .walkthrough-body {
   overflow-y: auto;
-  padding: 12px 18px;
+  padding: 13px 18px 15px;
 }
 
 .walkthrough-gist {
   margin: 0;
-  max-width: 900px;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--text-primary);
+  max-width: 68ch;
+  font-size: 14px;
+  line-height: 1.62;
+  color: var(--text-reading);
 }
 
 .walkthrough-step-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-width: 900px;
+  gap: 5px;
+  max-width: 68ch;
 }
 
 .story-step-title {
@@ -224,33 +261,33 @@
 
 .story-step-caption {
   margin: 0;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.62;
+  color: var(--text-reading);
 }
 
 .story-step-trace {
   margin-top: 6px;
-  padding: 7px 10px;
+  padding: 7px 11px;
   border-radius: 6px;
   background: var(--bg-canvas);
   border: 1px solid var(--border-line);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 12.5px;
+  line-height: 1.5;
   color: var(--text-primary);
   word-break: break-word;
 }
 
 .story-step-check {
   margin-top: 8px;
-  padding: 8px 11px;
+  padding: 9px 12px;
   border-radius: 7px;
   background: var(--bg-canvas);
   border: 1px solid var(--border-line);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 
 .story-check-header {
@@ -264,25 +301,25 @@
 .story-check-question {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 500;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 520;
   color: var(--text-primary);
 }
 
 .story-check-icon {
-  color: var(--tab-accent);
+  color: var(--focus-accent);
   flex-shrink: 0;
 }
 
 .story-check-toggle {
-  height: 24px;
-  padding: 0 9px;
+  height: 25px;
+  padding: 0 10px;
   border-radius: 5px;
   border: 1px solid var(--border-line);
   background: var(--bg-elevated);
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
@@ -295,11 +332,11 @@
 }
 
 .story-check-answer {
-  padding-top: 6px;
+  padding-top: 7px;
   border-top: 1px solid var(--border-line);
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.58;
+  color: var(--text-reading);
 }
 
 .floating-error-pill {
@@ -325,4 +362,3 @@
 .floating-error-pill:hover {
   background: var(--bg-elevated);
 }
-

@@ -20,56 +20,57 @@ export function getMermaidComfortConfig(mode: AppearanceMode) {
     },
     themeVariables: {
       darkMode: isDark,
-      background: isDark ? '#191918' : '#f5f3ee',
+      background: isDark ? '#191918' : '#f5f1e9',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif',
       fontSize: '15px',
 
-      primaryColor: isDark ? '#232321' : '#fcfbf8',
-      primaryTextColor: isDark ? '#dedbd3' : '#201f1c',
-      primaryBorderColor: isDark ? '#4a4943' : '#b8b2a6',
+      // Resting boxes meet WCAG 1.4.11 >= 3.1:1 border contrast without pure-white glare
+      primaryColor: isDark ? '#252320' : '#fbf8f3',
+      primaryTextColor: isDark ? '#dfdbd3' : '#23201a',
+      primaryBorderColor: isDark ? '#6b6761' : '#8d877c',
 
-      secondaryColor: isDark ? '#1f1f1d' : '#edeae2',
-      secondaryTextColor: isDark ? '#cfccc4' : '#2e2c28',
-      secondaryBorderColor: isDark ? '#3d3c37' : '#c2bdb1',
+      secondaryColor: isDark ? '#211f1c' : '#ede8de',
+      secondaryTextColor: isDark ? '#d4d0c7' : '#2e2b25',
+      secondaryBorderColor: isDark ? '#5d5953' : '#999387',
 
-      tertiaryColor: isDark ? '#1d1d1b' : '#ece9e1',
-      tertiaryTextColor: isDark ? '#cfccc4' : '#2e2c28',
-      tertiaryBorderColor: isDark ? '#383732' : '#c8c2b6',
+      tertiaryColor: isDark ? '#1f1d1a' : '#ebe6dc',
+      tertiaryTextColor: isDark ? '#d4d0c7' : '#2e2b25',
+      tertiaryBorderColor: isDark ? '#54514b' : '#a39d91',
 
-      lineColor: isDark ? '#87847b' : '#666259',
-      textColor: isDark ? '#dedbd3' : '#201f1c',
-      mainBkg: isDark ? '#232321' : '#fcfbf8',
-      nodeBorder: isDark ? '#4a4943' : '#b8b2a6',
-      clusterBkg: isDark ? '#1d1d1b' : '#eae6dd',
-      clusterBorder: isDark ? '#383732' : '#c8c2b6',
-      defaultLinkColor: isDark ? '#87847b' : '#666259',
-      titleColor: isDark ? '#dedbd3' : '#201f1c',
-      edgeLabelBackground: isDark ? '#191918' : '#f5f3ee',
+      lineColor: isDark ? '#97938c' : '#5e5950',
+      textColor: isDark ? '#dfdbd3' : '#23201a',
+      mainBkg: isDark ? '#252320' : '#fbf8f3',
+      nodeBorder: isDark ? '#6b6761' : '#8d877c',
+      clusterBkg: isDark ? '#1e1d1a' : '#ece7dd',
+      clusterBorder: isDark ? '#54514b' : '#a6a094',
+      defaultLinkColor: isDark ? '#97938c' : '#5e5950',
+      titleColor: isDark ? '#dfdbd3' : '#23201a',
+      edgeLabelBackground: isDark ? '#191918' : '#f5f1e9',
 
       // Sequence diagrams
-      actorBkg: isDark ? '#232321' : '#fcfbf8',
-      actorBorder: isDark ? '#45443e' : '#c2bdb2',
-      actorTextColor: isDark ? '#d6d3cb' : '#282724',
-      actorLineColor: isDark ? '#4f4d47' : '#a6a196',
-      signalColor: isDark ? '#8f8c83' : '#5e5b53',
-      signalTextColor: isDark ? '#d6d3cb' : '#282724',
-      labelBoxBkgColor: isDark ? '#21211f' : '#edeae2',
-      labelBoxBorderColor: isDark ? '#3a3934' : '#cbc6bb',
-      labelTextColor: isDark ? '#d6d3cb' : '#282724',
-      loopTextColor: isDark ? '#b5b2aa' : '#4a4842',
-      noteBkgColor: isDark ? '#27251f' : '#f2ede0',
-      noteTextColor: isDark ? '#d1ccbf' : '#3d392e',
-      noteBorderColor: isDark ? '#454033' : '#d5ccb6',
-      activationBkgColor: isDark ? '#2d2d2a' : '#e3dfd5',
-      activationBorderColor: isDark ? '#4d4b45' : '#b5b0a3',
+      actorBkg: isDark ? '#252320' : '#fbf8f3',
+      actorBorder: isDark ? '#6b6761' : '#8d877c',
+      actorTextColor: isDark ? '#dfdbd3' : '#23201a',
+      actorLineColor: isDark ? '#65615b' : '#8f897e',
+      signalColor: isDark ? '#9c9890' : '#565249',
+      signalTextColor: isDark ? '#dfdbd3' : '#23201a',
+      labelBoxBkgColor: isDark ? '#23211e' : '#ede8de',
+      labelBoxBorderColor: isDark ? '#54514b' : '#a39d91',
+      labelTextColor: isDark ? '#d6d2c9' : '#2b2822',
+      loopTextColor: isDark ? '#c4c0b7' : '#434039',
+      noteBkgColor: isDark ? '#2a261e' : '#f3ecdc',
+      noteTextColor: isDark ? '#dbd4c5' : '#3a3427',
+      noteBorderColor: isDark ? '#5c523e' : '#bfae8c',
+      activationBkgColor: isDark ? '#302e2a' : '#e3ddd1',
+      activationBorderColor: isDark ? '#6b6761' : '#969084',
 
-      // ER & categorical subtle scales
-      attributeBackgroundColorOdd: isDark ? '#222220' : '#fcfbf8',
-      attributeBackgroundColorEven: isDark ? '#1d1d1b' : '#f0ede6',
-      cScale0: isDark ? '#252926' : '#e6ebe6',
-      cScale1: isDark ? '#2a2822' : '#eee9de',
-      cScale2: isDark ? '#24272b' : '#e4e8ec',
-      cScale3: isDark ? '#2b2525' : '#ece3e2',
+      // ER & categorical subtle low-chroma scales
+      attributeBackgroundColorOdd: isDark ? '#252320' : '#fbf8f3',
+      attributeBackgroundColorEven: isDark ? '#1f1d1a' : '#efeae0',
+      cScale0: isDark ? '#222b2e' : '#e6eff2',
+      cScale1: isDark ? '#2b2820' : '#f0eadc',
+      cScale2: isDark ? '#252730' : '#eaeaf2',
+      cScale3: isDark ? '#242b26' : '#e8efe9',
     },
   };
 }
@@ -77,12 +78,12 @@ export function getMermaidComfortConfig(mode: AppearanceMode) {
 export function createComfortEditorExtension(mode: AppearanceMode): Extension {
   const isDark = mode === 'dark';
 
-  const bg = isDark ? '#191918' : '#f5f3ee';
-  const fg = isDark ? '#d4d1c9' : '#2b2a27';
-  const gutterFg = isDark ? '#595751' : '#9c978d';
-  const activeLineBg = isDark ? '#20201e' : '#ece9e1';
-  const selectionBg = isDark ? '#2f322e' : '#dedad0';
-  const cursorColor = isDark ? '#c4c0b6' : '#3d3b36';
+  const bg = isDark ? '#191918' : '#f5f1e9';
+  const fg = isDark ? '#dbd7cf' : '#28251f';
+  const gutterFg = isDark ? '#7d7971' : '#7f7a70';
+  const activeLineBg = isDark ? '#21201d' : '#ece7dd';
+  const selectionBg = isDark ? '#28363c' : '#d8e4e9';
+  const cursorColor = isDark ? '#81b5ca' : '#296177';
 
   const baseTheme = EditorView.theme(
     {
@@ -118,7 +119,7 @@ export function createComfortEditorExtension(mode: AppearanceMode): Extension {
       },
       '.cm-activeLineGutter': {
         backgroundColor: 'transparent',
-        color: isDark ? '#8f8c83' : '#5e5b53',
+        color: isDark ? '#b3afa7' : '#4f4b44',
       },
       '.cm-foldPlaceholder': {
         backgroundColor: activeLineBg,
@@ -130,19 +131,19 @@ export function createComfortEditorExtension(mode: AppearanceMode): Extension {
   );
 
   const highlight = HighlightStyle.define([
-    { tag: [t.keyword, t.operatorKeyword, t.modifier], color: isDark ? '#a3b39b' : '#486142' },
-    { tag: [t.string, t.special(t.string)], color: isDark ? '#c4ad88' : '#7a5c2e' },
-    { tag: [t.number, t.bool, t.null], color: isDark ? '#b89f8d' : '#7c4f38' },
+    { tag: [t.keyword, t.operatorKeyword, t.modifier], color: isDark ? '#8ab8c9' : '#265d73' },
+    { tag: [t.string, t.special(t.string)], color: isDark ? '#d1b588' : '#73511c' },
+    { tag: [t.number, t.bool, t.null], color: isDark ? '#cfa693' : '#7d4630' },
     {
       tag: [t.comment, t.lineComment],
-      color: isDark ? '#6c6a63' : '#8d887e',
+      color: isDark ? '#8d8981' : '#706b62',
       fontStyle: 'italic',
     },
-    { tag: [t.heading, t.strong], color: isDark ? '#e0ddd5' : '#1c1b19', fontWeight: '600' },
-    { tag: [t.punctuation, t.bracket, t.separator], color: isDark ? '#858279' : '#78736a' },
+    { tag: [t.heading, t.strong], color: isDark ? '#e6e2da' : '#1c1915', fontWeight: '600' },
+    { tag: [t.punctuation, t.bracket, t.separator], color: isDark ? '#9a968e' : '#666158' },
     {
       tag: [t.variableName, t.propertyName, t.typeName],
-      color: isDark ? '#9eb0b8' : '#385663',
+      color: isDark ? '#a4b5d6' : '#3d4f78',
     },
   ]);
 

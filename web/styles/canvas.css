@@ -3,6 +3,8 @@
    ============================================================================ */
 .canvas-viewport {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   position: relative;
   overflow: hidden;
   cursor: grab;
@@ -148,11 +150,23 @@
 .canvas-stage svg line.actor-line,
 .canvas-stage svg [data-et='message'],
 .canvas-stage svg text.messageText {
-  transition: opacity 200ms var(--ease-out), filter 180ms var(--ease-out);
+  transition: opacity 180ms var(--ease-out), stroke 180ms var(--ease-out),
+    stroke-width 180ms var(--ease-out), filter 180ms var(--ease-out);
 }
 
 .canvas-stage svg .mfhmfa-node-interactive {
   cursor: pointer;
+}
+
+.canvas-stage svg .mfhmfa-node-interactive > rect,
+.canvas-stage svg .mfhmfa-node-interactive > polygon,
+.canvas-stage svg .mfhmfa-node-interactive > path,
+.canvas-stage svg .mfhmfa-node-interactive > circle,
+.canvas-stage svg rect.mfhmfa-node-interactive {
+  stroke: var(--node-interactive-border) !important;
+  stroke-width: 1.5px !important;
+  transition: stroke 150ms var(--ease-out), fill 150ms var(--ease-out),
+    stroke-width 150ms var(--ease-out);
 }
 
 .canvas-stage svg .mfhmfa-node-interactive:hover > rect,
@@ -160,7 +174,8 @@
 .canvas-stage svg .mfhmfa-node-interactive:hover > path,
 .canvas-stage svg .mfhmfa-node-interactive:hover > circle,
 .canvas-stage svg rect.mfhmfa-node-interactive:hover {
-  stroke: var(--tab-accent) !important;
+  stroke: var(--focus-accent) !important;
+  fill: var(--node-hover-fill) !important;
   stroke-width: 2px !important;
 }
 
@@ -168,31 +183,17 @@
 .canvas-stage svg .mfhmfa-node-drillable > polygon,
 .canvas-stage svg .mfhmfa-node-drillable > path,
 .canvas-stage svg .mfhmfa-node-drillable > circle {
-  stroke: var(--tab-accent) !important;
-  stroke-dasharray: 5 2.5;
-}
-
-.canvas-stage svg .mfhmfa-node-selected > rect,
-.canvas-stage svg .mfhmfa-node-selected > polygon,
-.canvas-stage svg .mfhmfa-node-selected > path,
-.canvas-stage svg .mfhmfa-node-selected > circle,
-.canvas-stage svg rect.mfhmfa-node-selected {
-  stroke: var(--live-fg) !important;
-  stroke-width: 2.2px !important;
-  stroke-dasharray: none !important;
-  filter: drop-shadow(0 0 8px rgba(110, 179, 132, 0.25));
+  stroke: var(--drill-fg) !important;
+  stroke-width: 1.75px !important;
+  stroke-dasharray: 5 3;
 }
 
 .canvas-stage svg.mfhmfa-story-active .mfhmfa-dim {
-  opacity: 0.16;
-}
-
-.canvas-stage svg.mfhmfa-story-active .mfhmfa-node-selected {
-  opacity: 1 !important;
+  opacity: 0.34;
 }
 
 .canvas-stage svg.mfhmfa-story-active .mfhmfa-cluster-soft {
-  opacity: 0.44;
+  opacity: 0.52;
 }
 
 .canvas-stage svg.mfhmfa-story-active .mfhmfa-focus {
@@ -205,34 +206,33 @@
 .canvas-stage svg.mfhmfa-story-active g.node.mfhmfa-focus > circle,
 .canvas-stage svg.mfhmfa-story-active g[data-type='participant'].mfhmfa-focus rect.actor,
 .canvas-stage svg.mfhmfa-story-active rect.actor.mfhmfa-focus {
-  stroke: var(--tab-accent) !important;
+  stroke: var(--focus-accent) !important;
+  fill: var(--node-focus-fill) !important;
   stroke-width: 2px !important;
 }
 
-@keyframes mfhmfaEdgeFlow {
-  from {
-    stroke-dashoffset: 22;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
+/* Calm solid highlighted arrows during walkthroughs (no peripheral marching-ants flicker) */
 .canvas-stage svg.mfhmfa-story-active path[data-edge='true'].mfhmfa-focus,
 .canvas-stage svg.mfhmfa-story-active path.flowchart-link.mfhmfa-focus,
 .canvas-stage svg.mfhmfa-story-active [data-et='message'].mfhmfa-focus {
-  stroke: var(--tab-accent) !important;
-  stroke-width: 2px !important;
-  stroke-dasharray: 7 4 !important;
-  animation: mfhmfaEdgeFlow 1.05s linear infinite;
+  stroke: var(--focus-accent) !important;
+  stroke-width: 2.2px !important;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .canvas-stage svg.mfhmfa-story-active path[data-edge='true'].mfhmfa-focus,
-  .canvas-stage svg.mfhmfa-story-active path.flowchart-link.mfhmfa-focus,
-  .canvas-stage svg.mfhmfa-story-active [data-et='message'].mfhmfa-focus {
-    animation: none;
-  }
+.canvas-stage svg.mfhmfa-story-active .mfhmfa-node-selected {
+  opacity: 1 !important;
+}
+
+.canvas-stage svg .mfhmfa-node-selected > rect,
+.canvas-stage svg .mfhmfa-node-selected > polygon,
+.canvas-stage svg .mfhmfa-node-selected > path,
+.canvas-stage svg .mfhmfa-node-selected > circle,
+.canvas-stage svg rect.mfhmfa-node-selected {
+  stroke: var(--select-accent) !important;
+  fill: var(--node-select-fill) !important;
+  stroke-width: 2.3px !important;
+  stroke-dasharray: none !important;
+  filter: drop-shadow(0 2px 8px var(--select-glow));
 }
 
 /* ============================================================================
@@ -281,7 +281,7 @@
   background: none;
   padding: 0;
   margin: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
@@ -294,13 +294,14 @@
 
 .crumb-sep {
   color: var(--text-muted);
-  opacity: 0.7;
+  opacity: 0.75;
   flex-shrink: 0;
 }
 
 .crumb-current {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -309,12 +310,13 @@
   position: absolute;
   top: 14px;
   right: 16px;
-  width: min(360px, calc(100% - 32px));
-  max-height: calc(100% - 82px);
+  width: min(364px, calc(100% - 32px));
+  max-height: calc(100% - 28px);
   display: flex;
   flex-direction: column;
   background: var(--bg-popover);
   border: 1px solid var(--border-strong);
+  border-top: 2px solid var(--select-accent);
   border-radius: 10px;
   box-shadow: var(--shadow-menu);
   z-index: 30;
@@ -326,10 +328,10 @@
 
 .node-inspector-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 11px 11px 11px 16px;
+  padding: 12px 11px 11px 16px;
   border-bottom: 1px solid var(--border-line);
 }
 
@@ -347,11 +349,11 @@
 }
 
 .node-inspector-term {
-  margin-top: 3px;
+  margin-top: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
   word-break: break-word;
 }
 
@@ -366,8 +368,8 @@
 .node-inspector-summary {
   margin: 0;
   font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--text-primary);
+  line-height: 1.6;
+  color: var(--text-reading);
 }
 
 .node-inspector-section {
@@ -398,7 +400,7 @@
   border: 1px solid var(--border-line);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12.5px;
-  line-height: 1.5;
+  line-height: 1.52;
   color: var(--text-primary);
   word-break: break-word;
 }
@@ -410,7 +412,7 @@
   border: 1px solid var(--hint-border);
   color: var(--hint-fg);
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .node-inspector-files {
@@ -453,13 +455,12 @@
   width: 100%;
   margin-top: 2px;
   justify-content: space-between;
-  border-color: var(--live-border);
-  background: var(--live-bg);
-  color: var(--live-fg);
+  border-color: var(--drill-border);
+  background: var(--drill-bg);
+  color: var(--drill-fg);
 }
 
 .node-drilldown-btn:hover:not(:disabled) {
-  background: var(--live-bg-hover);
-  border-color: var(--live-fg);
+  background: var(--drill-bg-hover);
+  border-color: var(--drill-fg);
 }
-

@@ -31,7 +31,7 @@ export const sanitizeWorkspaceToken = parseWorkspaceToken;
 
 /**
  * Pure zero-storage bidirectional SSE relay.
- * Never stores diagrams or workspace trees in server memory — streams diagrams
+ * Never stores diagrams or workspace trees in server memory; streams diagrams
  * to open browser tabs and proxies ephemeral `ls` / `read` / `mv` RPC calls
  * directly against browser IndexedDB.
  */

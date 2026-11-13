@@ -67,7 +67,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
     expect(broken.error?.snippet).toContain('>   2 |   A[call(x)] --> B');
   });
 
-  it('exposes VFS MCP tools (ls, read, render, mv — NO rm) and streams path-based graphs with zero server storage', async () => {
+  it('exposes VFS MCP tools (ls, read, render, mv; NO rm) and streams path-based graphs with zero server storage', async () => {
     const wsToken = 'ws_sse_relay_vfs';
     const sseAbort = new AbortController();
     const sseResp = await fetch(`${started.baseUrl}/api/workspace/${wsToken}/events`, {
@@ -888,7 +888,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         });
         expect(overviewRes.isError).toBeFalsy();
 
-        // 2. Render child sub-graph SECOND (`memory/browser-storage.mmd` — alphabetically before `overview`!):
+        // 2. Render child sub-graph SECOND (`memory/browser-storage.mmd`, alphabetically before `overview`!):
         //    Verify child does NOT steal focus or spam a tab, and nests under `overview` in Explorer!
         const childRes = await pi.callTool({
           name: 'render_view',
@@ -1082,8 +1082,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
                       trace: 'LSN=42 | fsync(wal, 128B) -> ACK in 0.4ms',
                       check: {
                         question: 'If power fails right after ACK, is data safe?',
-                        answer:
-                          'Yes — recovery replays LSN=42 from the sequential log on boot.',
+                        answer: 'Yes. Recovery replays LSN=42 from the sequential log on boot.',
                       },
                     },
                   ],
@@ -1226,6 +1225,90 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
       } finally {
         await pi.close().catch(() => {});
         await wsPage.close().catch(() => {});
+      }
+
+      // Verify mobile viewports (<= 720px) show the plain explanation page with zero SSE connections
+      const mobilePage = await browser.newPage();
+      try {
+        await mobilePage.setViewport({ width: 390, height: 844, isMobile: true });
+        await mobilePage.goto(`${started.baseUrl}/?workspace=ws_mobile_only`, {
+          waitUntil: 'networkidle2',
+        });
+
+        await mobilePage.waitForSelector('[data-testid="mobile-info-page"]');
+        const mobileAudit = await mobilePage.evaluate(() => ({
+          hasSidebar: Boolean(document.querySelector('.explorer-sidebar')),
+          hasCanvas: Boolean(document.querySelector('.canvas-viewport')),
+          hasCopyMcp: (document.body.textContent || '').includes('ws_mobile_only'),
+          heading: document.querySelector('.mobile-info-body h1')?.textContent?.trim(),
+        }));
+        expect(mobileAudit.hasSidebar).toBe(false);
+        expect(mobileAudit.hasCanvas).toBe(false);
+        expect(mobileAudit.hasCopyMcp).toBe(false);
+        expect(mobileAudit.heading).toBe('MFHMFA');
+        expect(started.service.getWorkspaceSubscriberCount('ws_mobile_only')).toBe(0);
+
+        await mobilePage.click('button[aria-label="Light theme"]');
+        await mobilePage.waitForFunction(
+          () => document.documentElement.dataset.mode === 'light',
+          { timeout: 3_000 }
+        );
+      } finally {
+        await mobilePage.close().catch(() => {});
+      }
+
+      // Verify saved Light theme loads with zero dark flash AND initial Welcome graph fits inside available canvas
+      const lightCtx = await browser.createBrowserContext();
+      const lightPage = await lightCtx.newPage();
+      try {
+        await lightPage.setViewport({ width: 1180, height: 740 });
+        let dclMode: string | undefined;
+        let dclBg: string | undefined;
+        await lightPage.evaluateOnNewDocument(() => {
+          localStorage.setItem('mermaid-studio-mode', 'light');
+        });
+        lightPage.once('domcontentloaded', async () => {
+          const snap = await lightPage
+            .evaluate(() => ({
+              mode: document.documentElement.dataset.mode,
+              bg: getComputedStyle(document.documentElement).backgroundColor,
+            }))
+            .catch(() => ({ mode: undefined, bg: undefined }));
+          dclMode = snap.mode;
+          dclBg = snap.bg;
+        });
+
+        await lightPage.goto(`${started.baseUrl}/?workspace=ws_fit_light_check`, {
+          waitUntil: 'networkidle2',
+        });
+
+        expect(dclMode).toBe('light');
+        expect(dclBg).toBe('rgb(245, 241, 233)');
+        expect(await lightPage.title()).toBe('MFHMFA');
+
+        await lightPage.waitForSelector('.canvas-stage svg');
+        await lightPage.waitForSelector('.walkthrough-panel');
+        const fitBounds = await lightPage.evaluate(() => {
+          const vp = document.querySelector('.canvas-viewport')!.getBoundingClientRect();
+          const svg = document.querySelector('.canvas-stage svg')!.getBoundingClientRect();
+          const panel = document.querySelector('.walkthrough-panel')!.getBoundingClientRect();
+          return {
+            fitsTop: svg.top >= vp.top - 1,
+            fitsBottom: svg.bottom <= vp.bottom + 1,
+            fitsLeft: svg.left >= vp.left - 1,
+            fitsRight: svg.right <= vp.right + 1,
+            abovePanel: svg.bottom <= panel.top + 1,
+          };
+        });
+        expect(fitBounds).toEqual({
+          fitsTop: true,
+          fitsBottom: true,
+          fitsLeft: true,
+          fitsRight: true,
+          abovePanel: true,
+        });
+      } finally {
+        await lightCtx.close().catch(() => {});
       }
     } finally {
       await browser.close().catch(() => {});

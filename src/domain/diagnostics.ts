@@ -181,7 +181,7 @@ export function parseMermaidError(code: string, rawErr: unknown): ParseErrorDeta
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 3)
-    .join(' — ');
+    .join(' | ');
 
   return {
     message: conciseMessage || 'Syntax validation failed',
@@ -289,7 +289,7 @@ export function computeLayoutDiagnostics(
 
   if (metrics && metrics.nodeCount === 0 && metrics.textLabelCount === 0) {
     notes.push(
-      'Rendered SVG contains no visible nodes or text labels — verify diagram statements.'
+      'Rendered SVG contains no visible nodes or text labels. Verify diagram statements.'
     );
   }
 

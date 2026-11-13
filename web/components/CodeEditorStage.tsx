@@ -59,7 +59,7 @@ export function CodeEditorStage({
             <AlertCircle size={16} />
             <span>
               {parseError.line
-                ? `Line ${parseError.line}${parseError.column ? `:${parseError.column}` : ''} — `
+                ? `Line ${parseError.line}${parseError.column ? `:${parseError.column}` : ''}: `
                 : ''}
               {parseError.message}
             </span>

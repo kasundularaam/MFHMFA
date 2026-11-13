@@ -1,7 +1,16 @@
 import DOMPurify from 'dompurify';
-import mermaid from 'mermaid';
 import { extractSvgDimensions, normalizeSvgIntrinsicDimensions } from '../../src/shared/svg';
 import { getMermaidComfortConfig, type AppearanceMode } from '../theme/comfortTheme';
+
+type MermaidApi = typeof import('mermaid')['default'];
+let mermaidPromise: Promise<MermaidApi> | null = null;
+
+function loadMermaid(): Promise<MermaidApi> {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid').then((m) => m.default);
+  }
+  return mermaidPromise;
+}
 
 export interface ClientRenderSuccess {
   ok: true;
@@ -77,6 +86,7 @@ export function renderMermaidClient(
     if (again) return again;
 
     try {
+      const mermaid = await loadMermaid();
       const container = getScratchContainer();
       container.innerHTML = '';
 
