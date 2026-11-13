@@ -1,51 +1,51 @@
 import {
   AlertCircle,
-  ArrowRight,
-  ChevronDown,
-  ChevronLeft,
+  ArrowLeft,
   ChevronRight,
-  ChevronUp,
-  FileCode2,
-  HelpCircle,
-  Layers,
-  TriangleAlert,
-  X,
+  Maximize2,
+  Minus,
+  PanelLeftOpen,
+  Plus,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { resolveGuideFlows, resolveNodeRefs } from '../../src/shared/comprehension';
-import type {
-  DiagramComprehensionGuide,
-  DiagramWalkthroughStep,
-  ParseErrorDetail,
-} from '../../src/shared/types';
-import type { GraphBreadcrumbHop } from '../../src/shared/vfs';
-import { graphTitleFromPath } from '../../src/shared/vfsPath';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
+import { resolveGuideFlows } from '../../src/shared/comprehension';
+import type { DiagramComprehensionGuide, ParseErrorDetail } from '../../src/shared/types';
+import type { GraphBreadcrumbHop, VfsProjectRoot } from '../../src/shared/vfs';
+import { graphTitleFromPath, normalizeRelativeGraphPath } from '../../src/shared/vfsPath';
 import { useCanvasViewport } from '../hooks/useCanvasViewport';
-import { useDragResize } from '../hooks/useDragResize';
-import { useUiStore, type CanvasTransitionKind } from '../store/uiStore';
+import { useUiStore, type AnchorPoint, type CanvasTransitionKind } from '../store/uiStore';
 import { applySvgComprehensionState } from '../utils/svgComprehension';
+import { NodePopover } from './NodePopover';
 
 interface PreviewCanvasProps {
   viewportRef: RefObject<HTMLDivElement | null>;
   chartKey: string;
   renderedSvg: string;
   hasActiveFile: boolean;
-  historicalVersion: number | null;
-  onExitHistoricalVersion?: () => void;
+  activeProject: VfsProjectRoot | null;
   parseError: ParseErrorDetail | null;
   guide?: DiagramComprehensionGuide;
   activeFlowId: string | null;
-  onChangeFlowId: (flowId: string | null) => void;
   activeStepIndex: number | null;
-  onChangeStepIndex: (next: number | null) => void;
   selectedNodeId: string | null;
-  onSelectNode: (nodeId: string | null) => void;
+  nodeAnchorPoint: AnchorPoint | null;
+  onSelectNode: (nodeId: string | null, anchorPoint?: AnchorPoint | null) => void;
   breadcrumbHops: GraphBreadcrumbHop[];
+  showInlineBreadcrumb: boolean;
+  canReopenStory: boolean;
+  onReopenStory: () => void;
   transitionKind: CanvasTransitionKind;
   onJumpToAncestor: (fileId: string) => void;
   onDrillToPath: (targetPath: string) => void;
-  onCopyFilePath: (filePath: string) => void;
-  onFlipToCode: () => void;
+  onFitCanvas: () => void;
+  onCopyRef: (refText: string) => void;
 }
 
 interface FrozenLayer {
@@ -55,46 +55,46 @@ interface FrozenLayer {
   mode: CanvasTransitionKind;
 }
 
+const MIN_ZOOM = 0.15;
+const MAX_ZOOM = 6;
+
 export function PreviewCanvas({
   viewportRef,
   chartKey,
   renderedSvg,
   hasActiveFile,
-  historicalVersion,
-  onExitHistoricalVersion,
+  activeProject,
   parseError,
   guide,
   activeFlowId,
-  onChangeFlowId,
   activeStepIndex,
-  onChangeStepIndex,
   selectedNodeId,
+  nodeAnchorPoint,
   onSelectNode,
   breadcrumbHops,
+  showInlineBreadcrumb,
+  canReopenStory,
+  onReopenStory,
   transitionKind,
   onJumpToAncestor,
   onDrillToPath,
-  onCopyFilePath,
-  onFlipToCode,
+  onFitCanvas,
+  onCopyRef,
 }: PreviewCanvasProps) {
   const zoom = useUiStore((s) => s.zoom);
   const pan = useUiStore((s) => s.pan);
   const fitTrigger = useUiStore((s) => s.fitTrigger);
   const setZoom = useUiStore((s) => s.setZoom);
   const setPan = useUiStore((s) => s.setPan);
+  const markUserCameraAdjusted = useUiStore((s) => s.markUserCameraAdjusted);
 
   const [cameraGlide, setCameraGlide] = useState(false);
   const [outgoingLayer, setOutgoingLayer] = useState<FrozenLayer | null>(null);
   const [nodeLabels, setNodeLabels] = useState<Map<string, string>>(() => new Map());
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
-  const [panelBodyHeight, setPanelBodyHeight] = useState(176);
-  const [revealedCheckKey, setRevealedCheckKey] = useState<string | null>(null);
 
-  const stageLayoutRef = useRef<HTMLDivElement | null>(null);
   const activeStageRef = useRef<HTMLDivElement | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevFitTriggerRef = useRef(fitTrigger);
-  const dragOriginPanelHeightRef = useRef(panelBodyHeight);
 
   const prevSnapshotRef = useRef<{
     chartKey: string;
@@ -116,36 +116,21 @@ export function PreviewCanvas({
       onChangeZoom: setZoom,
       onChangePan: setPan,
       onUserCameraGesture: () => {
+        markUserCameraAdjusted();
         if (cameraGlide) setCameraGlide(false);
       },
     });
-
-  const startPanelResize = useDragResize((_dx, dy) => {
-    const stageHeight =
-      stageLayoutRef.current?.getBoundingClientRect().height ?? window.innerHeight;
-    const maxBodyHeight = Math.max(160, stageHeight - 180);
-    const next = Math.min(maxBodyHeight, Math.max(56, dragOriginPanelHeightRef.current - dy));
-    setPanelBodyHeight(Math.round(next));
-  });
 
   const flows = resolveGuideFlows(guide);
   const currentFlow =
     (activeFlowId && flows.find((f) => f.id === activeFlowId)) || flows[0] || null;
   const steps = currentFlow?.steps ?? [];
-  const hasOverview = Boolean(guide?.gist);
-  const hasSteps = steps.length > 0;
-
-  const effectiveStepIndex =
-    activeStepIndex !== null ? activeStepIndex : !hasOverview && hasSteps ? 0 : null;
 
   const activeStep =
-    effectiveStepIndex !== null && steps[effectiveStepIndex]
-      ? steps[effectiveStepIndex]!
-      : null;
+    activeStepIndex !== null && steps[activeStepIndex] ? steps[activeStepIndex]! : null;
 
   const selectedDetail =
     selectedNodeId && guide?.nodes?.[selectedNodeId] ? guide.nodes[selectedNodeId]! : null;
-  const selectedRefs = resolveNodeRefs(selectedDetail ?? undefined);
 
   useEffect(
     () => () => {
@@ -162,12 +147,6 @@ export function PreviewCanvas({
       setCameraGlide(true);
     }
   }, [fitTrigger]);
-
-  useEffect(() => {
-    if (activeStepIndex !== null) {
-      setPanelCollapsed(false);
-    }
-  }, [activeStepIndex]);
 
   useEffect(() => {
     const prev = prevSnapshotRef.current;
@@ -207,85 +186,34 @@ export function PreviewCanvas({
     return nodeLabels.get(nodeId) || nodeId;
   };
 
-  const showBottomPanel = hasActiveFile && Boolean(renderedSvg) && (hasOverview || hasSteps);
-  const isWalkthroughActive = Boolean(activeStep);
+  const resolveChildTitle = (rawChildPath?: string): string | null => {
+    if (!rawChildPath || !activeProject) return null;
+    try {
+      const norm = normalizeRelativeGraphPath(rawChildPath);
+      const found = activeProject.files.find((f) => f.path === norm);
+      return found?.title?.trim() || graphTitleFromPath(norm);
+    } catch {
+      return null;
+    }
+  };
 
-  const renderStepDetail = (step: DiagramWalkthroughStep, stepIdx: number) => {
-    const checkKey = `${chartKey}::${currentFlow?.id ?? 'default'}::${stepIdx}`;
-    const isCheckRevealed = revealedCheckKey === checkKey;
+  const handleNudgePan = useCallback(
+    (delta: { dx: number; dy: number }) => {
+      setCameraGlide(true);
+      const curPan = useUiStore.getState().pan;
+      setPan({ x: curPan.x + delta.dx, y: curPan.y + delta.dy });
+    },
+    [setPan]
+  );
 
-    return (
-      <div className="walkthrough-step-content">
-        <div className="story-step-title">{step.title}</div>
-        <p className="story-step-caption">{step.caption}</p>
-
-        {step.trace && (
-          <div className="story-step-trace" data-testid="story-step-trace">
-            {step.trace}
-          </div>
-        )}
-
-        {step.check && (
-          <div className="story-step-check" data-testid="story-step-check">
-            <div className="story-check-header">
-              <div className="story-check-question">
-                <HelpCircle size={14} className="story-check-icon" />
-                <span>{step.check.question}</span>
-              </div>
-              <button
-                type="button"
-                className="story-check-toggle"
-                data-testid="story-check-toggle"
-                onClick={() => setRevealedCheckKey(isCheckRevealed ? null : checkKey)}
-              >
-                {isCheckRevealed ? 'Hide answer' : 'Reveal answer'}
-              </button>
-            </div>
-            {isCheckRevealed && (
-              <div className="story-check-answer" data-testid="story-check-answer">
-                {step.check.answer}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
+  const stepZoom = (factor: number) => {
+    markUserCameraAdjusted();
+    setCameraGlide(true);
+    setZoom((cur) => Number(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cur * factor)).toFixed(2)));
   };
 
   return (
-    <div ref={stageLayoutRef} className="preview-stage-layout">
-      {breadcrumbHops.length > 0 && (
-        <nav
-          className="vscode-breadcrumb"
-          data-testid="canvas-breadcrumb"
-          aria-label="Diagram breadcrumb"
-        >
-          {breadcrumbHops.map((hop) => {
-            const parentName = graphTitleFromPath(hop.parentFile.path);
-            return (
-              <span
-                key={`${hop.parentFile.id}-${hop.childFile.id}`}
-                className="crumb-hop-group"
-              >
-                <button
-                  type="button"
-                  className="crumb-link"
-                  onClick={() => onJumpToAncestor(hop.parentFile.id)}
-                  title={hop.parentFile.path}
-                >
-                  {parentName}
-                </button>
-                <ChevronRight size={13} className="crumb-sep" />
-              </span>
-            );
-          })}
-
-          <span className="crumb-current">
-            {graphTitleFromPath(breadcrumbHops[breadcrumbHops.length - 1]!.childFile.path)}
-          </span>
-        </nav>
-      )}
-
+    <div className="preview-stage-layout">
       <div
         ref={viewportRef}
         className="canvas-viewport"
@@ -300,7 +228,11 @@ export function PreviewCanvas({
           if (nodeEl) {
             const nid = nodeEl.getAttribute('data-mfhmfa-node');
             if (nid && guide?.nodes?.[nid]) {
-              onSelectNode(selectedNodeId === nid ? null : nid);
+              if (selectedNodeId === nid) {
+                onSelectNode(null);
+              } else {
+                onSelectNode(nid, { clientX: e.clientX, clientY: e.clientY });
+              }
               return;
             }
           }
@@ -320,6 +252,70 @@ export function PreviewCanvas({
           }
         }}
       >
+        {(canReopenStory || (showInlineBreadcrumb && breadcrumbHops.length > 0)) && (
+          <div
+            className="canvas-top-overlay"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {canReopenStory && (
+              <button
+                type="button"
+                className="canvas-overlay-pill"
+                onClick={onReopenStory}
+                title="Show reading guide"
+              >
+                <PanelLeftOpen size={14} />
+                <span>Guide</span>
+              </button>
+            )}
+
+            {showInlineBreadcrumb && breadcrumbHops.length > 0 && (
+              <nav
+                className="canvas-inline-breadcrumb"
+                data-testid="canvas-breadcrumb"
+                aria-label="Diagram breadcrumb"
+              >
+                <button
+                  type="button"
+                  className="crumb-back-btn"
+                  onClick={() =>
+                    onJumpToAncestor(breadcrumbHops[breadcrumbHops.length - 1]!.parentFile.id)
+                  }
+                  aria-label="Back to parent view"
+                >
+                  <ArrowLeft size={13} />
+                </button>
+                {breadcrumbHops.map((hop) => {
+                  const parentName =
+                    hop.parentFile.title?.trim() || graphTitleFromPath(hop.parentFile.path);
+                  return (
+                    <span
+                      key={`${hop.parentFile.id}-${hop.childFile.id}`}
+                      className="crumb-hop-group"
+                    >
+                      <button
+                        type="button"
+                        className="crumb-link"
+                        onClick={() => onJumpToAncestor(hop.parentFile.id)}
+                      >
+                        {parentName}
+                      </button>
+                      <ChevronRight size={13} className="crumb-sep" />
+                    </span>
+                  );
+                })}
+                <span className="crumb-current">
+                  {breadcrumbHops[breadcrumbHops.length - 1]!.childFile.title?.trim() ||
+                    graphTitleFromPath(
+                      breadcrumbHops[breadcrumbHops.length - 1]!.childFile.path
+                    )}
+                </span>
+              </nav>
+            )}
+          </div>
+        )}
+
         {outgoingLayer && (
           <div
             className={`canvas-stage canvas-layer-out mode-${outgoingLayer.mode}`}
@@ -345,307 +341,83 @@ export function PreviewCanvas({
         ) : !hasActiveFile ? (
           <div className="empty-agent-stage">
             <div className="empty-stage-watermark">
-              Select a file in the Explorer or click <code>+</code> to create a diagram
+              Ask your AI agent to explain a concept, paper, codebase, bug, or design tradeoff
             </div>
           </div>
-        ) : (
-          <div
-            style={{
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-muted)',
-            }}
-          >
-            Switch to Code view to edit this diagram
-          </div>
-        )}
-
-        {historicalVersion !== null && (
-          <div
-            className="floating-history-pill"
-            onClick={(e) => {
-              e.stopPropagation();
-              onExitHistoricalVersion?.();
-            }}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <span>Viewing v{historicalVersion} · Back to latest</span>
-          </div>
-        )}
+        ) : null}
 
         {parseError && (
           <div
             className="floating-error-pill"
-            onClick={(e) => {
-              e.stopPropagation();
-              onFlipToCode();
-            }}
+            onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
           >
             <AlertCircle size={16} />
             <span>
-              {parseError.line ? `Syntax error on line ${parseError.line}` : 'Syntax error'} ·
-              View code
+              {parseError.line
+                ? `Diagram render error on line ${parseError.line}: ${parseError.message}`
+                : parseError.message}
             </span>
           </div>
         )}
 
         {selectedNodeId && selectedDetail && (
-          <aside
-            className="node-inspector-card"
-            data-testid="node-inspector-card"
+          <NodePopover
+            viewportRef={viewportRef}
+            stageRef={activeStageRef}
+            selectedNodeId={selectedNodeId}
+            detail={selectedDetail}
+            displayLabel={resolveDisplayLabel(selectedNodeId)}
+            childTitle={resolveChildTitle(selectedDetail.childPath)}
+            anchorPoint={nodeAnchorPoint}
+            zoom={zoom}
+            pan={pan}
+            onNudgePan={handleNudgePan}
+            onClose={() => onSelectNode(null)}
+            onDrillToPath={onDrillToPath}
+            onCopyRef={onCopyRef}
+          />
+        )}
+
+        {renderedSvg && hasActiveFile && (
+          <div
+            className="canvas-zoom-hud"
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
-            onWheel={(e) => e.stopPropagation()}
           >
-            <div className="node-inspector-header">
-              <div className="node-inspector-title-wrap">
-                <h3 className="node-inspector-title">{resolveDisplayLabel(selectedNodeId)}</h3>
-                {selectedDetail.term && (
-                  <div className="node-inspector-term" data-testid="node-inspector-term">
-                    {selectedDetail.term}
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={() => onSelectNode(null)}
-                title="Close"
-                aria-label="Close"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="node-inspector-body">
-              <p className="node-inspector-summary">{selectedDetail.summary}</p>
-
-              {selectedDetail.example && (
-                <div className="node-inspector-section">
-                  <div className="node-inspector-label">Example</div>
-                  <div className="node-inspector-example">{selectedDetail.example}</div>
-                </div>
-              )}
-
-              {selectedDetail.whatIf && (
-                <div className="node-inspector-section">
-                  <div className="node-inspector-label hint">
-                    <TriangleAlert size={13} />
-                    <span>What breaks if…</span>
-                  </div>
-                  <div className="node-inspector-whatif">{selectedDetail.whatIf}</div>
-                </div>
-              )}
-
-              {selectedRefs.length > 0 && (
-                <div className="node-inspector-section">
-                  <div className="node-inspector-label">
-                    {selectedDetail.refs?.length ? 'References' : 'Files'}
-                  </div>
-                  <div className="node-inspector-files">
-                    {selectedRefs.map((refItem) => (
-                      <button
-                        key={refItem}
-                        type="button"
-                        className="node-file-chip"
-                        onClick={() => onCopyFilePath(refItem)}
-                        title="Copy reference"
-                      >
-                        <FileCode2 size={14} />
-                        <span>{refItem}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedDetail.childPath && (
-                <button
-                  type="button"
-                  className="btn node-drilldown-btn"
-                  onClick={() => onDrillToPath(selectedDetail.childPath!)}
-                >
-                  <Layers size={15} />
-                  <span>Zoom into {selectedDetail.childPath}</span>
-                  <ArrowRight size={15} />
-                </button>
-              )}
-            </div>
-          </aside>
+            <button
+              type="button"
+              className="hud-btn"
+              onClick={() => stepZoom(0.86)}
+              title="Zoom out"
+              aria-label="Zoom out"
+            >
+              <Minus size={14} />
+            </button>
+            <span className="hud-zoom-label">{Math.round(zoom * 100)}%</span>
+            <button
+              type="button"
+              className="hud-btn"
+              onClick={() => stepZoom(1.16)}
+              title="Zoom in"
+              aria-label="Zoom in"
+            >
+              <Plus size={14} />
+            </button>
+            <span className="hud-sep" aria-hidden="true" />
+            <button
+              type="button"
+              className="hud-btn"
+              onClick={onFitCanvas}
+              title="Fit to screen"
+              aria-label="Fit to screen"
+            >
+              <Maximize2 size={13} />
+            </button>
+          </div>
         )}
       </div>
-
-      {showBottomPanel && (
-        <section
-          className={`walkthrough-panel ${panelCollapsed ? 'collapsed' : ''}`}
-          data-testid="comprehension-dock"
-          aria-label="Walkthrough panel"
-        >
-          {!panelCollapsed && (
-            <div
-              className="walkthrough-resizer"
-              onMouseDown={(e) => {
-                dragOriginPanelHeightRef.current = panelBodyHeight;
-                startPanelResize(e);
-              }}
-            />
-          )}
-
-          <div className="walkthrough-header">
-            <div className="walkthrough-header-main">
-              <div className="walkthrough-tabs" role="tablist">
-                {hasOverview && (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={!isWalkthroughActive}
-                    className={`walkthrough-tab ${!isWalkthroughActive ? 'active' : ''}`}
-                    onClick={() => {
-                      setPanelCollapsed(false);
-                      onChangeStepIndex(null);
-                    }}
-                  >
-                    Overview
-                  </button>
-                )}
-
-                {hasSteps && (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={isWalkthroughActive}
-                    data-testid="story-start-btn"
-                    className={`walkthrough-tab ${isWalkthroughActive ? 'active' : ''}`}
-                    onClick={() => {
-                      setPanelCollapsed(false);
-                      if (activeStepIndex === null) {
-                        onChangeStepIndex(0);
-                      }
-                    }}
-                  >
-                    <span>Walkthrough</span>
-                    <span className="walkthrough-tab-count">{steps.length}</span>
-                  </button>
-                )}
-              </div>
-
-              {hasSteps && <span className="walkthrough-header-sep" aria-hidden="true" />}
-
-              {!isWalkthroughActive && hasSteps && (
-                <button
-                  type="button"
-                  className="walkthrough-start-link"
-                  onClick={() => {
-                    setPanelCollapsed(false);
-                    onChangeStepIndex(0);
-                  }}
-                  title="Start walkthrough (Right arrow)"
-                >
-                  <span>Start walkthrough</span>
-                  <ArrowRight size={14} />
-                </button>
-              )}
-
-              {isWalkthroughActive && hasSteps && (
-                <div className="walkthrough-step-controls">
-                  {flows.length > 1 && (
-                    <div
-                      className="walkthrough-flow-pills"
-                      data-testid="flow-selector"
-                      role="tablist"
-                      aria-label="Scenarios"
-                    >
-                      {flows.map((flow) => {
-                        const isFlowSelected = currentFlow?.id === flow.id;
-                        return (
-                          <button
-                            key={flow.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={isFlowSelected}
-                            data-flow-id={flow.id}
-                            className={`walkthrough-flow-pill ${isFlowSelected ? 'active' : ''}`}
-                            onClick={() => {
-                              setPanelCollapsed(false);
-                              onChangeFlowId(flow.id);
-                            }}
-                          >
-                            {flow.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <div className="walkthrough-stepper-group">
-                    <button
-                      type="button"
-                      className="panel-icon-btn"
-                      disabled={(effectiveStepIndex ?? 0) <= 0}
-                      onClick={() => {
-                        setPanelCollapsed(false);
-                        onChangeStepIndex(Math.max(0, (effectiveStepIndex ?? 0) - 1));
-                      }}
-                      title="Previous step (Left arrow)"
-                      aria-label="Previous step"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <span className="walkthrough-step-counter">
-                      Step {(effectiveStepIndex ?? 0) + 1} / {steps.length}
-                    </span>
-                    <button
-                      type="button"
-                      className="panel-icon-btn"
-                      disabled={
-                        effectiveStepIndex !== null && effectiveStepIndex >= steps.length - 1
-                      }
-                      onClick={() => {
-                        setPanelCollapsed(false);
-                        onChangeStepIndex(
-                          effectiveStepIndex === null
-                            ? 0
-                            : Math.min(steps.length - 1, effectiveStepIndex + 1)
-                        );
-                      }}
-                      title="Next step (Right arrow)"
-                      aria-label="Next step"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="walkthrough-toolbar">
-              <button
-                type="button"
-                className="panel-icon-btn"
-                onClick={() => setPanelCollapsed((v) => !v)}
-                title={panelCollapsed ? 'Expand panel' : 'Minimize panel'}
-                aria-label={panelCollapsed ? 'Expand panel' : 'Minimize panel'}
-              >
-                {panelCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </button>
-            </div>
-          </div>
-
-          {!panelCollapsed && (
-            <div className="walkthrough-body" style={{ height: `${panelBodyHeight}px` }}>
-              {activeStep ? (
-                renderStepDetail(activeStep, effectiveStepIndex ?? 0)
-              ) : (
-                <p className="walkthrough-gist">{guide?.gist}</p>
-              )}
-            </div>
-          )}
-        </section>
-      )}
     </div>
   );
 }

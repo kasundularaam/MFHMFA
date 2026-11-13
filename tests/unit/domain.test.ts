@@ -28,6 +28,7 @@ import { BoundedIdSet, slugify } from '../../src/shared/strings.js';
 import { extractSvgDimensions, normalizeSvgIntrinsicDimensions } from '../../src/shared/svg.js';
 import {
   buildExplorerSubtree,
+  deleteGraphFromProject,
   evaluateVfsLs,
   evaluateVfsRead,
   findFileWithProject,
@@ -641,6 +642,10 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
         'Server',
         'Browser',
       ]);
+
+      // Deleting the root graph removes the root AND all linked sub-graphs as one unit
+      const afterWholeDelete = deleteGraphFromProject(ws, 'mfhmfa', active!.file.id);
+      expect(afterWholeDelete.projects[0]!.files).toHaveLength(0);
     }
   });
 

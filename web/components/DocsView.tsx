@@ -151,25 +151,26 @@ docker compose up -d --build
               or <code>tradeoff</code> so the diagram structure matches what you are learning.
             </li>
             <li>
-              <strong>Step-by-Step Walkthroughs:</strong> Click <strong>Walkthrough</strong> (or
-              press <code>&larr;</code> / <code>&rarr;</code>) to highlight one step at a time,
-              switch between scenario tabs (such as <em>Normal Flow</em> vs. <em>Bug Trace</em>
-              ), inspect concrete data values, and test yourself on optional check questions.
+              <strong>Side-by-Side Story Guide:</strong> Read the big-picture intro and all
+              walkthrough steps top-to-bottom right alongside the diagram. Click any step (or
+              press <code>&uarr;</code> / <code>&darr;</code>) to spotlight that hop, switch
+              between contrasting scenarios, inspect runtime traces, and tap inline quick
+              checks.
             </li>
             <li>
-              <strong>Clickable Boxes:</strong> Labels on boxes stay short (2–5 plain words).
-              Click any outlined box to read what happens there, its official technical term or
-              equation, a concrete example, what breaks at the edges, and source file or paper
-              references.
+              <strong>In-Place Box Cards:</strong> Labels on boxes stay short (2–5 plain words).
+              Click any outlined box to open a popover right beside it with its plain
+              explanation, official technical term or equation, concrete example, edge cases,
+              and source references.
             </li>
             <li>
-              <strong>Sub-Diagram Zoom:</strong> Deeper subsystems live in separate{' '}
-              <code>.mmd</code> files linked via <code>childPath</code>. Double-click any dashed
-              box (or click <em>Zoom into&hellip;</em>) to open its sub-diagram, and use the
-              top-left breadcrumb to jump back.
+              <strong>Sub-Diagram Zoom:</strong> Deeper subsystems live in child sub-diagrams
+              linked via <code>childPath</code>. Double-click any dashed box (or click{' '}
+              <em>Explore&hellip;</em>) to zoom inside, and use the breadcrumb trail to jump
+              back.
             </li>
             <li>
-              <strong>Live Selection Context:</strong> When you select a box or pause on a step,
+              <strong>Live Selection Context:</strong> When you select a box or focus a step,
               your agent can see what you are looking at via <code>list_views</code> or{' '}
               <code>get_playbook</code> when you ask follow-up questions like{' '}
               <em>&ldquo;explain this box deeper&rdquo;</em>.
@@ -178,23 +179,24 @@ docker compose up -d --build
 
           <h2 id="doc-storage">4. Projects &amp; Storage</h2>
           <p>
-            Nothing is saved on the server. All projects, folders, <code>.mmd</code> files, and
-            walkthrough guides stay in your browser&apos;s IndexedDB:
+            Nothing is saved on the server. All projects, folders, graphs, and interactive
+            guides stay in your browser&apos;s IndexedDB:
           </p>
           <ul>
             <li>
               <strong>Per-Project Folders:</strong> Each MCP session is scoped to its own
               project folder (detected from MCP workspace roots, local folder name, or{' '}
-              <code>?project=...</code>).
+              <code>?project=...</code>). You can organize topics into folders inside any
+              project.
             </li>
             <li>
-              <strong>5-Version History:</strong> Quick layout retries by the same agent merge
-              into a single version, and up to 5 recent versions per file are kept in the{' '}
-              <code>vN</code> history menu on the tab bar.
+              <strong>Clean Root Topics:</strong> Sub-diagrams stay nested inside their parent
+              topic rather than cluttering the sidebar. Deleting a graph removes the root view
+              and all of its nested sub-diagrams together.
             </li>
             <li>
               <strong>You Control Deletion:</strong> Agents can list, read, create, update, and
-              rename views inside their project, while only you can delete files, folders, or
+              move views inside their project, while only you can delete graphs, folders, or
               projects from the Explorer menu.
             </li>
           </ul>
@@ -377,20 +379,18 @@ docker compose up -d --build
               <code>Ctrl/Cmd + B</code>: Show or hide Explorer sidebar
             </li>
             <li>
-              <code>Ctrl/Cmd + E</code>: Switch between Preview and Code view
+              <code>&uarr;</code> / <code>&darr;</code> or <code>&larr;</code> /{' '}
+              <code>&rarr;</code>: Step through walkthrough cards (<code>Esc</code> closes an
+              open box card or resets spotlighting to the full map)
             </li>
             <li>
-              <code>&larr;</code> / <code>&rarr;</code> (in Preview): Step through walkthrough (
-              <code>Esc</code> closes box details or exits walkthrough)
+              Click / Double-click outlined box: Open anchored box card / Zoom into linked child
+              view
             </li>
             <li>
-              Click / Double-click outlined box: Open box details / Zoom into linked child view
+              <code>Alt + &larr;</code>: Return to parent diagram when zoomed into a sub-view
             </li>
-            <li>
-              <code>Alt + 1..9</code>: Switch to open tab 1-9
-            </li>
-            <li>Double-click file in Explorer: Rename file</li>
-            <li>Middle-click open tab: Close tab</li>
+            <li>Double-click folder in Explorer: Rename folder</li>
             <li>Mouse wheel / drag on canvas: Zoom around cursor and pan</li>
           </ul>
         </article>

@@ -1,8 +1,3 @@
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import type { Extension } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
-import { tags as t } from '@lezer/highlight';
-
 export type AppearanceMode = 'dark' | 'light';
 
 export function getMermaidComfortConfig(mode: AppearanceMode) {
@@ -73,79 +68,4 @@ export function getMermaidComfortConfig(mode: AppearanceMode) {
       cScale3: isDark ? '#242b26' : '#e8efe9',
     },
   };
-}
-
-export function createComfortEditorExtension(mode: AppearanceMode): Extension {
-  const isDark = mode === 'dark';
-
-  const bg = isDark ? '#191918' : '#f5f1e9';
-  const fg = isDark ? '#dbd7cf' : '#28251f';
-  const gutterFg = isDark ? '#7d7971' : '#7f7a70';
-  const activeLineBg = isDark ? '#21201d' : '#ece7dd';
-  const selectionBg = isDark ? '#28363c' : '#d8e4e9';
-  const cursorColor = isDark ? '#81b5ca' : '#296177';
-
-  const baseTheme = EditorView.theme(
-    {
-      '&': {
-        backgroundColor: bg,
-        color: fg,
-      },
-      '.cm-content': {
-        caretColor: cursorColor,
-        padding: '20px 0',
-        lineHeight: '1.68',
-      },
-      '.cm-cursor, .cm-dropCursor': {
-        borderLeftColor: cursorColor,
-      },
-      '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
-        {
-          backgroundColor: selectionBg,
-        },
-      '.cm-panels': {
-        backgroundColor: bg,
-        color: fg,
-      },
-      '.cm-activeLine': {
-        backgroundColor: activeLineBg,
-      },
-      '.cm-gutters': {
-        backgroundColor: bg,
-        color: gutterFg,
-        border: 'none',
-        paddingLeft: '12px',
-        paddingRight: '8px',
-      },
-      '.cm-activeLineGutter': {
-        backgroundColor: 'transparent',
-        color: isDark ? '#b3afa7' : '#4f4b44',
-      },
-      '.cm-foldPlaceholder': {
-        backgroundColor: activeLineBg,
-        border: 'none',
-        color: gutterFg,
-      },
-    },
-    { dark: isDark }
-  );
-
-  const highlight = HighlightStyle.define([
-    { tag: [t.keyword, t.operatorKeyword, t.modifier], color: isDark ? '#8ab8c9' : '#265d73' },
-    { tag: [t.string, t.special(t.string)], color: isDark ? '#d1b588' : '#73511c' },
-    { tag: [t.number, t.bool, t.null], color: isDark ? '#cfa693' : '#7d4630' },
-    {
-      tag: [t.comment, t.lineComment],
-      color: isDark ? '#8d8981' : '#706b62',
-      fontStyle: 'italic',
-    },
-    { tag: [t.heading, t.strong], color: isDark ? '#e6e2da' : '#1c1915', fontWeight: '600' },
-    { tag: [t.punctuation, t.bracket, t.separator], color: isDark ? '#9a968e' : '#666158' },
-    {
-      tag: [t.variableName, t.propertyName, t.typeName],
-      color: isDark ? '#a4b5d6' : '#3d4f78',
-    },
-  ]);
-
-  return [baseTheme, syntaxHighlighting(highlight)];
 }

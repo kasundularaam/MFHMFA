@@ -6,10 +6,10 @@ import { useWorkspaceStore } from '../store/workspaceStore';
 
 export function useStudioShortcuts(
   activeGuide: DiagramComprehensionGuide | undefined,
+  onNavigateParent?: (() => void) | null,
   enabled = true
 ): void {
   const page = useUiStore((s) => s.page);
-  const stageMode = useUiStore((s) => s.stageMode);
   const activeFlowId = useUiStore((s) => s.activeFlowId);
   const activeStepIndex = useUiStore((s) => s.activeStepIndex);
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
@@ -25,33 +25,20 @@ export function useStudioShortcuts(
         return;
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
-        e.preventDefault();
-        if (useWorkspaceStore.getState().workspace.activeFileId) {
-          useUiStore.getState().setStageMode((m) => (m === 'preview' ? 'code' : 'preview'));
-        }
-        return;
-      }
-
-      if (e.altKey && !e.ctrlKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
-        const idx = Number.parseInt(e.key, 10) - 1;
-        const targetId = useWorkspaceStore.getState().workspace.openTabIds[idx];
-        if (targetId) {
-          e.preventDefault();
-          useWorkspaceStore.getState().openFile(targetId);
-        }
-        return;
-      }
-
       const targetEl = e.target as HTMLElement | null;
       const inEditable = Boolean(
         targetEl &&
           (targetEl.tagName === 'INPUT' ||
             targetEl.tagName === 'TEXTAREA' ||
-            targetEl.isContentEditable ||
-            targetEl.closest('.cm-editor'))
+            targetEl.isContentEditable)
       );
-      if (inEditable || stageMode !== 'preview') return;
+      if (inEditable) return;
+
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowLeft' && onNavigateParent) {
+        e.preventDefault();
+        onNavigateParent();
+        return;
+      }
 
       const flows = resolveGuideFlows(activeGuide);
       const currentFlow =
@@ -61,7 +48,7 @@ export function useStudioShortcuts(
       if (e.key === 'Escape') {
         if (selectedNodeId !== null) {
           e.preventDefault();
-          useUiStore.getState().setSelectedNodeId(null);
+          useUiStore.getState().selectNode(null);
           return;
         }
         if (activeStepIndex !== null) {
@@ -71,7 +58,13 @@ export function useStudioShortcuts(
         }
       }
 
-      if (!e.metaKey && !e.ctrlKey && !e.altKey && stepTotal > 0 && e.key === 'ArrowRight') {
+      if (
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        stepTotal > 0 &&
+        (e.key === 'ArrowRight' || e.key === 'ArrowDown')
+      ) {
         e.preventDefault();
         useUiStore
           .getState()
@@ -81,7 +74,13 @@ export function useStudioShortcuts(
         return;
       }
 
-      if (!e.metaKey && !e.ctrlKey && !e.altKey && stepTotal > 0 && e.key === 'ArrowLeft') {
+      if (
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        stepTotal > 0 &&
+        (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+      ) {
         e.preventDefault();
         useUiStore
           .getState()
@@ -93,5 +92,13 @@ export function useStudioShortcuts(
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [enabled, activeFlowId, activeGuide, activeStepIndex, page, selectedNodeId, stageMode]);
+  }, [
+    enabled,
+    activeFlowId,
+    activeGuide,
+    activeStepIndex,
+    onNavigateParent,
+    page,
+    selectedNodeId,
+  ]);
 }

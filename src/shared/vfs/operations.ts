@@ -16,7 +16,6 @@ import { resolveProjectGraphHierarchy } from './hierarchy.js';
 import {
   AGENT_ITERATION_COALESCE_MS,
   GENERAL_PROJECT_KEY,
-  HUMAN_EDIT_COALESCE_MS,
   MAX_GRAPH_VERSIONS,
   SCRATCHPAD_PROJECT_KEY,
   type GraphVersionRecord,
@@ -435,7 +434,21 @@ export function upsertGraphInVfs(
       if (params.autoOpenTab && !openTabIds.includes(rootFile.id)) {
         openTabIds.push(rootFile.id);
       }
-      if (params.autoFocus || !nextActiveFileId) {
+      const priorRootId = priorActiveId
+        ? (hierarchy.getRootForFile(priorActiveId)?.id ?? null)
+        : null;
+      const priorFile = priorActiveId
+        ? (proj.files.find((f) => f.id === priorActiveId) ?? null)
+        : null;
+      const priorStayInSubtree =
+        priorActiveId &&
+        priorRootId === rootFile.id &&
+        priorFile &&
+        hierarchy.parentByFileId.has(priorFile.id);
+
+      if (priorStayInSubtree) {
+        nextActiveFileId = priorActiveId;
+      } else if (params.autoFocus || !nextActiveFileId) {
         nextActiveFileId = rootFile.id;
       }
     } else if (descendantIds.size > 0) {
@@ -470,58 +483,6 @@ export function upsertGraphInVfs(
   const normalized = normalizeWorkspaceConsistency(nextDraftState);
   const file = findFileWithProject(normalized, targetFileId)!.file;
   return { nextState: normalized, file, projectKey };
-}
-
-/**
- * Applies a human edit in CodeMirror while preserving agent versions immutably
- * (coalesces rapid consecutive human keystrokes within 45s into the active `'you'` head version).
- */
-export function editGraphByHuman(
-  state: WorkspaceState,
-  fileId: string,
-  nextCode: string
-): WorkspaceState {
-  const now = Date.now();
-
-  return produce(state, (draft) => {
-    for (const p of draft.projects) {
-      const file = p.files.find((f) => f.id === fileId);
-      if (!file) continue;
-
-      const head = getHeadVersion(file);
-      if (head.code === nextCode) return;
-
-      const canCoalesceKeystroke =
-        head.authorSlug === 'user' &&
-        !file.isWelcome &&
-        now - head.createdAt < HUMAN_EDIT_COALESCE_MS;
-
-      if (canCoalesceKeystroke) {
-        const last = file.versions[file.versions.length - 1]!;
-        last.code = nextCode;
-        last.createdAt = now;
-      } else {
-        const nextVersionNum = file.currentVersion + 1;
-        file.currentVersion = nextVersionNum;
-        file.versions.push({
-          version: nextVersionNum,
-          code: nextCode,
-          ...(head.guide ? { guide: head.guide } : {}),
-          authorSlug: 'user',
-          authorLabel: 'You',
-          authorBadge: 'you',
-          createdAt: now,
-        });
-        if (file.versions.length > MAX_GRAPH_VERSIONS) {
-          file.versions.splice(0, file.versions.length - MAX_GRAPH_VERSIONS);
-        }
-      }
-
-      file.isWelcome = false;
-      p.updatedAt = now;
-      return;
-    }
-  });
 }
 
 /**
@@ -713,11 +674,50 @@ export function deleteGraphFromProject(
   const mutated = produce(state, (draft) => {
     const proj = draft.projects.find((p) => p.projectKey === projectKey);
     if (!proj) return;
+
+    const hierarchy = resolveProjectGraphHierarchy(proj);
+    const rootFile = hierarchy.getRootForFile(fileId);
+    const startId = rootFile?.id ?? fileId;
+
+    const removedIds = new Set<string>([startId]);
+    const removedPaths = new Set<string>();
+    const queue: string[] = [startId];
+
+    while (queue.length > 0) {
+      const curId = queue.shift()!;
+      const curFile = proj.files.find((f) => f.id === curId);
+      if (curFile) {
+        removedPaths.add(curFile.path);
+      }
+      for (const child of hierarchy.childrenByFileId.get(curId) ?? []) {
+        if (!removedIds.has(child.id)) {
+          removedIds.add(child.id);
+          queue.push(child.id);
+        }
+      }
+    }
+
+    // Also sweep any pending sub-graphs declaring `guide.parentPath` into the deleted tree
+    let addedPending = true;
+    while (addedPending) {
+      addedPending = false;
+      for (const f of proj.files) {
+        if (removedIds.has(f.id)) continue;
+        const parentPath = getHeadVersion(f).guide?.parentPath;
+        if (parentPath && removedPaths.has(parentPath)) {
+          removedIds.add(f.id);
+          removedPaths.add(f.path);
+          addedPending = true;
+        }
+      }
+    }
+
     proj.updatedAt = Date.now();
-    proj.files = proj.files.filter((f) => f.id !== fileId);
-    draft.openTabIds = draft.openTabIds.filter((id) => id !== fileId);
-    if (draft.activeFileId === fileId) {
-      draft.activeFileId = null;
+    proj.files = proj.files.filter((f) => !removedIds.has(f.id));
+    draft.openTabIds = draft.openTabIds.filter((id) => !removedIds.has(id));
+    if (draft.activeFileId && removedIds.has(draft.activeFileId)) {
+      const nextRootInProj = proj.files.find((f) => !getHeadVersion(f).guide?.parentPath);
+      draft.activeFileId = nextRootInProj?.id ?? proj.files[0]?.id ?? null;
     }
   });
   return normalizeWorkspaceConsistency(mutated);

@@ -2,8 +2,9 @@
 :root[data-mode='dark'] {
   /* Warm stone low-chroma surfaces (OKLCH ~82deg, avoids OLED black smear & blue-light scatter) */
   --bg-canvas: #191918;
+  --bg-story: #1c1b19;
   --bg-bar: #161513;
-  --bg-popover: #211f1d;
+  --bg-popover: #22201d;
   --bg-elevated: #282622;
   --bg-hover: #312f2b;
   --bg-menu-hover: rgba(255, 250, 240, 0.075);
@@ -36,7 +37,7 @@
   --drill-border: rgba(163, 176, 217, 0.32);
 
   /* Node canvas state fills & >= 3:1 WCAG 1.4.11 borders */
-  --node-interactive-border: #7d7971;
+  --node-interactive-border: #8d887f;
   --node-hover-fill: #2c3133;
   --node-focus-fill: #212b2f;
   --node-select-fill: #233035;
@@ -67,8 +68,9 @@
 :root[data-mode='light'] {
   /* Warm unbleached paper surfaces (ISO 9241-303 L* ~94.8, eliminates pure-white glare) */
   --bg-canvas: #f5f1e9;
+  --bg-story: #faf7f1;
   --bg-bar: #ebe6dc;
-  --bg-popover: #faf8f3;
+  --bg-popover: #fcfaf6;
   --bg-elevated: #e2ddd2;
   --bg-hover: #d8d2c6;
   --bg-menu-hover: rgba(35, 32, 26, 0.065);

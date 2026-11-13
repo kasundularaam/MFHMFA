@@ -157,7 +157,7 @@
 }
 
 .topbar-breadcrumb {
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -201,72 +201,6 @@
   transform: scale(0.97);
 }
 
-
-/* ============================================================================
-   Open Editor Tabs Bar + Right-Edge View Switcher
-   ============================================================================ */
-.tabbar {
-  height: 40px;
-  min-height: 40px;
-  background: var(--bg-bar);
-  border-bottom: 1px solid var(--border-line);
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  user-select: none;
-  transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out);
-}
-
-.tabbar-strip {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: stretch;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-}
-
-.tabbar-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.editor-tab {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 122px;
-  max-width: 240px;
-  height: 100%;
-  padding: 0 9px 0 14px;
-  background: var(--bg-bar);
-  color: var(--text-secondary);
-  border-right: 1px solid var(--border-line);
-  font-size: 13px;
-  font-weight: 490;
-  cursor: pointer;
-  flex-shrink: 0;
-  outline: none;
-  transition: background-color 130ms var(--ease-out), color 130ms var(--ease-out);
-}
-
-.editor-tab:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.editor-tab.active {
-  background: var(--bg-canvas);
-  color: var(--text-primary);
-  font-weight: 540;
-  box-shadow: inset 0 2px 0 var(--tab-accent);
-}
-
-.editor-tab.unread {
-  color: var(--text-primary);
-}
-
 .tab-unread-dot {
   width: 7px;
   height: 7px;
@@ -275,212 +209,19 @@
   flex-shrink: 0;
 }
 
-.tab-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tab-subpath {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 84px;
-}
-
-.tab-close-btn {
-  width: 22px;
-  height: 22px;
-  margin-left: auto;
-  border-radius: 5px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 120ms var(--ease-out), background-color 120ms var(--ease-out),
-    color 120ms var(--ease-out);
-}
-
-.editor-tab:hover .tab-close-btn,
-.editor-tab.active .tab-close-btn {
-  opacity: 1;
-}
-
-.tab-close-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.tab-add-btn {
-  width: 38px;
-  height: 100%;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background-color 130ms var(--ease-out), color 130ms var(--ease-out);
-}
-
-.tab-add-btn:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.tabbar-right-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 10px;
-  border-left: 1px solid var(--border-line);
-  background: var(--bg-bar);
-  flex-shrink: 0;
-}
-
-.tabbar-view-toggle,
-.tabbar-fit-btn {
-  position: relative;
-  width: 32px;
-  height: 32px;
-}
-
-.tabbar-error-dot {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--danger-fg);
-}
-
-.version-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 9px;
-  border-radius: 6px;
-  border: 1px solid var(--border-line);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 520;
-  cursor: pointer;
-  transition: background-color 130ms var(--ease-out), color 130ms var(--ease-out),
-    border-color 130ms var(--ease-out);
-}
-
-.version-pill:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
-.version-pill.historical {
-  border-color: var(--hint-border);
-  background: var(--hint-bg);
-  color: var(--hint-fg);
-}
-
-.version-menu {
-  min-width: 224px;
-}
-
-.version-menu-header {
-  padding: 6px 10px 7px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border-line);
-  margin-bottom: 3px;
-}
-
-.version-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: 6px;
-  padding-right: 4px;
-}
-
-.version-menu-item:hover,
-.version-menu-item.selected {
-  background: var(--bg-menu-hover);
-}
-
-.version-select-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.version-num {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-weight: 600;
-}
-
-.version-author {
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.version-time {
-  margin-left: auto;
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-.version-restore-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 5px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.version-restore-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.single-stage {
+/* ============================================================================
+   Main Two-Column Learning Stage (Story Sheet + Full-Height Canvas)
+   ============================================================================ */
+.learning-stage {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
-  flex-direction: column;
-  position: relative;
+  flex-direction: row;
+  align-items: stretch;
+  overflow: hidden;
   background: var(--bg-canvas);
 }
-
 
 /* ============================================================================
    Popover Dropdown & Explorer Context Menus
@@ -527,7 +268,8 @@
   transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
 }
 
-.dropdown-item:hover {
+.dropdown-item:hover,
+.dropdown-item.selected {
   background: var(--bg-menu-hover);
 }
 
@@ -541,7 +283,7 @@
 }
 
 /* ============================================================================
-   Toast Banner
+   Toast Banner (with Optional Undo / Open Action)
    ============================================================================ */
 .toast-banner {
   position: fixed;
@@ -552,18 +294,44 @@
   background: var(--bg-popover);
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
-  padding: 7px 15px;
-  border-radius: 7px;
+  padding: 7px 14px;
+  border-radius: 8px;
   font-size: 13px;
   box-shadow: var(--shadow-menu);
   z-index: 200;
   pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   transition: opacity 180ms var(--ease-out), transform 200ms var(--ease-out);
 }
 
 .toast-banner.visible {
   opacity: 1;
   transform: translate(-50%, 0) scale(1);
+}
+
+.toast-banner.visible.has-action {
+  pointer-events: auto;
+}
+
+.toast-action-btn {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid var(--focus-border);
+  background: var(--focus-bg);
+  color: var(--focus-accent);
+  font-size: 12px;
+  font-weight: 560;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out);
+}
+
+.toast-action-btn:hover {
+  border-color: var(--focus-accent);
+  color: var(--text-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -575,7 +343,6 @@
   }
 }
 
-
 .radix-dropdown-content {
   position: relative;
   right: auto;
@@ -583,9 +350,7 @@
   z-index: 160;
 }
 
-.dropdown-item[data-highlighted],
-.version-select-btn[data-highlighted],
-.version-restore-btn[data-highlighted] {
+.dropdown-item[data-highlighted] {
   background: var(--bg-menu-hover);
   outline: none;
 }

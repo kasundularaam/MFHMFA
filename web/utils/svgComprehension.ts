@@ -73,7 +73,7 @@ export interface SvgComprehensionBindResult {
  * Decorates a rendered Mermaid SVG container with:
  * 1. Clickable / drillable node affordances (`data-mfhmfa-node`, `.mfhmfa-node-interactive`, `.mfhmfa-node-drillable`)
  * 2. Active selected node highlight (`.mfhmfa-node-selected`)
- * 3. Story Mode Stepper spotlighting (`.mfhmfa-story-active`, `.mfhmfa-focus`, `.mfhmfa-dim`)
+ * 3. Story Stepper spotlighting (`.mfhmfa-story-active`, `.mfhmfa-focus`, `.mfhmfa-dim`)
  */
 export function applySvgComprehensionState(
   stageEl: HTMLElement | null,
@@ -93,7 +93,7 @@ export function applySvgComprehensionState(
   svg.classList.remove('mfhmfa-story-active');
   svg
     .querySelectorAll(
-      '.mfhmfa-focus, .mfhmfa-dim, .mfhmfa-cluster-soft, .mfhmfa-node-interactive, .mfhmfa-node-drillable, .mfhmfa-node-selected'
+      '.mfhmfa-focus, .mfhmfa-dim, .mfhmfa-cluster-soft, .mfhmfa-node-interactive, .mfhmfa-node-drillable, .mfhmfa-node-selected, [data-mfhmfa-actor-text="true"]'
     )
     .forEach((el) => {
       el.classList.remove(
@@ -104,6 +104,10 @@ export function applySvgComprehensionState(
         'mfhmfa-node-drillable',
         'mfhmfa-node-selected'
       );
+      if (el.getAttribute('data-mfhmfa-actor-text') === 'true') {
+        el.removeAttribute('data-mfhmfa-node');
+        el.removeAttribute('data-mfhmfa-actor-text');
+      }
     });
 
   const guideNodes = params.guide?.nodes ?? {};
@@ -164,6 +168,37 @@ export function applySvgComprehensionState(
     elementEntries.push({ el, rawId, guideKey });
   });
 
+  // Sequence diagrams often emit `<text class="actor">` as a sibling right after `<rect class="actor">`
+  // rather than nested inside a group. Bind those sibling `<text>` labels so clicking text opens the card!
+  svg.querySelectorAll('text.actor').forEach((textEl) => {
+    if (textEl.closest('[data-mfhmfa-node]')) return;
+    let sibling = textEl.previousElementSibling;
+    let matchedRect: Element | null = null;
+    while (sibling) {
+      if (sibling.tagName.toLowerCase() === 'rect' && sibling.classList.contains('actor')) {
+        matchedRect = sibling;
+        break;
+      }
+      sibling = sibling.previousElementSibling;
+    }
+    if (!matchedRect) return;
+    const guideKey = matchedRect.getAttribute('data-mfhmfa-node');
+    const rawId = extractRawMermaidNodeId(matchedRect);
+    if (!guideKey || !rawId) return;
+
+    const labelText = (textEl.textContent || '').replace(/\s+/g, ' ').trim();
+    if (labelText && !nodeDisplayLabels.has(guideKey)) {
+      nodeDisplayLabels.set(guideKey, labelText);
+    }
+
+    textEl.setAttribute('data-mfhmfa-node', guideKey);
+    textEl.setAttribute('data-mfhmfa-actor-text', 'true');
+    if (guideNodes[guideKey]) {
+      textEl.classList.add('mfhmfa-node-interactive');
+    }
+    elementEntries.push({ el: textEl, rawId, guideKey });
+  });
+
   // Apply Story Stepper spotlighting when a step is active
   const step = params.activeStep;
   if (step && step.focusNodes.length > 0) {
@@ -197,7 +232,7 @@ export function applySvgComprehensionState(
         }
       }
 
-      // Sequence diagram lifelines & bottom actor labels
+      // Sequence diagram lifelines & notes
       svg.querySelectorAll('line.actor-line[data-id]').forEach((line) => {
         const aid = line.getAttribute('data-id') || '';
         const isFocused =

@@ -278,6 +278,12 @@
   outline: none;
 }
 
+.tree-empty-hint {
+  padding: 8px 16px 10px 28px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 /* Bottom Sidebar Pane: Connected Agents */
 .sidebar-agents-pane {
   border-top: 1px solid var(--border-line);

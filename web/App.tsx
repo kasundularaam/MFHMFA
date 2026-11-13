@@ -11,25 +11,21 @@ import {
 import { resolveGuideFlows } from '../src/shared/comprehension';
 import { slugify } from '../src/shared/strings';
 import {
+  extractNodeLabelFromMermaid,
   findFileWithProject,
   GENERAL_PROJECT_KEY,
-  getVersionRecord,
+  getHeadVersion,
   resolveProjectGraphHierarchy,
   toProjectKey,
   type GraphBreadcrumbHop,
+  type ParentComponentBranch,
   type VfsGraphFile,
 } from '../src/shared/vfs';
 import { normalizeRelativeGraphPath } from '../src/shared/vfsPath';
-const CodeEditorStage = lazy(() =>
-  import('./components/CodeEditorStage').then((m) => ({ default: m.CodeEditorStage }))
-);
-const DocsView = lazy(() =>
-  import('./components/DocsView').then((m) => ({ default: m.DocsView }))
-);
 import { ExplorerSidebar } from './components/ExplorerSidebar';
 import { MobileInfoPage } from './components/MobileInfoPage';
 import { PreviewCanvas } from './components/PreviewCanvas';
-import { TabBar } from './components/TabBar';
+import { StoryPanel } from './components/StoryPanel';
 import { TopBar } from './components/TopBar';
 import { useIsMobileViewport } from './hooks/useIsMobileViewport';
 import { useMermaidRenderSync } from './hooks/useMermaidRenderSync';
@@ -37,10 +33,14 @@ import { useStudioShortcuts } from './hooks/useStudioShortcuts';
 import { useWorkspaceRelay } from './hooks/useWorkspaceRelay';
 import { studioApi } from './services/studioClient';
 import { useUiStore, type CanvasTransitionKind } from './store/uiStore';
-import { useWorkspaceStore, type OpenTabEntry } from './store/workspaceStore';
+import { useWorkspaceStore } from './store/workspaceStore';
+
+const DocsView = lazy(() =>
+  import('./components/DocsView').then((m) => ({ default: m.DocsView }))
+);
 
 const STAGE_PADDING_PX = 48;
-const VIEWPORT_FIT_MARGIN_PX = 20;
+const VIEWPORT_FIT_MARGIN_PX = 24;
 const MIN_AUTO_FIT_ZOOM = 0.15;
 const MAX_AUTO_FIT_ZOOM = 1.3;
 
@@ -90,66 +90,55 @@ export function App() {
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
-  // Workspace store subscriptions (never triggered by 60fps canvas pan/zoom!)
+  // Workspace store subscriptions
   const workspace = useWorkspaceStore((s) => s.workspace);
-  const selectedVersion = useWorkspaceStore((s) => s.selectedVersion);
   const connectedAgentsMap = useWorkspaceStore((s) => s.connectedAgentsMap);
 
   const toggleSidebar = useWorkspaceStore((s) => s.toggleSidebar);
   const resizeSidebar = useWorkspaceStore((s) => s.resizeSidebar);
   const toggleProjectExpanded = useWorkspaceStore((s) => s.toggleProjectExpanded);
   const openFile = useWorkspaceStore((s) => s.openFile);
-  const closeTab = useWorkspaceStore((s) => s.closeTab);
-  const createGraph = useWorkspaceStore((s) => s.createGraph);
   const createFolder = useWorkspaceStore((s) => s.createFolder);
-  const renamePath = useWorkspaceStore((s) => s.renamePath);
+  const renameFolder = useWorkspaceStore((s) => s.renameFolder);
   const deleteGraph = useWorkspaceStore((s) => s.deleteGraph);
   const deleteFolder = useWorkspaceStore((s) => s.deleteFolder);
   const deleteProject = useWorkspaceStore((s) => s.deleteProject);
-  const selectVersion = useWorkspaceStore((s) => s.selectVersion);
-  const restoreVersion = useWorkspaceStore((s) => s.restoreVersion);
-  const editActiveCode = useWorkspaceStore((s) => s.editActiveCode);
   const rotateWorkspaceId = useWorkspaceStore((s) => s.rotateWorkspaceId);
 
   // UI store subscriptions (excluding zoom/pan so App never re-renders while panning!)
   const appearanceMode = useUiStore((s) => s.appearanceMode);
   const page = useUiStore((s) => s.page);
-  const stageMode = useUiStore((s) => s.stageMode);
   const serverStatus = useUiStore((s) => s.serverStatus);
+  const storyWidth = useUiStore((s) => s.storyWidth);
+  const storyCollapsed = useUiStore((s) => s.storyCollapsed);
   const activeFlowId = useUiStore((s) => s.activeFlowId);
   const activeStepIndex = useUiStore((s) => s.activeStepIndex);
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
+  const nodeAnchorPoint = useUiStore((s) => s.nodeAnchorPoint);
   const drillStack = useUiStore((s) => s.drillStack);
   const renderedSvg = useUiStore((s) => s.renderedSvg);
   const renderedKey = useUiStore((s) => s.renderedKey);
-  const diagramType = useUiStore((s) => s.diagramType);
   const parseError = useUiStore((s) => s.parseError);
   const dimensions = useUiStore((s) => s.dimensions);
   const needsViewportFit = useUiStore((s) => s.needsViewportFit);
+  const userCameraAdjusted = useUiStore((s) => s.userCameraAdjusted);
   const toast = useUiStore((s) => s.toast);
+  const toastAction = useUiStore((s) => s.toastAction);
   const toastVisible = useUiStore((s) => s.toastVisible);
 
   const toggleAppearanceMode = useUiStore((s) => s.toggleAppearanceMode);
   const setPage = useUiStore((s) => s.setPage);
-  const setStageMode = useUiStore((s) => s.setStageMode);
+  const resizeStory = useUiStore((s) => s.resizeStory);
+  const toggleStoryCollapsed = useUiStore((s) => s.toggleStoryCollapsed);
   const setActiveFlowId = useUiStore((s) => s.setActiveFlowId);
   const setActiveStepIndex = useUiStore((s) => s.setActiveStepIndex);
-  const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
-
+  const selectNode = useUiStore((s) => s.selectNode);
+  const clearDrillStack = useUiStore((s) => s.clearDrillStack);
   const pushDrillOrigin = useUiStore((s) => s.pushDrillOrigin);
   const popDrillToAncestor = useUiStore((s) => s.popDrillToAncestor);
   const markViewportFitted = useUiStore((s) => s.markViewportFitted);
   const triggerFitCanvas = useUiStore((s) => s.triggerFitCanvas);
   const notifyToast = useUiStore((s) => s.notifyToast);
-
-  const openTabs: OpenTabEntry[] = useMemo(() => {
-    const list: OpenTabEntry[] = [];
-    for (const tabId of workspace.openTabIds) {
-      const found = findFileWithProject(workspace, tabId);
-      if (found) list.push(found);
-    }
-    return list;
-  }, [workspace]);
 
   const activeEntry = useMemo(
     () => findFileWithProject(workspace, workspace.activeFileId),
@@ -160,29 +149,21 @@ export function App() {
   const activeProject = activeEntry?.project ?? null;
   const activeFileId = activeFile?.id ?? null;
 
-  const activeVersionRecord = useMemo(
-    () => (activeFile ? getVersionRecord(activeFile, selectedVersion) : null),
-    [activeFile, selectedVersion]
+  const headVersionRecord = useMemo(
+    () => (activeFile ? getHeadVersion(activeFile) : null),
+    [activeFile]
   );
 
-  const isHistoricalVersion = Boolean(
-    activeFile &&
-      activeVersionRecord &&
-      activeVersionRecord.version !== activeFile.currentVersion
-  );
-
-  const code = activeVersionRecord?.code ?? '';
-  const activeGuide = activeVersionRecord?.guide;
+  const code = headVersionRecord?.code ?? '';
+  const activeGuide = headVersionRecord?.guide;
   const title = activeFile?.title ?? null;
   const activeVersionNumber = activeFile
-    ? (activeVersionRecord?.version ?? activeFile.currentVersion)
+    ? (headVersionRecord?.version ?? activeFile.currentVersion)
     : 1;
   const chartKey = activeFile ? `${activeFile.id}:v${activeVersionNumber}` : 'empty-stage';
   const expectedRenderedKey = activeFile
     ? `${activeFile.id}:v${activeVersionNumber}:${appearanceMode}:${code.length}`
     : '';
-
-  useStudioShortcuts(activeGuide, !isMobile);
 
   const connectedAgents = useMemo(
     () => Object.values(connectedAgentsMap),
@@ -198,30 +179,35 @@ export function App() {
     return counts;
   }, [connectedAgents]);
 
+  const flows = useMemo(() => resolveGuideFlows(activeGuide), [activeGuide]);
+  const currentFlow = useMemo(
+    () => (activeFlowId && flows.find((f) => f.id === activeFlowId)) || flows[0] || null,
+    [activeFlowId, flows]
+  );
+
   // Clamp flow, step index & node selection safely if a live update alters the active guide
   useEffect(() => {
-    const flows = resolveGuideFlows(activeGuide);
     if (activeFlowId !== null && !flows.some((f) => f.id === activeFlowId)) {
       setActiveFlowId(flows[0]?.id ?? null);
       return;
     }
-    const curFlow =
-      (activeFlowId && flows.find((f) => f.id === activeFlowId)) || flows[0] || null;
-    const stepLen = curFlow?.steps.length ?? 0;
+    const stepLen = currentFlow?.steps.length ?? 0;
     if (activeStepIndex !== null && (stepLen === 0 || activeStepIndex >= stepLen)) {
       setActiveStepIndex(stepLen > 0 ? stepLen - 1 : null);
     }
     if (selectedNodeId && !activeGuide?.nodes?.[selectedNodeId]) {
-      setSelectedNodeId(null);
+      selectNode(null);
     }
   }, [
     activeFlowId,
     activeGuide,
     activeStepIndex,
+    currentFlow,
+    flows,
+    selectNode,
     selectedNodeId,
     setActiveFlowId,
     setActiveStepIndex,
-    setSelectedNodeId,
   ]);
 
   const projectHierarchy = useMemo(
@@ -230,7 +216,7 @@ export function App() {
   );
 
   const ancestorChain: VfsGraphFile[] = useMemo(() => {
-    if (!activeFileId) return [];
+    if (!activeFileId || !activeProject) return [];
     const fromGraph = projectHierarchy?.getAncestors(activeFileId) ?? [];
     if (fromGraph.length > 0) return fromGraph;
 
@@ -238,12 +224,16 @@ export function App() {
     for (const sid of drillStack) {
       if (sid === activeFileId) break;
       const found = findFileWithProject(workspace, sid);
-      if (found && !fallback.some((f) => f.id === found.file.id)) {
+      if (
+        found &&
+        found.project.projectKey === activeProject.projectKey &&
+        !fallback.some((f) => f.id === found.file.id)
+      ) {
         fallback.push(found.file);
       }
     }
     return fallback;
-  }, [activeFileId, projectHierarchy, drillStack, workspace]);
+  }, [activeFileId, activeProject, projectHierarchy, drillStack, workspace]);
 
   const breadcrumbHops: GraphBreadcrumbHop[] = useMemo(() => {
     if (!activeFile) return [];
@@ -265,6 +255,60 @@ export function App() {
     return fallbackHops;
   }, [activeFile, projectHierarchy, ancestorChain]);
 
+  const childBranches: ParentComponentBranch[] = useMemo(() => {
+    if (!activeFile || !activeProject) return [];
+    const list: ParentComponentBranch[] = [];
+    const seenIds = new Set<string>();
+
+    if (activeGuide?.nodes) {
+      for (const [nodeId, detail] of Object.entries(activeGuide.nodes)) {
+        if (!detail.childPath) continue;
+        try {
+          const norm = normalizeRelativeGraphPath(detail.childPath);
+          const childFile = activeProject.files.find((f) => f.path === norm);
+          if (childFile && childFile.id !== activeFile.id && !seenIds.has(childFile.id)) {
+            seenIds.add(childFile.id);
+            const componentLabel =
+              detail.label?.trim() || extractNodeLabelFromMermaid(code, nodeId);
+            list.push({ nodeId, componentLabel, childFile });
+          }
+        } catch {
+          // ignore invalid childPath
+        }
+      }
+    }
+
+    for (const childFile of projectHierarchy?.childrenByFileId.get(activeFile.id) ?? []) {
+      if (!seenIds.has(childFile.id)) {
+        seenIds.add(childFile.id);
+        list.push({
+          nodeId: childFile.id,
+          componentLabel: childFile.title,
+          childFile,
+        });
+      }
+    }
+
+    return list;
+  }, [activeFile, activeGuide, activeProject, code, projectHierarchy]);
+
+  const handleJumpToAncestor = useCallback(
+    (ancestorFileId: string) => {
+      popDrillToAncestor(ancestorFileId);
+      openFile(ancestorFileId);
+    },
+    [openFile, popDrillToAncestor]
+  );
+
+  const immediateParentId =
+    breadcrumbHops.length > 0 ? breadcrumbHops[breadcrumbHops.length - 1]!.parentFile.id : null;
+
+  useStudioShortcuts(
+    activeGuide,
+    immediateParentId ? () => handleJumpToAncestor(immediateParentId) : null,
+    !isMobile
+  );
+
   const prevFileIdRef = useRef<string | null>(activeFileId);
   const [transitionKind, setTransitionKind] = useState<CanvasTransitionKind>('crossfade');
 
@@ -282,46 +326,59 @@ export function App() {
     prevFileIdRef.current = activeFileId;
   }, [activeFileId, ancestorChain, projectHierarchy]);
 
-  // Fit diagram into the available canvas height & width as soon as its own SVG + bottom panel mount
+  const hasStoryContent = Boolean(
+    activeFile && (activeGuide?.gist || flows.length > 0 || childBranches.length > 0)
+  );
+  const showStoryPanel = Boolean(activeFile && hasStoryContent && !storyCollapsed);
+
+  // Fit diagram into the available canvas height & width on initial render AND keep fitted
+  // smoothly across window/sidebar/story resizes until the user manually zooms or pans!
   useLayoutEffect(() => {
     if (
-      !isMobile &&
-      page === 'studio' &&
-      stageMode === 'preview' &&
-      needsViewportFit &&
-      activeFile &&
-      renderedSvg &&
-      renderedKey === expectedRenderedKey
+      isMobile ||
+      page !== 'studio' ||
+      !activeFile ||
+      !renderedSvg ||
+      renderedKey !== expectedRenderedKey
     ) {
-      const vp = viewportRef.current;
+      return undefined;
+    }
+
+    const vp = viewportRef.current;
+    if (!vp) return undefined;
+
+    if (needsViewportFit) {
       const fit = computeViewportFitZoom(vp, dimensions);
       if (fit !== null) {
         markViewportFitted(fit);
-        return undefined;
       }
-      if (vp && typeof ResizeObserver !== 'undefined') {
-        const ro = new ResizeObserver(() => {
-          const retryFit = computeViewportFitZoom(vp, dimensions);
-          if (retryFit !== null) {
-            ro.disconnect();
-            markViewportFitted(retryFit);
-          }
-        });
-        ro.observe(vp);
-        return () => ro.disconnect();
-      }
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        const st = useUiStore.getState();
+        if (!st.needsViewportFit && st.userCameraAdjusted) return;
+        const nextFit = computeViewportFitZoom(vp, dimensions);
+        if (nextFit !== null) {
+          markViewportFitted(nextFit);
+        }
+      });
+      ro.observe(vp);
+      return () => ro.disconnect();
     }
     return undefined;
   }, [
     isMobile,
     page,
-    stageMode,
-    needsViewportFit,
     activeFile,
     renderedSvg,
     renderedKey,
     expectedRenderedKey,
     dimensions,
+    needsViewportFit,
+    userCameraAdjusted,
+    showStoryPanel,
+    workspace.sidebarOpen,
     markViewportFitted,
   ]);
 
@@ -337,7 +394,7 @@ export function App() {
         const targetRel = normalizeRelativeGraphPath(rawTargetPath);
         const targetFile = activeProject.files.find((f) => f.path === targetRel);
         if (!targetFile) {
-          notifyToast(`File "${targetRel}" not found`);
+          notifyToast(`Sub-diagram "${targetRel}" not found`);
           return;
         }
         if (activeFile && activeFile.id !== targetFile.id) {
@@ -349,14 +406,6 @@ export function App() {
       }
     },
     [activeFile, activeProject, notifyToast, openFile, pushDrillOrigin]
-  );
-
-  const handleJumpToAncestor = useCallback(
-    (ancestorFileId: string) => {
-      popDrillToAncestor(ancestorFileId);
-      openFile(ancestorFileId);
-    },
-    [openFile, popDrillToAncestor]
   );
 
   const handleExportPng = useCallback(async () => {
@@ -395,8 +444,15 @@ export function App() {
     URL.revokeObjectURL(url);
   }, [renderedSvg, title]);
 
+  const rootTopicFile =
+    activeFile && projectHierarchy
+      ? (projectHierarchy.getRootForFile(activeFile.id) ?? activeFile)
+      : activeFile;
+
   const activeBreadcrumb =
-    activeProject && activeFile ? `${activeProject.projectLabel} / ${activeFile.path}` : null;
+    activeProject && rootTopicFile
+      ? `${activeProject.projectLabel} / ${rootTopicFile.title || rootTopicFile.path}`
+      : null;
 
   return (
     <div className="studio-shell">
@@ -416,11 +472,6 @@ export function App() {
         repoUrl={serverStatus?.repoUrl}
         onExportPng={handleExportPng}
         onExportSvg={handleExportSvg}
-        onCopyCode={() => {
-          if (!code) return;
-          navigator.clipboard.writeText(code);
-          notifyToast('Copied code');
-        }}
       />
 
       {isMobile ? (
@@ -438,80 +489,67 @@ export function App() {
               liveProjectCounts={liveProjectCounts}
               onResizeWidth={resizeSidebar}
               onToggleProjectExpanded={toggleProjectExpanded}
-              onOpenFile={openFile}
-              onCreateGraph={createGraph}
+              onOpenFile={(fileId) => {
+                clearDrillStack();
+                openFile(fileId);
+              }}
               onCreateFolder={createFolder}
-              onRenamePath={renamePath}
+              onRenameFolder={renameFolder}
               onDeleteGraph={deleteGraph}
               onDeleteFolder={deleteFolder}
               onDeleteProject={deleteProject}
-              onNotifyToast={notifyToast}
+              onNotifyToast={(msg) => notifyToast(msg)}
             />
           )}
 
-          <div className="editor-column">
-            <TabBar
-              openTabs={openTabs}
-              activeFile={activeFile}
-              activeVersionRecord={activeVersionRecord}
-              isHistoricalVersion={isHistoricalVersion}
-              stageMode={stageMode}
-              hasError={Boolean(parseError)}
-              onSelectTab={openFile}
-              onCloseTab={closeTab}
-              onNewTab={() => createGraph()}
-              onSelectVersion={selectVersion}
-              onRestoreVersion={restoreVersion}
-              onToggleStageMode={() =>
-                setStageMode((m) => (m === 'preview' ? 'code' : 'preview'))
-              }
-              onFitCanvas={handleFitCanvas}
-            />
+          <main className="learning-stage">
+            {showStoryPanel && activeFile && (
+              <StoryPanel
+                chartKey={chartKey}
+                activeFile={activeFile}
+                guide={activeGuide}
+                flows={flows}
+                currentFlow={currentFlow}
+                activeStepIndex={activeStepIndex}
+                breadcrumbHops={breadcrumbHops}
+                childBranches={childBranches}
+                width={storyWidth}
+                onResizeWidth={resizeStory}
+                onCollapse={toggleStoryCollapsed}
+                onChangeFlowId={setActiveFlowId}
+                onChangeStepIndex={(next) => setActiveStepIndex(next)}
+                onJumpToAncestor={handleJumpToAncestor}
+                onDrillToPath={handleDrillToPath}
+              />
+            )}
 
-            <main className="single-stage">
-              {stageMode === 'preview' || !activeFile ? (
-                <PreviewCanvas
-                  viewportRef={viewportRef}
-                  chartKey={chartKey}
-                  renderedSvg={renderedSvg}
-                  hasActiveFile={Boolean(activeFile)}
-                  historicalVersion={
-                    isHistoricalVersion && activeVersionRecord
-                      ? activeVersionRecord.version
-                      : null
-                  }
-                  onExitHistoricalVersion={() => selectVersion(null)}
-                  parseError={parseError}
-                  guide={activeGuide}
-                  activeFlowId={activeFlowId}
-                  onChangeFlowId={setActiveFlowId}
-                  activeStepIndex={activeStepIndex}
-                  onChangeStepIndex={(next) => setActiveStepIndex(next)}
-                  selectedNodeId={selectedNodeId}
-                  onSelectNode={setSelectedNodeId}
-                  breadcrumbHops={breadcrumbHops}
-                  transitionKind={transitionKind}
-                  onJumpToAncestor={handleJumpToAncestor}
-                  onDrillToPath={handleDrillToPath}
-                  onCopyFilePath={(fp) => {
-                    navigator.clipboard.writeText(fp);
-                    notifyToast(`Copied ${fp}`);
-                  }}
-                  onFlipToCode={() => setStageMode('code')}
-                />
-              ) : (
-                <Suspense fallback={null}>
-                  <CodeEditorStage
-                    code={code}
-                    appearanceMode={appearanceMode}
-                    diagramType={diagramType}
-                    parseError={parseError}
-                    onChangeCode={editActiveCode}
-                  />
-                </Suspense>
-              )}
-            </main>
-          </div>
+            <PreviewCanvas
+              viewportRef={viewportRef}
+              chartKey={chartKey}
+              renderedSvg={renderedSvg}
+              hasActiveFile={Boolean(activeFile)}
+              activeProject={activeProject}
+              parseError={parseError}
+              guide={activeGuide}
+              activeFlowId={activeFlowId}
+              activeStepIndex={activeStepIndex}
+              selectedNodeId={selectedNodeId}
+              nodeAnchorPoint={nodeAnchorPoint}
+              onSelectNode={selectNode}
+              breadcrumbHops={breadcrumbHops}
+              showInlineBreadcrumb={!showStoryPanel}
+              canReopenStory={Boolean(activeFile && hasStoryContent && storyCollapsed)}
+              onReopenStory={toggleStoryCollapsed}
+              transitionKind={transitionKind}
+              onJumpToAncestor={handleJumpToAncestor}
+              onDrillToPath={handleDrillToPath}
+              onFitCanvas={handleFitCanvas}
+              onCopyRef={(fp) => {
+                navigator.clipboard.writeText(fp);
+                notifyToast(`Copied ${fp}`);
+              }}
+            />
+          </main>
         </div>
       ) : (
         <Suspense fallback={null}>
@@ -522,7 +560,18 @@ export function App() {
         </Suspense>
       )}
 
-      {toast && <div className={`toast-banner ${toastVisible ? 'visible' : ''}`}>{toast}</div>}
+      {toast && (
+        <div
+          className={`toast-banner ${toastVisible ? 'visible' : ''} ${toastAction ? 'has-action' : ''}`}
+        >
+          <span>{toast}</span>
+          {toastAction && (
+            <button type="button" className="toast-action-btn" onClick={toastAction.onClick}>
+              {toastAction.label}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

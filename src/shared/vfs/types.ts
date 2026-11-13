@@ -5,7 +5,6 @@ import type { DiagramComprehensionGuide } from '../types.js';
 export const SCRATCHPAD_PROJECT_KEY = 'scratchpad';
 export const GENERAL_PROJECT_KEY = 'general';
 export const MAX_GRAPH_VERSIONS = 5;
-export const HUMAN_EDIT_COALESCE_MS = 45_000;
 export const AGENT_ITERATION_COALESCE_MS = 90_000;
 
 export interface GraphVersionRecord {

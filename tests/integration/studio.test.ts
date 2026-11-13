@@ -676,7 +676,10 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         expect(histPayload.currentVersion).toBe(2);
         expect(histPayload.code).toContain('ClaudeOAuthV1');
 
-        // 7. Verify VS Code Explorer tree, Tab close preservation, and Right-Edge View Switcher Icon!
+        // 7. Verify clean Topic Library UI:
+        //    - No TabBar, no Code Editor, no Version History UI, no New File button
+        //    - Folder-only creation/rename; whole-graph delete only (no graph rename)
+        //    - Copy MCP URL remains accessible even when 3 agents are connected
         await wsPage.waitForFunction(
           () =>
             Boolean(
@@ -688,65 +691,6 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 10_000 }
         );
 
-        // Close an open tab on the top bar and verify the file STILL exists in the Left Explorer!
-        const openTabsBefore = await wsPage.evaluate(
-          () => document.querySelectorAll('.editor-tab').length
-        );
-        expect(openTabsBefore).toBeGreaterThanOrEqual(2);
-
-        await wsPage.evaluate(() => {
-          const closeBtn = document.querySelector(
-            '.editor-tab.active .tab-close-btn'
-          ) as HTMLElement | null;
-          closeBtn?.click();
-        });
-
-        await wsPage.waitForFunction(
-          (prevCount: number) =>
-            document.querySelectorAll('.editor-tab').length === prevCount - 1 &&
-            Boolean(
-              document.querySelector('[data-explorer-path="project-a/database/session-er.mmd"]')
-            ),
-          {},
-          openTabsBefore
-        );
-
-        // Verify right-edge view toggle icon & Fit to screen button (only in Preview, right of Code button)
-        const previewBarCheck = await wsPage.evaluate(() => {
-          const actions = Array.from(
-            document.querySelectorAll('.tabbar-right-actions > button')
-          );
-          const viewIdx = actions.findIndex((b) => b.classList.contains('tabbar-view-toggle'));
-          const fitIdx = actions.findIndex((b) => b.classList.contains('tabbar-fit-btn'));
-          return {
-            aria: document.querySelector('.tabbar-view-toggle')?.getAttribute('aria-label'),
-            fitAfterView: viewIdx >= 0 && fitIdx === viewIdx + 1,
-            floatingZoomBars: document.querySelectorAll('.floating-zoom-bar').length,
-          };
-        });
-        expect(previewBarCheck.aria).toBe('Switch to Code view');
-        expect(previewBarCheck.fitAfterView).toBe(true);
-        expect(previewBarCheck.floatingZoomBars).toBe(0);
-
-        await wsPage.evaluate(() => {
-          (document.querySelector('.tabbar-view-toggle') as HTMLElement | null)?.click();
-        });
-
-        await wsPage.waitForFunction(
-          () =>
-            document.querySelector('.tabbar-view-toggle')?.getAttribute('aria-label') ===
-              'Switch to Preview' &&
-            document.querySelector('.tabbar-fit-btn') === null &&
-            Boolean(document.querySelector('.codemirror-wrap')),
-          { timeout: 5_000 }
-        );
-
-        // Verify no permalink Copy-link button exists in TopBar, clean Explorer UI,
-        // `File history` tooltip on version pill, 3-dot context menu, Light theme, and Docs logo return!
-        const copyLinkButtons = await wsPage.evaluate(
-          () => document.querySelectorAll('button[aria-label="Copy link"]').length
-        );
-        expect(copyLinkButtons).toBe(0);
         const uiAudit = await wsPage.evaluate(() => {
           const projRow = document.querySelector(
             '[data-project-key="project-a"] .tree-project-row'
@@ -759,24 +703,37 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
             el.classList.contains('tree-project-label')
           );
           return {
-            authorBadgesInTree: document.querySelectorAll('.explorer-tree .tree-author-badge')
+            editorTabs: document.querySelectorAll('.editor-tab').length,
+            tabBar: document.querySelectorAll('.tabbar').length,
+            versionPills: document.querySelectorAll('.version-pill').length,
+            codeViewToggle: document.querySelectorAll('.tabbar-view-toggle').length,
+            codeMirrorWrap: document.querySelectorAll('.codemirror-wrap').length,
+            newFileButtons: document.querySelectorAll('button[aria-label="New file"]').length,
+            newFolderButtons: document.querySelectorAll('button[aria-label="New folder"]')
               .length,
-            projectCountBadges: document.querySelectorAll('.project-live-badge').length,
+            copyLinkButtons: document.querySelectorAll('button[aria-label="Copy link"]').length,
+            copyMcpInAgentsPane: document.querySelectorAll(
+              '.sidebar-agents-body .sidebar-copy-mcp-btn'
+            ).length,
             dotBeforeProjectLabel: dotIdx >= 0 && labelIdx > dotIdx,
             agentsHeaderButtons: document.querySelectorAll(
               '.sidebar-agents-pane .sidebar-header-actions button'
             ).length,
-            storageFooter: document.querySelectorAll('.sidebar-storage-footer').length,
-            historyTitle: document.querySelector('.version-pill')?.getAttribute('title'),
           };
         });
-        expect(uiAudit.authorBadgesInTree).toBe(0);
-        expect(uiAudit.projectCountBadges).toBe(0);
+        expect(uiAudit.editorTabs).toBe(0);
+        expect(uiAudit.tabBar).toBe(0);
+        expect(uiAudit.versionPills).toBe(0);
+        expect(uiAudit.codeViewToggle).toBe(0);
+        expect(uiAudit.codeMirrorWrap).toBe(0);
+        expect(uiAudit.newFileButtons).toBe(0);
+        expect(uiAudit.newFolderButtons).toBe(1);
+        expect(uiAudit.copyLinkButtons).toBe(0);
+        expect(uiAudit.copyMcpInAgentsPane).toBe(1);
         expect(uiAudit.dotBeforeProjectLabel).toBe(true);
         expect(uiAudit.agentsHeaderButtons).toBe(0);
-        expect(uiAudit.storageFooter).toBe(0);
-        expect(uiAudit.historyTitle).toBe('File history');
 
+        // Open graph context menu -> verify ONLY "Delete graph" is available (no Rename on graphs!)
         await wsPage.evaluate(() => {
           const trigger = document.querySelector(
             '[data-explorer-path="project-a/database/session-er.mmd"] .tree-menu-trigger'
@@ -784,6 +741,34 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           trigger?.click();
         });
         await wsPage.waitForSelector('.explorer-context-menu');
+        const graphMenuItems = await wsPage.evaluate(() =>
+          Array.from(document.querySelectorAll('.explorer-context-menu .dropdown-item')).map(
+            (el) => el.textContent?.trim()
+          )
+        );
+        expect(graphMenuItems).toEqual(['Delete graph']);
+
+        // Delete graph -> verify Undo toast restores it cleanly!
+        await wsPage.evaluate(() => {
+          const delItem = document.querySelector(
+            '.explorer-context-menu .dropdown-item.danger'
+          ) as HTMLElement | null;
+          delItem?.click();
+        });
+        await wsPage.waitForFunction(
+          () =>
+            document.querySelector(
+              '[data-explorer-path="project-a/database/session-er.mmd"]'
+            ) === null && Boolean(document.querySelector('.toast-action-btn')),
+          { timeout: 5_000 }
+        );
+        await wsPage.click('.toast-action-btn');
+        await wsPage.waitForSelector(
+          '[data-explorer-path="project-a/database/session-er.mmd"]',
+          {
+            timeout: 5_000,
+          }
+        );
 
         // Toggle Light theme and navigate to Documentation, verifying no separate back button
         await wsPage.click('button[aria-label="Light theme"]');
@@ -913,28 +898,21 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
 
         // Verify:
         // - Overview is STILL active (child did not steal focus!)
-        // - Only 1 editor tab is auto-opened
-        // - Explorer nests `browser-storage` (`child`) inside `.tree-subgraph-children` under `overview` (`parent`) with NO child-count pill
-        // - No zoom tags clutter SVG boxes
+        // - Sub-graph `browser-storage.mmd` is HIDDEN from Explorer sidebar (`childRow === null`)
+        // - All walkthrough steps are immediately visible side-by-side in `.story-panel`
         await wsPage.waitForFunction(
           () => {
             const parentRow = document.querySelector(
               '[data-explorer-path="mfhmfa/memory/overview.mmd"]'
             );
             const childRow = document.querySelector(
-              '.tree-subgraph-children [data-explorer-path="mfhmfa/memory/browser-storage.mmd"]'
+              '[data-explorer-path="mfhmfa/memory/browser-storage.mmd"]'
             );
-            const zoomBadges = document.querySelectorAll(
-              '.canvas-stage svg .mfhmfa-zoom-badge'
-            );
-            const countPills = document.querySelectorAll('.tree-overview-pill');
-            const tabs = document.querySelectorAll('.editor-tab');
+            const stepCards = document.querySelectorAll('.story-step-card');
             return (
               parentRow?.getAttribute('data-explorer-role') === 'parent' &&
-              childRow?.getAttribute('data-explorer-role') === 'child' &&
-              tabs.length === 1 &&
-              zoomBadges.length === 0 &&
-              countPills.length === 0 &&
+              childRow === null &&
+              stepCards.length === 2 &&
               Boolean(
                 document
                   .querySelector('[data-testid="comprehension-dock"]')
@@ -945,7 +923,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 10_000 }
         );
 
-        // 3. Start Story Mode (`Walk Through (2)`) -> verify SVG spotlighting & dimming!
+        // 3. Spotlight Step 1 -> verify SVG spotlighting & dimming!
         await wsPage.click('[data-testid="story-start-btn"]');
         await wsPage.waitForFunction(
           () => {
@@ -956,15 +934,13 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
             const browserDimmed = svg
               ?.querySelector('[data-mfhmfa-node="Browser"]')
               ?.classList.contains('mfhmfa-dim');
+            const activeCardText =
+              document.querySelector('.story-step-card.active')?.textContent || '';
             return (
               Boolean(svg?.classList.contains('mfhmfa-story-active')) &&
               Boolean(previewFocused) &&
               Boolean(browserDimmed) &&
-              Boolean(
-                document
-                  .querySelector('.story-step-title')
-                  ?.textContent?.includes('1. Temporary preview check')
-              )
+              activeCardText.includes('Temporary preview check')
             );
           },
           { timeout: 5_000 }
@@ -976,8 +952,8 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           () =>
             Boolean(
               document
-                .querySelector('.story-step-title')
-                ?.textContent?.includes('2. Live stream to browser')
+                .querySelector('.story-step-card.active')
+                ?.textContent?.includes('Live stream to browser')
             ) &&
             Boolean(
               document
@@ -987,48 +963,41 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 5_000 }
         );
 
-        // 4. Click `Browser` SVG node -> opens Node Inspector Card with Example, What-If & Drill-Down!
-        await wsPage.evaluate(() => {
-          const el = document.querySelector(
-            '.canvas-stage svg [data-mfhmfa-node="Browser"]'
-          ) as HTMLElement | null;
-          el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        });
+        // 4. Click `Browser` SVG node -> opens in-place anchored Node Popover with Example, What-If & Explore button!
+        await wsPage.click('.canvas-stage svg [data-mfhmfa-node="Browser"]');
 
         await wsPage.waitForFunction(
           () => {
             const card = document.querySelector('[data-testid="node-inspector-card"]');
             const txt = card?.textContent || '';
             return (
+              Boolean(card?.closest('.canvas-viewport')) &&
               txt.includes('Browser Local Storage') &&
               txt.includes('mfhmfa-workspace-v4') &&
               txt.includes('2.5s') &&
-              txt.includes('Zoom into memory/browser-storage.mmd')
+              txt.includes('Explore Browser Storage Internals')
             );
           },
           { timeout: 5_000 }
         );
 
-        // 5. Click Zoom Into in the component detail card -> dives into `browser-storage.mmd`
-        //    and renders VS Code plain-text breadcrumb (`overview > browser-storage`) + docked panel!
-        const chipCountInWalkthrough = await wsPage.evaluate(
-          () => document.querySelectorAll('.story-node-chip').length
-        );
-        expect(chipCountInWalkthrough).toBe(0);
-
+        // 5. Click Explore in the anchored popover -> dives into `browser-storage.mmd`,
+        //    keeps root `overview.mmd` highlighted in Explorer, and shows breadcrumb in Story Sheet!
         await wsPage.click('.node-drilldown-btn');
         await wsPage.waitForFunction(
           () => {
             const crumbEl = document.querySelector('[data-testid="canvas-breadcrumb"]');
             const crumbText = crumbEl?.textContent || '';
+            const rootActive = document
+              .querySelector('[data-explorer-path="mfhmfa/memory/overview.mmd"]')
+              ?.classList.contains('active');
             return (
-              Boolean(crumbEl?.classList.contains('vscode-breadcrumb')) &&
-              crumbText.includes('overview') &&
-              crumbText.includes('browser-storage') &&
-              !crumbText.includes('Browser Local Storage') &&
+              Boolean(rootActive) &&
+              crumbText.includes('System Memory Overview') &&
+              crumbText.includes('Browser Storage Internals') &&
               Boolean(
                 document
-                  .querySelector('.walkthrough-panel[data-testid="comprehension-dock"]')
+                  .querySelector('[data-testid="comprehension-dock"]')
                   ?.textContent?.includes('caps history at 5 versions')
               )
             );
@@ -1287,17 +1256,17 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         expect(await lightPage.title()).toBe('MFHMFA');
 
         await lightPage.waitForSelector('.canvas-stage svg');
-        await lightPage.waitForSelector('.walkthrough-panel');
+        await lightPage.waitForSelector('.story-panel');
         const fitBounds = await lightPage.evaluate(() => {
           const vp = document.querySelector('.canvas-viewport')!.getBoundingClientRect();
           const svg = document.querySelector('.canvas-stage svg')!.getBoundingClientRect();
-          const panel = document.querySelector('.walkthrough-panel')!.getBoundingClientRect();
+          const story = document.querySelector('.story-panel')!.getBoundingClientRect();
           return {
             fitsTop: svg.top >= vp.top - 1,
             fitsBottom: svg.bottom <= vp.bottom + 1,
             fitsLeft: svg.left >= vp.left - 1,
             fitsRight: svg.right <= vp.right + 1,
-            abovePanel: svg.bottom <= panel.top + 1,
+            besideStory: svg.left >= story.right - 1,
           };
         });
         expect(fitBounds).toEqual({
@@ -1305,7 +1274,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           fitsBottom: true,
           fitsLeft: true,
           fitsRight: true,
-          abovePanel: true,
+          besideStory: true,
         });
       } finally {
         await lightCtx.close().catch(() => {});

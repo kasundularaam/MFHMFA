@@ -1,4 +1,4 @@
-import { BookOpen, Copy, Download, FileCode2, Moon, PanelLeft, Sun } from 'lucide-react';
+import { BookOpen, Download, FileCode2, Moon, PanelLeft, Sun } from 'lucide-react';
 import type { StudioPage } from '../store/uiStore';
 import type { AppearanceMode } from '../theme/comfortTheme';
 import { BrandLogo } from './BrandLogo';
@@ -20,7 +20,6 @@ interface TopBarProps {
   repoUrl?: string;
   onExportPng: () => void;
   onExportSvg: () => void;
-  onCopyCode: () => void;
 }
 
 export function TopBar({
@@ -37,7 +36,6 @@ export function TopBar({
   repoUrl,
   onExportPng,
   onExportSvg,
-  onCopyCode,
 }: TopBarProps) {
   return (
     <header className="topbar">
@@ -100,9 +98,6 @@ export function TopBar({
             </DropdownItem>
             <DropdownItem onSelect={onExportSvg}>
               <FileCode2 size={15} /> Export SVG
-            </DropdownItem>
-            <DropdownItem onSelect={onCopyCode}>
-              <Copy size={15} /> Copy code
             </DropdownItem>
           </ActionMenu>
         )}

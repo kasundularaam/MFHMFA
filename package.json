@@ -39,14 +39,8 @@
     "check": "biome lint src web tests && npm run typecheck"
   },
   "dependencies": {
-    "@codemirror/lang-markdown": "^6.3.2",
-    "@codemirror/language": "^6.13.1",
-    "@codemirror/state": "^6.5.2",
-    "@codemirror/view": "^6.36.5",
-    "@lezer/highlight": "^1.2.5",
     "@modelcontextprotocol/sdk": "^1.27.0",
     "@radix-ui/react-dropdown-menu": "^2.2.1",
-    "@uiw/react-codemirror": "^4.23.12",
     "cors": "^2.8.5",
     "dompurify": "^3.4.17",
     "express": "^4.21.2",

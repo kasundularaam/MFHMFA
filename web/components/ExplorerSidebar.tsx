@@ -2,9 +2,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
-  CornerDownRight,
   FileCode,
-  FilePlus2,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -16,9 +14,9 @@ import {
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentSessionInfo } from '../../src/shared/types';
 import {
-  buildExplorerSubtree,
-  type ExplorerFileTreeNode,
-  type ExplorerFolderNode,
+  getHeadVersion,
+  resolveProjectGraphHierarchy,
+  type VfsGraphFile,
   type VfsProjectRoot,
 } from '../../src/shared/vfs';
 import { graphTitleFromPath, parentDirOfPath } from '../../src/shared/vfsPath';
@@ -36,9 +34,8 @@ interface ExplorerSidebarProps {
   onResizeWidth: (width: number) => void;
   onToggleProjectExpanded: (projectKey: string) => void;
   onOpenFile: (fileId: string) => void;
-  onCreateGraph: (projectKey?: string, parentDir?: string, name?: string) => void;
   onCreateFolder: (projectKey: string, parentDir: string, folderName: string) => void;
-  onRenamePath: (projectKey: string, fromPath: string, toPath: string) => void;
+  onRenameFolder: (projectKey: string, fromPath: string, toPath: string) => void;
   onDeleteGraph: (projectKey: string, fileId: string) => void;
   onDeleteFolder: (projectKey: string, folderPath: string) => void;
   onDeleteProject: (projectKey: string) => void;
@@ -47,26 +44,130 @@ interface ExplorerSidebarProps {
 
 type InlinePromptState =
   | {
-      kind: 'new-file';
-      projectKey: string;
-      parentDir: string;
-    }
-  | {
       kind: 'new-folder';
       projectKey: string;
       parentDir: string;
-    }
-  | {
-      kind: 'rename-file';
-      projectKey: string;
-      fileId: string;
-      oldPath: string;
     }
   | {
       kind: 'rename-folder';
       projectKey: string;
       oldPath: string;
     };
+
+interface SidebarRootGraphItem {
+  file: VfsGraphFile;
+  hasSubGraphs: boolean;
+  hasUnreadInTree: boolean;
+}
+
+interface SidebarFolderNode {
+  name: string;
+  path: string;
+  folders: SidebarFolderNode[];
+  graphs: SidebarRootGraphItem[];
+}
+
+function buildRootGraphSidebarTree(project: VfsProjectRoot): {
+  tree: SidebarFolderNode;
+  activeRootResolver: (fileId: string | null) => string | null;
+} {
+  const hierarchy = resolveProjectGraphHierarchy(project);
+
+  const root: SidebarFolderNode = {
+    name: project.projectLabel,
+    path: '',
+    folders: [],
+    graphs: [],
+  };
+
+  const folderMap = new Map<string, SidebarFolderNode>();
+  folderMap.set('', root);
+
+  const ensureFolderChain = (relDir: string): SidebarFolderNode => {
+    if (!relDir) return root;
+    const cached = folderMap.get(relDir);
+    if (cached) return cached;
+
+    const parts = relDir.split('/').filter(Boolean);
+    let currentPath = '';
+    let parentNode = root;
+
+    for (const seg of parts) {
+      currentPath = currentPath ? `${currentPath}/${seg}` : seg;
+      let node = folderMap.get(currentPath);
+      if (!node) {
+        node = {
+          name: seg,
+          path: currentPath,
+          folders: [],
+          graphs: [],
+        };
+        folderMap.set(currentPath, node);
+        parentNode.folders.push(node);
+      }
+      parentNode = node;
+    }
+    return parentNode;
+  };
+
+  for (const dir of project.folders) {
+    ensureFolderChain(dir);
+  }
+
+  const hasUnreadDescendant = (fileId: string, seen = new Set<string>()): boolean => {
+    if (seen.has(fileId)) return false;
+    seen.add(fileId);
+    for (const child of hierarchy.childrenByFileId.get(fileId) ?? []) {
+      if (child.unread || hasUnreadDescendant(child.id, seen)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (const file of project.files) {
+    // Sub-graphs are strictly hidden from the Explorer sidebar
+    const isLinkedChild = hierarchy.parentByFileId.has(file.id);
+    const hasPendingParent = Boolean(getHeadVersion(file).guide?.parentPath);
+    if (isLinkedChild || hasPendingParent) {
+      continue;
+    }
+
+    const parentDir = parentDirOfPath(file.path);
+    const folderNode = ensureFolderChain(parentDir);
+    const childCount = hierarchy.childrenByFileId.get(file.id)?.length ?? 0;
+
+    folderNode.graphs.push({
+      file,
+      hasSubGraphs: childCount > 0,
+      hasUnreadInTree: file.unread || hasUnreadDescendant(file.id),
+    });
+  }
+
+  const sortRecursive = (node: SidebarFolderNode) => {
+    node.folders.sort((a, b) => a.name.localeCompare(b.name));
+    node.graphs.sort((a, b) => {
+      if (a.hasSubGraphs !== b.hasSubGraphs) return a.hasSubGraphs ? -1 : 1;
+      const aLabel = a.file.title || graphTitleFromPath(a.file.path);
+      const bLabel = b.file.title || graphTitleFromPath(b.file.path);
+      return aLabel.localeCompare(bLabel);
+    });
+    for (const sub of node.folders) {
+      sortRecursive(sub);
+    }
+  };
+
+  sortRecursive(root);
+
+  return {
+    tree: root,
+    activeRootResolver: (fileId: string | null) => {
+      if (!fileId) return null;
+      const rootFile = hierarchy.getRootForFile(fileId);
+      return rootFile?.id ?? null;
+    },
+  };
+}
 
 export function ExplorerSidebar({
   width,
@@ -79,16 +180,14 @@ export function ExplorerSidebar({
   onResizeWidth,
   onToggleProjectExpanded,
   onOpenFile,
-  onCreateGraph,
   onCreateFolder,
-  onRenamePath,
+  onRenameFolder,
   onDeleteGraph,
   onDeleteFolder,
   onDeleteProject,
   onNotifyToast,
 }: ExplorerSidebarProps) {
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set());
-  const [collapsedGraphs, setCollapsedGraphs] = useState<Set<string>>(() => new Set());
   const [agentsPaneOpen, setAgentsPaneOpen] = useState(false);
   const [inlinePrompt, setInlinePrompt] = useState<InlinePromptState | null>(null);
   const [draftValue, setDraftValue] = useState('');
@@ -118,20 +217,7 @@ export function ExplorerSidebar({
     });
   };
 
-  const toggleGraphChildren = (fileId: string) => {
-    setCollapsedGraphs((prev) => {
-      const next = new Set(prev);
-      if (next.has(fileId)) next.delete(fileId);
-      else next.add(fileId);
-      return next;
-    });
-  };
-
-  const startNewItem = (
-    kind: 'new-file' | 'new-folder',
-    projectKey: string,
-    parentDir = ''
-  ) => {
+  const startNewFolder = (projectKey: string, parentDir = '') => {
     if (parentDir) {
       const dirKey = `${projectKey}::${parentDir}`;
       setCollapsedDirs((prev) => {
@@ -141,7 +227,7 @@ export function ExplorerSidebar({
         return next;
       });
     }
-    setInlinePrompt({ kind, projectKey, parentDir });
+    setInlinePrompt({ kind: 'new-folder', projectKey, parentDir });
     setDraftValue('');
   };
 
@@ -151,21 +237,16 @@ export function ExplorerSidebar({
     setInlinePrompt(null);
     if (!current || !val) return;
 
-    if (current.kind === 'new-file') {
-      onCreateGraph(current.projectKey, current.parentDir, val);
-      return;
-    }
     if (current.kind === 'new-folder') {
       onCreateFolder(current.projectKey, current.parentDir, val);
       return;
     }
     const parent = parentDirOfPath(current.oldPath);
     const nextRel = val.includes('/') ? val : parent ? `${parent}/${val}` : val;
-    onRenamePath(current.projectKey, current.oldPath, nextRel);
+    onRenameFolder(current.projectKey, current.oldPath, nextRel);
   };
 
   const targetTopProjectKey = activeProjectKey || projects[0]?.projectKey || 'scratchpad';
-
   const pairedMcpUrl = `${window.location.origin}/mcp?workspace=${workspaceId}`;
 
   const renderInlineInput = (depth: number, placeholder: string) => (
@@ -198,18 +279,9 @@ export function ExplorerSidebar({
           <button
             type="button"
             className="tree-action-btn visible"
-            title="New file"
-            aria-label="New file"
-            onClick={() => startNewItem('new-file', targetTopProjectKey, '')}
-          >
-            <FilePlus2 size={15} />
-          </button>
-          <button
-            type="button"
-            className="tree-action-btn visible"
             title="New folder"
             aria-label="New folder"
-            onClick={() => startNewItem('new-folder', targetTopProjectKey, '')}
+            onClick={() => startNewFolder(targetTopProjectKey, '')}
           >
             <FolderPlus size={15} />
           </button>
@@ -224,19 +296,13 @@ export function ExplorerSidebar({
             liveCount={liveProjectCounts.get(project.projectKey) ?? 0}
             activeFileId={activeFileId}
             collapsedDirs={collapsedDirs}
-            collapsedGraphs={collapsedGraphs}
             inlinePrompt={inlinePrompt}
             openMenuKey={openMenuKey}
             setOpenMenuKey={setOpenMenuKey}
             onToggleProjectExpanded={onToggleProjectExpanded}
             onToggleFolder={toggleFolder}
-            onToggleGraphChildren={toggleGraphChildren}
             onOpenFile={onOpenFile}
-            onStartNewItem={startNewItem}
-            onStartRenameFile={(projectKey, fileId, oldPath, baseLabel) => {
-              setInlinePrompt({ kind: 'rename-file', projectKey, fileId, oldPath });
-              setDraftValue(baseLabel);
-            }}
+            onStartNewFolder={startNewFolder}
             onStartRenameFolder={(projectKey, oldPath, folderName) => {
               setInlinePrompt({ kind: 'rename-folder', projectKey, oldPath });
               setDraftValue(folderName);
@@ -269,20 +335,7 @@ export function ExplorerSidebar({
 
         {agentsPaneOpen && (
           <div className="sidebar-agents-body">
-            {connectedAgents.length === 0 ? (
-              <button
-                type="button"
-                className="sidebar-copy-mcp-btn"
-                onClick={() => {
-                  navigator.clipboard.writeText(pairedMcpUrl);
-                  onNotifyToast('MCP URL copied');
-                }}
-                title="Copy MCP URL"
-              >
-                <Copy size={14} />
-                <span>Copy MCP URL</span>
-              </button>
-            ) : (
+            {connectedAgents.length > 0 && (
               <ul className="sidebar-agent-list">
                 {connectedAgents.map((ag) => (
                   <li key={ag.sessionId} className="sidebar-agent-item">
@@ -293,6 +346,19 @@ export function ExplorerSidebar({
                 ))}
               </ul>
             )}
+
+            <button
+              type="button"
+              className="sidebar-copy-mcp-btn"
+              onClick={() => {
+                navigator.clipboard.writeText(pairedMcpUrl);
+                onNotifyToast('MCP URL copied');
+              }}
+              title="Copy MCP URL"
+            >
+              <Copy size={14} />
+              <span>Copy MCP URL</span>
+            </button>
           </div>
         )}
       </div>
@@ -313,25 +379,13 @@ interface ExplorerProjectSectionProps {
   liveCount: number;
   activeFileId: string | null;
   collapsedDirs: Set<string>;
-  collapsedGraphs: Set<string>;
   inlinePrompt: InlinePromptState | null;
   openMenuKey: string | null;
   setOpenMenuKey: (key: string | null) => void;
   onToggleProjectExpanded: (projectKey: string) => void;
   onToggleFolder: (projectKey: string, folderPath: string) => void;
-  onToggleGraphChildren: (fileId: string) => void;
   onOpenFile: (fileId: string) => void;
-  onStartNewItem: (
-    kind: 'new-file' | 'new-folder',
-    projectKey: string,
-    parentDir: string
-  ) => void;
-  onStartRenameFile: (
-    projectKey: string,
-    fileId: string,
-    oldPath: string,
-    baseLabel: string
-  ) => void;
+  onStartNewFolder: (projectKey: string, parentDir: string) => void;
   onStartRenameFolder: (projectKey: string, oldPath: string, folderName: string) => void;
   onDeleteGraph: (projectKey: string, fileId: string) => void;
   onDeleteFolder: (projectKey: string, folderPath: string) => void;
@@ -344,143 +398,88 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
   liveCount,
   activeFileId,
   collapsedDirs,
-  collapsedGraphs,
   inlinePrompt,
   openMenuKey,
   setOpenMenuKey,
   onToggleProjectExpanded,
   onToggleFolder,
-  onToggleGraphChildren,
   onOpenFile,
-  onStartNewItem,
-  onStartRenameFile,
+  onStartNewFolder,
   onStartRenameFolder,
   onDeleteGraph,
   onDeleteFolder,
   onDeleteProject,
   renderInlineInput,
 }: ExplorerProjectSectionProps) {
-  const treeRoot = useMemo(() => buildExplorerSubtree(project, ''), [project]);
+  const { tree: treeRoot, activeRootResolver } = useMemo(
+    () => buildRootGraphSidebarTree(project),
+    [project]
+  );
+
+  const activeRootFileId = useMemo(
+    () => activeRootResolver(activeFileId),
+    [activeRootResolver, activeFileId]
+  );
 
   const projectMenuKey = `project::${project.projectKey}`;
   const isProjectMenuOpen = openMenuKey === projectMenuKey;
 
-  const renderFileTreeNode = (
-    node: ExplorerFileTreeNode,
-    depth: number,
-    isChildGraph = false
-  ): React.ReactNode => {
-    const { file, children } = node;
-    const hasSubGraphs = children.length > 0;
-    const isGraphCollapsed = collapsedGraphs.has(file.id);
-    const isRenaming = inlinePrompt?.kind === 'rename-file' && inlinePrompt.fileId === file.id;
-    const isActive = file.id === activeFileId;
-    const baseLabel = graphTitleFromPath(file.path);
+  const renderGraphRow = (item: SidebarRootGraphItem, depth: number): React.ReactNode => {
+    const { file, hasSubGraphs, hasUnreadInTree } = item;
+    const isActive = activeRootFileId === file.id;
+    const displayLabel = file.title?.trim() || graphTitleFromPath(file.path);
     const menuKey = `file::${file.id}`;
     const isMenuOpen = openMenuKey === menuKey;
 
     return (
       <div
         key={file.id}
-        className={`tree-graph-branch ${hasSubGraphs ? 'has-subgraphs' : ''} ${
-          isChildGraph ? 'is-subgraph' : ''
-        }`}
+        data-explorer-path={`${project.projectKey}/${file.path}`}
+        data-explorer-role={hasSubGraphs ? 'parent' : 'standalone'}
+        className={`tree-row tree-file-row ${isActive ? 'active' : ''} ${
+          isMenuOpen ? 'menu-open' : ''
+        } ${hasSubGraphs ? 'parent-overview-row' : ''}`}
+        style={{
+          paddingLeft: `${16 + depth * 15}px`,
+        }}
+        onClick={() => onOpenFile(file.id)}
+        title={`${project.projectLabel}/${file.path}`}
       >
-        {isRenaming ? (
-          renderInlineInput(depth, 'filename.mmd')
+        {hasSubGraphs ? (
+          <Layers size={15} className="tree-file-icon overview-icon" />
         ) : (
-          <div
-            data-explorer-path={`${project.projectKey}/${file.path}`}
-            data-explorer-role={hasSubGraphs ? 'parent' : isChildGraph ? 'child' : 'standalone'}
-            className={`tree-row tree-file-row ${isActive ? 'active' : ''} ${
-              isMenuOpen ? 'menu-open' : ''
-            } ${hasSubGraphs ? 'parent-overview-row' : ''} ${
-              isChildGraph ? 'child-subgraph-row' : ''
-            }`}
-            style={{
-              paddingLeft: `${(hasSubGraphs ? 8 : 16) + depth * 15}px`,
-            }}
-            onClick={() => onOpenFile(file.id)}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              onStartRenameFile(project.projectKey, file.id, file.path, baseLabel);
-            }}
-            title={`${project.projectLabel}/${file.path}`}
-          >
-            {hasSubGraphs && (
+          <FileCode size={15} className="tree-file-icon" />
+        )}
+
+        <span className="tree-item-label">{displayLabel}</span>
+        {hasUnreadInTree && <span className="tab-unread-dot" />}
+
+        <div className="tree-row-actions" onClick={(e) => e.stopPropagation()}>
+          <ActionMenu
+            align="start"
+            contentClassName="explorer-context-menu"
+            onOpenChange={(open) => setOpenMenuKey(open ? menuKey : null)}
+            trigger={
               <button
                 type="button"
-                className="tree-subgraph-toggle"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleGraphChildren(file.id);
-                }}
-                aria-label={isGraphCollapsed ? 'Expand' : 'Collapse'}
+                className={`tree-action-btn tree-menu-trigger ${isMenuOpen ? 'open' : ''}`}
+                aria-label="Graph actions"
               >
-                {isGraphCollapsed ? (
-                  <ChevronRight size={13} className="tree-chevron" />
-                ) : (
-                  <ChevronDown size={13} className="tree-chevron" />
-                )}
+                <MoreHorizontal size={16} />
               </button>
-            )}
-
-            {hasSubGraphs ? (
-              <Layers size={15} className="tree-file-icon overview-icon" />
-            ) : isChildGraph ? (
-              <CornerDownRight size={14} className="tree-file-icon child-icon" />
-            ) : (
-              <FileCode size={15} className="tree-file-icon" />
-            )}
-
-            <span className="tree-item-label">{baseLabel}</span>
-            {file.unread && <span className="tab-unread-dot" />}
-
-            <div className="tree-row-actions" onClick={(e) => e.stopPropagation()}>
-              <ActionMenu
-                align="start"
-                contentClassName="explorer-context-menu"
-                onOpenChange={(open) => setOpenMenuKey(open ? menuKey : null)}
-                trigger={
-                  <button
-                    type="button"
-                    className={`tree-action-btn tree-menu-trigger ${isMenuOpen ? 'open' : ''}`}
-                    aria-label="More actions"
-                  >
-                    <MoreHorizontal size={16} />
-                  </button>
-                }
-              >
-                <DropdownItem
-                  onSelect={() =>
-                    onStartRenameFile(project.projectKey, file.id, file.path, baseLabel)
-                  }
-                >
-                  <Pencil size={15} />
-                  <span>Rename</span>
-                </DropdownItem>
-                <DropdownItem
-                  danger
-                  onSelect={() => onDeleteGraph(project.projectKey, file.id)}
-                >
-                  <Trash2 size={15} />
-                  <span>Delete</span>
-                </DropdownItem>
-              </ActionMenu>
-            </div>
-          </div>
-        )}
-
-        {hasSubGraphs && !isGraphCollapsed && (
-          <div className="tree-subgraph-children">
-            {children.map((childNode) => renderFileTreeNode(childNode, depth + 1, true))}
-          </div>
-        )}
+            }
+          >
+            <DropdownItem danger onSelect={() => onDeleteGraph(project.projectKey, file.id)}>
+              <Trash2 size={15} />
+              <span>Delete graph</span>
+            </DropdownItem>
+          </ActionMenu>
+        </div>
       </div>
     );
   };
 
-  const renderFolderNode = (node: ExplorerFolderNode, depth: number): React.ReactNode => {
+  const renderFolderNode = (node: SidebarFolderNode, depth: number): React.ReactNode => {
     const dirKey = `${project.projectKey}::${node.path}`;
     const isCollapsed = collapsedDirs.has(dirKey);
     const isRenaming =
@@ -500,6 +499,10 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
             className={`tree-row tree-folder-row ${isMenuOpen ? 'menu-open' : ''}`}
             style={{ paddingLeft: `${10 + depth * 15}px` }}
             onClick={() => onToggleFolder(project.projectKey, node.path)}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              onStartRenameFolder(project.projectKey, node.path, node.name);
+            }}
           >
             {isCollapsed ? (
               <ChevronRight size={14} className="tree-chevron" />
@@ -528,15 +531,7 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
                   </button>
                 }
               >
-                <DropdownItem
-                  onSelect={() => onStartNewItem('new-file', project.projectKey, node.path)}
-                >
-                  <FilePlus2 size={15} />
-                  <span>New file</span>
-                </DropdownItem>
-                <DropdownItem
-                  onSelect={() => onStartNewItem('new-folder', project.projectKey, node.path)}
-                >
+                <DropdownItem onSelect={() => onStartNewFolder(project.projectKey, node.path)}>
                   <FolderPlus size={15} />
                   <span>New folder</span>
                 </DropdownItem>
@@ -561,17 +556,13 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
 
         {!isCollapsed && (
           <div className="tree-folder-children">
-            {inlinePrompt &&
-              (inlinePrompt.kind === 'new-file' || inlinePrompt.kind === 'new-folder') &&
+            {inlinePrompt?.kind === 'new-folder' &&
               inlinePrompt.projectKey === project.projectKey &&
               inlinePrompt.parentDir === node.path &&
-              renderInlineInput(
-                depth + 1,
-                inlinePrompt.kind === 'new-file' ? 'filename.mmd' : 'folder-name'
-              )}
+              renderInlineInput(depth + 1, 'folder-name')}
 
             {node.folders.map((sub) => renderFolderNode(sub, depth + 1))}
-            {node.fileTree.map((fNode) => renderFileTreeNode(fNode, depth + 1, false))}
+            {node.graphs.map((gItem) => renderGraphRow(gItem, depth + 1))}
           </div>
         )}
       </div>
@@ -614,16 +605,7 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
             <DropdownItem
               onSelect={() => {
                 if (!project.expanded) onToggleProjectExpanded(project.projectKey);
-                onStartNewItem('new-file', project.projectKey, '');
-              }}
-            >
-              <FilePlus2 size={15} />
-              <span>New file</span>
-            </DropdownItem>
-            <DropdownItem
-              onSelect={() => {
-                if (!project.expanded) onToggleProjectExpanded(project.projectKey);
-                onStartNewItem('new-folder', project.projectKey, '');
+                onStartNewFolder(project.projectKey, '');
               }}
             >
               <FolderPlus size={15} />
@@ -640,26 +622,21 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
 
       {project.expanded && (
         <div className="tree-project-children">
-          {inlinePrompt &&
-            (inlinePrompt.kind === 'new-file' || inlinePrompt.kind === 'new-folder') &&
+          {inlinePrompt?.kind === 'new-folder' &&
             inlinePrompt.projectKey === project.projectKey &&
             inlinePrompt.parentDir === '' &&
-            renderInlineInput(
-              1,
-              inlinePrompt.kind === 'new-file' ? 'filename.mmd' : 'folder-name'
-            )}
+            renderInlineInput(1, 'folder-name')}
 
           {treeRoot.folders.map((folder) => renderFolderNode(folder, 1))}
-          {treeRoot.fileTree.map((fNode) => renderFileTreeNode(fNode, 1, false))}
+          {treeRoot.graphs.map((gItem) => renderGraphRow(gItem, 1))}
 
           {treeRoot.folders.length === 0 &&
-            treeRoot.fileTree.length === 0 &&
+            treeRoot.graphs.length === 0 &&
             !(
-              inlinePrompt &&
-              (inlinePrompt.kind === 'new-file' || inlinePrompt.kind === 'new-folder') &&
+              inlinePrompt?.kind === 'new-folder' &&
               inlinePrompt.projectKey === project.projectKey &&
               inlinePrompt.parentDir === ''
-            ) && <div className="tree-empty-hint">No files yet</div>}
+            ) && <div className="tree-empty-hint">Ask your AI agent to explain a topic</div>}
         </div>
       )}
     </div>

@@ -15,23 +15,18 @@ import {
   deleteFolderFromProject,
   deleteGraphFromProject,
   deleteProjectFromWorkspace,
-  editGraphByHuman,
   evaluateVfsLs,
   evaluateVfsRead,
   findFileWithProject,
-  getVersionRecord,
+  getHeadVersion,
   movePathInProject,
-  NEW_TAB_STARTER,
   normalizeWorkspaceConsistency,
-  restoreGraphVersion,
-  SCRATCHPAD_PROJECT_KEY,
+  resolveProjectGraphHierarchy,
   toProjectKey,
   upsertGraphInVfs,
-  type VfsGraphFile,
-  type VfsProjectRoot,
   type WorkspaceState,
 } from '../../src/shared/vfs';
-import { normalizeRelativeDirPath, normalizeRelativeGraphPath } from '../../src/shared/vfsPath';
+import { normalizeRelativeDirPath } from '../../src/shared/vfsPath';
 import {
   getOrCreateWorkspaceId,
   loadWorkspaceFromIndexedDb,
@@ -41,11 +36,6 @@ import {
 } from '../services/workspacePersistence';
 import { useUiStore } from './uiStore';
 
-export interface OpenTabEntry {
-  file: VfsGraphFile;
-  project: VfsProjectRoot;
-}
-
 function reportPersistenceError(): void {
   useUiStore
     .getState()
@@ -54,13 +44,18 @@ function reportPersistenceError(): void {
 
 function snapshotCameraIntoState(state: WorkspaceState): WorkspaceState {
   if (!state.activeFileId) return state;
-  const { zoom, pan } = useUiStore.getState();
+  const { zoom, pan, userCameraAdjusted } = useUiStore.getState();
   return produce(state, (draft) => {
     for (const p of draft.projects) {
       const f = p.files.find((item) => item.id === state.activeFileId);
       if (f) {
-        f.zoom = zoom;
-        f.pan = pan;
+        if (userCameraAdjusted) {
+          f.zoom = zoom;
+          f.pan = pan;
+        } else {
+          f.zoom = null;
+          f.pan = { x: 0, y: 0 };
+        }
         return;
       }
     }
@@ -69,15 +64,17 @@ function snapshotCameraIntoState(state: WorkspaceState): WorkspaceState {
 
 function syncCameraForActiveFile(
   nextState: WorkspaceState,
-  versionOverride: number | null
+  opts?: { preserveSelection?: boolean }
 ): void {
-  useUiStore.getState().resetComprehensionSelection();
+  if (!opts?.preserveSelection) {
+    useUiStore.getState().resetComprehensionSelection();
+  }
   const found = findFileWithProject(nextState, nextState.activeFileId);
   if (!found) {
     useUiStore.getState().clearRenderStage();
     return;
   }
-  if (found.file.zoom !== null && versionOverride === null) {
+  if (found.file.zoom !== null) {
     useUiStore.getState().applyCamera({
       zoom: found.file.zoom,
       pan: found.file.pan,
@@ -90,7 +87,6 @@ function syncCameraForActiveFile(
 export interface WorkspaceStoreState {
   hydrated: boolean;
   workspace: WorkspaceState;
-  selectedVersion: number | null;
   connectedAgentsMap: Record<string, AgentSessionInfo>;
   sessionProjectMap: Record<string, string>;
 
@@ -101,18 +97,12 @@ export interface WorkspaceStoreState {
   toggleProjectExpanded: (projectKey: string) => void;
 
   openFile: (fileId: string) => void;
-  closeTab: (fileId: string) => void;
-  createGraph: (targetProjectKey?: string, parentDir?: string, rawName?: string) => void;
   createFolder: (projectKey: string, parentDir: string, rawFolderName: string) => void;
-  renamePath: (projectKey: string, fromPath: string, toPath: string) => void;
+  renameFolder: (projectKey: string, fromFolderPath: string, toFolderPath: string) => void;
 
   deleteGraph: (projectKey: string, fileId: string) => void;
   deleteFolder: (projectKey: string, folderPath: string) => void;
   deleteProject: (projectKey: string) => void;
-
-  selectVersion: (version: number | null) => void;
-  restoreVersion: (version: number) => void;
-  editActiveCode: (nextCode: string) => void;
 
   rotateWorkspaceId: () => void;
 
@@ -129,7 +119,6 @@ let hydrationPromise: Promise<void> | null = null;
 export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
   hydrated: false,
   workspace: createFreshWorkspaceState(getOrCreateWorkspaceId()),
-  selectedVersion: null,
   connectedAgentsMap: {},
   sessionProjectMap: {},
 
@@ -137,8 +126,8 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
     if (hydrationPromise) return hydrationPromise;
     hydrationPromise = (async () => {
       const loaded = await loadWorkspaceFromIndexedDb(reportPersistenceError);
-      set({ workspace: loaded, hydrated: true, selectedVersion: null });
-      syncCameraForActiveFile(loaded, null);
+      set({ workspace: loaded, hydrated: true });
+      syncCameraForActiveFile(loaded);
     })();
     return hydrationPromise;
   },
@@ -170,8 +159,8 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
   },
 
   openFile: (fileId) => {
-    const { workspace, selectedVersion } = get();
-    if (workspace.activeFileId === fileId && selectedVersion === null) return;
+    const { workspace } = get();
+    if (workspace.activeFileId === fileId) return;
 
     const withCam = snapshotCameraIntoState(workspace);
     const nextState = normalizeWorkspaceConsistency(
@@ -187,83 +176,9 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
       })
     );
 
-    set({ workspace: nextState, selectedVersion: null });
-    syncCameraForActiveFile(nextState, null);
+    set({ workspace: nextState });
+    syncCameraForActiveFile(nextState);
     scheduleWorkspaceSave(nextState, reportPersistenceError);
-  },
-
-  closeTab: (fileId) => {
-    const withCam = snapshotCameraIntoState(get().workspace);
-    const idx = withCam.openTabIds.indexOf(fileId);
-    if (idx < 0) return;
-
-    const remaining = withCam.openTabIds.filter((id) => id !== fileId);
-    let nextActive = withCam.activeFileId;
-    if (withCam.activeFileId === fileId) {
-      nextActive =
-        remaining.length > 0 ? remaining[Math.min(idx, remaining.length - 1)]! : null;
-    }
-
-    const nextState = normalizeWorkspaceConsistency({
-      ...withCam,
-      openTabIds: remaining,
-      activeFileId: nextActive,
-    });
-
-    set({ workspace: nextState, selectedVersion: null });
-    syncCameraForActiveFile(nextState, null);
-    scheduleWorkspaceSave(nextState, reportPersistenceError);
-  },
-
-  createGraph: (targetProjectKey, parentDir = '', rawName) => {
-    const cur = snapshotCameraIntoState(get().workspace);
-    const activeEntry = findFileWithProject(cur, cur.activeFileId);
-    const fallbackProj =
-      activeEntry?.project.projectKey || cur.projects[0]?.projectKey || SCRATCHPAD_PROJECT_KEY;
-    const projKey = targetProjectKey || fallbackProj;
-    const proj = cur.projects.find((p) => p.projectKey === projKey);
-    const projectName = proj?.projectLabel || 'scratchpad';
-
-    let baseName = rawName?.trim() || '';
-    if (!baseName) {
-      const count = (proj?.files.length ?? 0) + 1;
-      baseName = `diagram-${count}.mmd`;
-    }
-
-    try {
-      const fullRel = parentDir
-        ? `${normalizeRelativeDirPath(parentDir)}/${baseName}`
-        : baseName;
-      let relPath = normalizeRelativeGraphPath(fullRel);
-
-      if (proj?.files.some((f) => f.path === relPath) && !rawName) {
-        relPath = normalizeRelativeGraphPath(
-          parentDir
-            ? `${parentDir}/diagram-${randomToken(4)}.mmd`
-            : `diagram-${randomToken(4)}.mmd`
-        );
-      }
-
-      const upserted = upsertGraphInVfs(cur, {
-        projectName,
-        path: relPath,
-        code: NEW_TAB_STARTER,
-        diagramType: 'flowchart-v2',
-        agentSlug: 'user',
-        agentLabel: 'You',
-        agentShortLabel: 'you',
-        autoOpenTab: true,
-        autoFocus: true,
-      });
-
-      set({ workspace: upserted.nextState, selectedVersion: null });
-      syncCameraForActiveFile(upserted.nextState, null);
-      void saveWorkspaceImmediate(upserted.nextState, reportPersistenceError);
-    } catch (err: unknown) {
-      useUiStore
-        .getState()
-        .notifyToast(err instanceof Error ? err.message : 'Invalid graph path');
-    }
   },
 
   createFolder: (projectKey, parentDir, rawFolderName) => {
@@ -293,12 +208,16 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
     }
   },
 
-  renamePath: (projectKey, fromPath, toPath) => {
+  renameFolder: (projectKey, fromFolderPath, toFolderPath) => {
     try {
+      const cleanFrom = normalizeRelativeDirPath(fromFolderPath);
+      const cleanTo = normalizeRelativeDirPath(toFolderPath);
+      if (!cleanFrom || !cleanTo || cleanFrom === cleanTo) return;
+
       const cur = get().workspace;
       const proj = cur.projects.find((p) => p.projectKey === projectKey);
       if (!proj) return;
-      const moved = movePathInProject(cur, proj.projectLabel, fromPath, toPath);
+      const moved = movePathInProject(cur, proj.projectLabel, cleanFrom, cleanTo);
       set({ workspace: moved.nextState });
       void saveWorkspaceImmediate(moved.nextState, reportPersistenceError);
     } catch (err: unknown) {
@@ -307,57 +226,57 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
   },
 
   deleteGraph: (projectKey, fileId) => {
-    const withCam = snapshotCameraIntoState(get().workspace);
-    const nextState = deleteGraphFromProject(withCam, projectKey, fileId);
-    set({ workspace: nextState, selectedVersion: null });
-    syncCameraForActiveFile(nextState, null);
+    const prevSnapshot = snapshotCameraIntoState(get().workspace);
+    const nextState = deleteGraphFromProject(prevSnapshot, projectKey, fileId);
+    set({ workspace: nextState });
+    syncCameraForActiveFile(nextState);
     void saveWorkspaceImmediate(nextState, reportPersistenceError);
-    useUiStore.getState().notifyToast('File deleted');
+
+    useUiStore.getState().notifyToast('Graph deleted', {
+      label: 'Undo',
+      onClick: () => {
+        set({ workspace: prevSnapshot });
+        syncCameraForActiveFile(prevSnapshot);
+        void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
+        useUiStore.getState().dismissToast();
+      },
+    });
   },
 
   deleteFolder: (projectKey, folderPath) => {
-    const withCam = snapshotCameraIntoState(get().workspace);
-    const nextState = deleteFolderFromProject(withCam, projectKey, folderPath);
-    set({ workspace: nextState, selectedVersion: null });
-    syncCameraForActiveFile(nextState, null);
+    const prevSnapshot = snapshotCameraIntoState(get().workspace);
+    const nextState = deleteFolderFromProject(prevSnapshot, projectKey, folderPath);
+    set({ workspace: nextState });
+    syncCameraForActiveFile(nextState);
     void saveWorkspaceImmediate(nextState, reportPersistenceError);
-    useUiStore.getState().notifyToast('Folder deleted');
+
+    useUiStore.getState().notifyToast('Folder deleted', {
+      label: 'Undo',
+      onClick: () => {
+        set({ workspace: prevSnapshot });
+        syncCameraForActiveFile(prevSnapshot);
+        void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
+        useUiStore.getState().dismissToast();
+      },
+    });
   },
 
   deleteProject: (projectKey) => {
-    const withCam = snapshotCameraIntoState(get().workspace);
-    const nextState = deleteProjectFromWorkspace(withCam, projectKey);
-    set({ workspace: nextState, selectedVersion: null });
-    syncCameraForActiveFile(nextState, null);
+    const prevSnapshot = snapshotCameraIntoState(get().workspace);
+    const nextState = deleteProjectFromWorkspace(prevSnapshot, projectKey);
+    set({ workspace: nextState });
+    syncCameraForActiveFile(nextState);
     void saveWorkspaceImmediate(nextState, reportPersistenceError);
-    useUiStore.getState().notifyToast('Project deleted');
-  },
 
-  selectVersion: (version) => {
-    const { workspace } = get();
-    set({ selectedVersion: version });
-    syncCameraForActiveFile(workspace, version);
-  },
-
-  restoreVersion: (version) => {
-    const { workspace } = get();
-    if (!workspace.activeFileId) return;
-    const restored = restoreGraphVersion(workspace, workspace.activeFileId, version);
-    set({ workspace: restored.nextState, selectedVersion: null });
-    syncCameraForActiveFile(restored.nextState, null);
-    void saveWorkspaceImmediate(restored.nextState, reportPersistenceError);
-    useUiStore.getState().notifyToast(`Restored v${version}`);
-  },
-
-  editActiveCode: (nextCode) => {
-    const { workspace, selectedVersion } = get();
-    if (!workspace.activeFileId) return;
-    const next = editGraphByHuman(workspace, workspace.activeFileId, nextCode);
-    set({
-      workspace: next,
-      ...(selectedVersion !== null ? { selectedVersion: null } : {}),
+    useUiStore.getState().notifyToast('Project deleted', {
+      label: 'Undo',
+      onClick: () => {
+        set({ workspace: prevSnapshot });
+        syncCameraForActiveFile(prevSnapshot);
+        void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
+        useUiStore.getState().dismissToast();
+      },
     });
-    scheduleWorkspaceSave(next, reportPersistenceError);
   },
 
   rotateWorkspaceId: () => {
@@ -421,12 +340,26 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
   applyIncomingDiagram: (diag) => {
     const { workspace, sessionProjectMap } = get();
     const prevActiveId = workspace.activeFileId;
+    const prevEntry = findFileWithProject(workspace, prevActiveId);
     const prevProjKey = diag.agentSessionId
       ? (sessionProjectMap[diag.agentSessionId] ?? null)
       : null;
 
+    const ui = useUiStore.getState();
+    const prevHierarchy = prevEntry ? resolveProjectGraphHierarchy(prevEntry.project) : null;
+    const prevRootId =
+      prevEntry && prevHierarchy
+        ? (prevHierarchy.getRootForFile(prevEntry.file.id)?.id ?? prevEntry.file.id)
+        : null;
+    const isZoomedIntoSubgraph = Boolean(
+      prevEntry && prevHierarchy?.parentByFileId.has(prevEntry.file.id)
+    );
+    const isIdleWelcome = !prevEntry || Boolean(prevEntry.file.isWelcome);
+    const isDeeplyStudying =
+      !isIdleWelcome &&
+      (ui.activeStepIndex !== null || ui.selectedNodeId !== null || isZoomedIntoSubgraph);
+
     const withCam = snapshotCameraIntoState(workspace);
-    const canAutoFocus = useUiStore.getState().stageMode === 'preview';
 
     const upserted = upsertGraphInVfs(withCam, {
       projectName: diag.project,
@@ -441,8 +374,33 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
       agentShortLabel: diag.agentShortLabel,
       agentSessionId: diag.agentSessionId,
       autoOpenTab: true,
-      autoFocus: canAutoFocus,
+      autoFocus: !isDeeplyStudying,
     });
+
+    let finalState = upserted.nextState;
+    const targetProj = finalState.projects.find((p) => p.projectKey === upserted.projectKey);
+    const targetHierarchy = targetProj ? resolveProjectGraphHierarchy(targetProj) : null;
+    const incomingRoot = targetHierarchy?.getRootForFile(upserted.file.id) ?? upserted.file;
+
+    // If user is mid-study on a DIFFERENT graph, notify calmly instead of stealing focus
+    const switchedToDifferentTree =
+      isDeeplyStudying &&
+      prevActiveId !== null &&
+      upserted.projectKey === prevEntry?.project.projectKey
+        ? incomingRoot.id !== prevRootId
+        : isDeeplyStudying && prevActiveId !== null;
+
+    if (switchedToDifferentTree && prevActiveId) {
+      finalState = normalizeWorkspaceConsistency(
+        produce(finalState, (draft) => {
+          draft.activeFileId = prevActiveId;
+          for (const p of draft.projects) {
+            const rf = p.files.find((f) => f.id === incomingRoot.id);
+            if (rf) rf.unread = true;
+          }
+        })
+      );
+    }
 
     set((s) => {
       const nextAgents = { ...s.connectedAgentsMap };
@@ -459,34 +417,39 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
         }
       }
       return {
-        workspace: upserted.nextState,
-        ...(upserted.nextState.activeFileId === upserted.file.id
-          ? { selectedVersion: null }
-          : {}),
+        workspace: finalState,
         connectedAgentsMap: nextAgents,
         sessionProjectMap: nextProjMap,
       };
     });
 
-    if (
-      upserted.nextState.activeFileId === upserted.file.id ||
-      upserted.nextState.activeFileId !== prevActiveId
-    ) {
-      syncCameraForActiveFile(upserted.nextState, null);
+    if (switchedToDifferentTree) {
+      const targetId = incomingRoot.id;
+      useUiStore.getState().notifyToast(`New view: ${incomingRoot.title}`, {
+        label: 'Open',
+        onClick: () => {
+          get().openFile(targetId);
+          useUiStore.getState().dismissToast();
+        },
+      });
+    } else if (finalState.activeFileId !== prevActiveId) {
+      syncCameraForActiveFile(finalState);
+    } else if (finalState.activeFileId === upserted.file.id) {
+      syncCameraForActiveFile(finalState, { preserveSelection: true });
     }
 
-    void saveWorkspaceImmediate(upserted.nextState, reportPersistenceError);
+    void saveWorkspaceImmediate(finalState, reportPersistenceError);
   },
 
   executeVfsRpc: (query) => {
-    const { workspace, selectedVersion } = get();
+    const { workspace } = get();
     if (query.op === 'ls') {
       const lsRes = evaluateVfsLs(workspace, query.project, query.dirPath);
       const targetProjKey = toProjectKey(normalizeProjectName(query.project) || 'General');
       const activeEntry = findFileWithProject(workspace, workspace.activeFileId);
       if (activeEntry && activeEntry.project.projectKey === targetProjKey) {
         const ui = useUiStore.getState();
-        const ver = getVersionRecord(activeEntry.file, selectedVersion);
+        const ver = getHeadVersion(activeEntry.file);
         const flows = resolveGuideFlows(ver.guide);
         const curFlow =
           (ui.activeFlowId && flows.find((f) => f.id === ui.activeFlowId)) || flows[0] || null;

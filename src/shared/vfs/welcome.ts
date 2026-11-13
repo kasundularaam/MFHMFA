@@ -37,14 +37,14 @@ export const WELCOME_GUIDE: DiagramComprehensionGuide = {
       trace: '0 diagrams stored on server -> live SSE push',
     },
     {
-      title: '3. Step through, click boxes, and save locally',
+      title: '3. Read alongside the map and click any box',
       caption:
-        'Press Left or Right arrows to follow each step, click any box for examples and edge cases, and keep recent versions in your browser.',
+        'Follow each step down the page while the diagram highlights the active path, and click any box to open its explanation right beside it.',
       focusNodes: ['Canvas', 'Storage', 'Sync'],
       check: {
         question: 'What happens to your diagrams if the MFHMFA server restarts?',
         answer:
-          'Nothing is lost. Your projects, diagrams, and the last 5 versions per file live in your browser IndexedDB.',
+          'Nothing is lost. Your projects, folders, and interactive guides live locally in your browser IndexedDB.',
       },
     },
   ],
@@ -53,7 +53,7 @@ export const WELCOME_GUIDE: DiagramComprehensionGuide = {
       label: 'Your AI Agent',
       term: 'MCP Client (Claude Code, Pi, Cursor, etc.)',
       summary:
-        'Connects using your workspace URL, checks existing files in the current project, and creates small diagrams with walkthrough steps.',
+        'Connects using your workspace URL, checks existing views in the current project, and streams small 4–7 box diagrams with step-by-step guides.',
       example:
         'get_playbook({ mode: "concept" }) -> render_view({ path: "overview.mmd", code, guide })',
       whatIf:
@@ -73,7 +73,7 @@ export const WELCOME_GUIDE: DiagramComprehensionGuide = {
       label: 'Live Sync',
       term: 'Pass-Through SSE Relay',
       summary:
-        'Streams updated diagrams to your open tab and forwards file list, read, and rename requests back to your browser.',
+        'Streams updated diagrams to your open tab and forwards file list, read, and move requests back to your browser.',
       example: 'list_views -> asks open browser tab -> folder tree in ~10ms',
       whatIf:
         'If you close all MFHMFA tabs, live file queries time out after 2.5 seconds until you reopen the page.',
@@ -82,25 +82,21 @@ export const WELCOME_GUIDE: DiagramComprehensionGuide = {
     Canvas: {
       label: 'Studio Canvas',
       summary:
-        'Draws the diagram locally, dims unrelated branches while you step through a flow, and opens notes when you click a box.',
-      example: 'Press Right arrow to step forward, or click any outlined box.',
+        'Pairs a side-by-side story guide with the interactive diagram, dimming unrelated branches per step and opening notes right beside any clicked box.',
+      example: 'Click a step on the left or press Down arrow, then click any box on the map.',
       whatIf:
-        'If a manual edit in Code view has a syntax error, a banner jumps straight to the broken line.',
+        'Dashed boxes contain deeper sub-diagrams—click "Explore" on the popover or double-click the box to zoom inside.',
       refs: ['web/components/PreviewCanvas.tsx'],
     },
     Storage: {
       label: 'Browser Storage',
       term: 'Browser IndexedDB (mfhmfa-db)',
       summary:
-        'Saves your projects, folders, diagrams, and up to 5 recent versions per file directly in your browser.',
-      example:
-        'Keeps v1..v5 locally so you can preview or restore earlier versions from the tab bar.',
+        'Saves your projects, folders, and interactive diagrams directly in your browser with zero server-side storage.',
+      example: 'Persists automatically in IndexedDB across browser restarts.',
       whatIf:
         'Clearing browser site data removes local diagrams unless you exported them as PNG or SVG.',
       refs: ['web/services/workspacePersistence.ts'],
     },
   },
 };
-
-export const NEW_TAB_STARTER = `flowchart LR
-  Start(["Start"]) --> Step["Process"] --> Done(["Done"])`;

@@ -1,49 +1,39 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { findFileWithProject, getVersionRecord } from '../../src/shared/vfs';
+import { findFileWithProject, getHeadVersion } from '../../src/shared/vfs';
 import { getCachedClientRender, renderMermaidClient } from '../services/mermaidRenderer';
 import { studioApi } from '../services/studioClient';
 import { useUiStore } from '../store/uiStore';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
 /**
- * Unified, race-safe client Mermaid render + syntax diagnostic pipeline.
- * Replaces the old split `activateStateAndRender` + `useEffect` dual path
- * so switching tabs, restoring history, theme toggles, and CodeMirror edits
- * all share one consistent render & `parseError` flow.
+ * Race-safe client Mermaid render + syntax diagnostic pipeline.
  */
 export function useMermaidRenderSync(enabled = true): void {
   const hydrated = useWorkspaceStore((s) => s.hydrated);
   const workspace = useWorkspaceStore((s) => s.workspace);
-  const selectedVersion = useWorkspaceStore((s) => s.selectedVersion);
   const activeEntry = useMemo(
     () => findFileWithProject(workspace, workspace.activeFileId),
     [workspace]
   );
   const appearanceMode = useUiStore((s) => s.appearanceMode);
-  const stageMode = useUiStore((s) => s.stageMode);
 
   const activeFile = activeEntry?.file ?? null;
   const activeFileId = activeFile?.id ?? null;
-  const activeVerRecord = activeFile ? getVersionRecord(activeFile, selectedVersion) : null;
-  const code = activeVerRecord?.code ?? '';
+  const headRecord = activeFile ? getHeadVersion(activeFile) : null;
+  const code = headRecord?.code ?? '';
+  const verNum = headRecord?.version ?? 1;
 
   const renderSeqRef = useRef(0);
-  const prevFileKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled || !hydrated) return undefined;
 
     if (!activeFile) {
-      prevFileKeyRef.current = null;
       useUiStore.getState().clearRenderStage();
       return undefined;
     }
 
-    const verNum = activeVerRecord?.version ?? activeFile.currentVersion;
-    const fileKey = `${activeFileId}::${selectedVersion ?? 'head'}::${appearanceMode}`;
     const renderedKey = `${activeFileId}:v${verNum}:${appearanceMode}:${code.length}`;
-    const isFileOrThemeSwitch = prevFileKeyRef.current !== fileKey;
-    prevFileKeyRef.current = fileKey;
 
     if (!code.trim()) {
       useUiStore.getState().setRenderError({
@@ -53,7 +43,7 @@ export function useMermaidRenderSync(enabled = true): void {
         column: 1,
         snippet: null,
         expected: null,
-        suggestion: 'Start with `flowchart TD`, `sequenceDiagram`, or `erDiagram`.',
+        suggestion: null,
       });
       return undefined;
     }
@@ -70,8 +60,6 @@ export function useMermaidRenderSync(enabled = true): void {
     }
 
     const seq = ++renderSeqRef.current;
-    // Render immediately when switching files/versions/themes; debounce 90ms while typing in Code view
-    const delayMs = isFileOrThemeSwitch || stageMode === 'preview' ? 0 : 90;
 
     const runRender = async () => {
       if (seq !== renderSeqRef.current) return;
@@ -110,27 +98,11 @@ export function useMermaidRenderSync(enabled = true): void {
         column: null,
         snippet: null,
         expected: null,
-        suggestion: 'Wrap special characters inside double quotes ["..."].',
+        suggestion: null,
       });
     };
 
-    if (delayMs === 0) {
-      void runRender();
-      return undefined;
-    }
-
-    const timer = setTimeout(() => {
-      void runRender();
-    }, delayMs);
-    return () => clearTimeout(timer);
-  }, [
-    enabled,
-    hydrated,
-    activeFile,
-    activeFileId,
-    selectedVersion,
-    code,
-    appearanceMode,
-    stageMode,
-  ]);
+    void runRender();
+    return undefined;
+  }, [enabled, hydrated, activeFile, activeFileId, verNum, code, appearanceMode]);
 }
