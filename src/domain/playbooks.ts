@@ -66,21 +66,40 @@ Turn dense paper notation into a clear visual flow grounded in real tensor/data 
 4. **Limits & Tradeoffs (\`node.whatIf\` & \`step.check\`)**:
    - Note assumptions or where the method struggles in \`node.whatIf\`, and add 1 \`step.check\` on the main insight.`,
 
-  codebase: `# Learning Playbook: \`codebase\` (Repository Architecture, Execution Flow, or PR)
+  codebase: `# Learning Playbook: \`codebase\` (How Code Actually Works)
 
 ## Goal
-Help a developer who didn't write this code trace a real request, state update, and failure case through the repo.
+Explain this code the way a sharp, honest teammate would at a whiteboard: cut through wrapper layers, show where the real work and state live, and tell a clear story that is genuinely interesting to read.
 
-## Teaching Steps
-1. **Follow One Action, Not a Folder List**:
-   - Show how **one real request or action** enters the code, changes data, updates state, and triggers side effects.
-2. **Plain Roles on Boxes, Code Paths on Cards (\`guide.nodes\`)**:
-   - Keep box labels to 2–5 plain words (\`"SSE Relay"\`, \`"5-Version History"\`).
-   - Put the real class or function name in \`node.term\` (\`"StatelessWorkspaceRelay"\`), exact repo paths in \`node.refs\` (\`["src/infrastructure/ephemeral/workspaceRelay.ts"]\`), real payload sizes/timings in \`node.example\`, and timeout/crash behavior in \`node.whatIf\`.
-3. **Overview First, Details in Sub-Views (\`childPath\` / \`parentPath\`)**:
-   - Start with a 4–6 box \`overview.mmd\`. Put subsystem details into child \`.mmd\` views linked via \`node.childPath\` (and set \`guide.parentPath\` on children).
-4. **Real Runtime Values (\`guide.steps\` / \`guide.flows\`)**:
-   - Show the actual runtime payload or state at each hop in \`step.trace\`. Add a second flow in \`guide.flows\` when comparing *Normal Path* vs. *Error / Retry Path*.`,
+## 1. Cut Through Over-Engineering & Vibe-Coded Mess First
+Real repos are rarely clean textbook diagrams. Before drawing:
+- **Trace real calls, never trust names**: Follow actual imports, call sites, and state writes. A file named \`helper.ts\` may hold the core logic, while a fancy \`Manager\` class may be dead code.
+- **Collapse pass-through wrappers**: If \`Route -> Controller -> Service -> Helper\` just forwards arguments unchanged, do **not** draw 4 boxes. Draw **1 box** for the real job and note in \`summary\` which wrapper files just pass it through.
+- **Skip dead code, flag traps**: Only put code that actually runs on the map. If leftover files or duplicate state stores sit nearby, warn the reader in \`summary\` or \`whatIf\` so they don't waste time reading dead paths.
+- **Be candid, never flattering (and never snarky)**: Don't dress up accidental complexity as "clean modular orchestration." If one 500-line component fetches data, mutates global state, and renders UI all at once, say that plainly.
+
+## 2. Write a Connected Story, Not Log Lines (\`guide.gist\` & \`guide.steps\`)
+In Studio, \`gist\` and \`steps\` read top-to-bottom as a short article beside the diagram:
+- **Lead with the hook (\`gist\`)**: In 1–2 plain sentences, state what user action or job this code handles and the **one key thing to know** about how it is wired (including any twist or shortcut).
+- **Follow one real trigger end-to-end (\`steps\`)**: Pick a concrete action (clicking "Save", opening a page, receiving a webhook) and connect each step with cause and effect (*"Before touching the database, it checks…", "Here is the catch…"*). Do not write robotic fragments (*"Validates input. Calls service. Updates store."*).
+- **Keep code symbols out of prose**: \`CamelCaseNames\` and \`file/paths.ts\` mid-sentence make text uncomfortable to read. Write sentences in plain English, and keep exact identifiers in \`node.term\`, data shapes in \`step.trace\`, and file paths in \`node.refs\`.
+
+### Tone Check
+- **Stiff AI prose**: *"The SyncOrchestrator seamlessly coordinates state hydration with the PersistenceAdapter to ensure consistency."*
+- **Natural human prose**: *"When you open the page, it loads your saved diagrams from IndexedDB before opening the live stream, so incoming updates never overwrite local history."*
+
+## 3. Put Real Code Anchors & Landmines on Box Cards (\`guide.nodes\`)
+- **Box label**: 2–5 plain words for the real job (\`"Load Saved Diagrams"\`, \`"Check Session Cookie"\`).
+- **\`term\`**: Exact function, class, hook, or store name (\`"loadWorkspaceFromIndexedDb()"\`).
+- **\`summary\`**: 1–2 natural sentences on what actually happens here (note collapsed wrappers if any).
+- **\`example\`**: Concrete runtime input -> output (\`"legacy v3 JSON -> migrated v4 WorkspaceState"\`).
+- **\`whatIf\`**: **Real fragility in *this* code**: swallowed errors, race windows, duplicate state that can drift, or hidden side effects. Skip generic filler like *"fails if the network is down."*
+- **\`refs\`**: Exact repo file paths (\`"web/services/workspacePersistence.ts"\`) so the reader can open the source.
+
+## 4. Structure Views Cleanly (\`flows\`, \`check\`, \`childPath\`)
+- **\`flows\`**: Add a second scenario tab when contrasting two paths makes the code click faster (e.g. \`"Normal Save"\` vs. \`"Double-Click / Stale State"\`).
+- **\`check\`**: Add 1 quick prediction question on the trickiest or most surprising step.
+- **\`childPath\` / \`parentPath\`**: Keep \`overview.mmd\` to 4–6 boxes showing the true runtime backbone; move genuinely complex subsystems into linked child \`.mmd\` views (setting \`guide.parentPath\` on each child).`,
 
   bug: `# Learning Playbook: \`bug\` (Root-Cause Analysis, Race Condition, or Incident)
 

@@ -676,6 +676,11 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       expect(doc).toContain('Mermaid Syntax Essentials');
       expect(doc).toContain('Sequence Diagram');
       expect(doc).toContain('selected box `SRAM`');
+      if (mode === 'codebase') {
+        expect(doc).toContain('Collapse pass-through wrappers');
+        expect(doc).toContain('Tone Check');
+        expect(doc).toContain('Keep code symbols out of prose');
+      }
     }
 
     const richGuide = sanitizeComprehensionGuide({

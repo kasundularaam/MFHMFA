@@ -165,7 +165,7 @@ export const WalkthroughStepToolSchema = z.object({
   caption: z
     .string()
     .describe(
-      '1–2 short, natural sentences explaining what happens here in plain everyday words (no AI filler or buzzwords).'
+      '1–2 natural sentences explaining what happens and why in plain everyday English (connect to the previous step; no log-line fragments, CamelCase soup, or AI filler).'
     ),
   focusNodes: z
     .array(z.string())
@@ -207,7 +207,7 @@ export const NodeDetailToolSchema = z.object({
   summary: z
     .string()
     .describe(
-      '1–2 short, direct sentences explaining what happens at this box in plain human words.'
+      '1–2 natural sentences explaining what actually happens at this box in plain human words (keep code identifiers in `term` and `refs`).'
     ),
   example: z
     .string()
@@ -216,7 +216,9 @@ export const NodeDetailToolSchema = z.object({
   whatIf: z
     .string()
     .optional()
-    .describe('What breaks, degrades, or happens at boundary/failure conditions.'),
+    .describe(
+      'Concrete failure, race condition, or edge case that actually breaks here (skip generic filler like "fails if the server is down").'
+    ),
   refs: z
     .array(z.string())
     .optional()
@@ -235,7 +237,7 @@ export const ComprehensionGuideToolSchema = z
       .string()
       .optional()
       .describe(
-        '1–2 plain sentences stating what problem this solves and how it works (direct human tone, no slogans).'
+        '1–2 natural sentences stating what this handles and the main thing to know about how it works (direct human tone, no slogans or AI filler).'
       ),
     parentPath: z
       .string()
