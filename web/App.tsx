@@ -1,3 +1,4 @@
+import { Files, Workflow } from 'lucide-react';
 import {
   lazy,
   Suspense,
@@ -11,18 +12,18 @@ import {
 import { resolveGuideFlows } from '../src/shared/comprehension';
 import { slugify } from '../src/shared/strings';
 import {
-  extractNodeLabelFromMermaid,
   findFileWithProject,
   GENERAL_PROJECT_KEY,
   getHeadVersion,
   resolveProjectGraphHierarchy,
   toProjectKey,
   type GraphBreadcrumbHop,
-  type ParentComponentBranch,
   type VfsGraphFile,
 } from '../src/shared/vfs';
 import { normalizeRelativeGraphPath } from '../src/shared/vfsPath';
+import { ActivityBar, type ActivityBarItem } from './components/ActivityBar';
 import { ExplorerSidebar } from './components/ExplorerSidebar';
+import { GraphPanel } from './components/GraphPanel';
 import { MobileInfoPage } from './components/MobileInfoPage';
 import { PreviewCanvas } from './components/PreviewCanvas';
 import { StoryPanel } from './components/StoryPanel';
@@ -30,10 +31,21 @@ import { TopBar } from './components/TopBar';
 import { useIsMobileViewport } from './hooks/useIsMobileViewport';
 import { useMermaidRenderSync } from './hooks/useMermaidRenderSync';
 import { useStudioShortcuts } from './hooks/useStudioShortcuts';
+import { useViewportWidth } from './hooks/useViewportWidth';
 import { useWorkspaceRelay } from './hooks/useWorkspaceRelay';
 import { studioApi } from './services/studioClient';
-import { useUiStore, type CanvasTransitionKind } from './store/uiStore';
+import {
+  useUiStore,
+  type CanvasTransitionKind,
+  type LeftToolId,
+  type RightToolId,
+} from './store/uiStore';
 import { useWorkspaceStore } from './store/workspaceStore';
+import {
+  clampLeftPanelResize,
+  clampRightPanelResize,
+  computeIdePanelWidths,
+} from './utils/ideLayout';
 
 const DocsView = lazy(() =>
   import('./components/DocsView').then((m) => ({ default: m.DocsView }))
@@ -85,6 +97,7 @@ function computeViewportFitZoom(
 
 export function App() {
   const isMobile = useIsMobileViewport();
+  const screenWidth = useViewportWidth();
   useWorkspaceRelay(!isMobile);
   useMermaidRenderSync(!isMobile);
 
@@ -109,12 +122,12 @@ export function App() {
   const appearanceMode = useUiStore((s) => s.appearanceMode);
   const page = useUiStore((s) => s.page);
   const serverStatus = useUiStore((s) => s.serverStatus);
-  const storyWidth = useUiStore((s) => s.storyWidth);
-  const storyCollapsed = useUiStore((s) => s.storyCollapsed);
+  const activeRightTool = useUiStore((s) => s.activeRightTool);
+  const leftPanelFraction = useUiStore((s) => s.leftPanelFraction);
+  const rightPanelFraction = useUiStore((s) => s.rightPanelFraction);
   const activeFlowId = useUiStore((s) => s.activeFlowId);
   const activeStepIndex = useUiStore((s) => s.activeStepIndex);
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
-  const nodeAnchorPoint = useUiStore((s) => s.nodeAnchorPoint);
   const drillStack = useUiStore((s) => s.drillStack);
   const renderedSvg = useUiStore((s) => s.renderedSvg);
   const renderedKey = useUiStore((s) => s.renderedKey);
@@ -128,8 +141,8 @@ export function App() {
 
   const toggleAppearanceMode = useUiStore((s) => s.toggleAppearanceMode);
   const setPage = useUiStore((s) => s.setPage);
-  const resizeStory = useUiStore((s) => s.resizeStory);
-  const toggleStoryCollapsed = useUiStore((s) => s.toggleStoryCollapsed);
+  const toggleRightTool = useUiStore((s) => s.toggleRightTool);
+  const setPanelFractions = useUiStore((s) => s.setPanelFractions);
   const setActiveFlowId = useUiStore((s) => s.setActiveFlowId);
   const setActiveStepIndex = useUiStore((s) => s.setActiveStepIndex);
   const selectNode = useUiStore((s) => s.selectNode);
@@ -139,6 +152,58 @@ export function App() {
   const markViewportFitted = useUiStore((s) => s.markViewportFitted);
   const triggerFitCanvas = useUiStore((s) => s.triggerFitCanvas);
   const notifyToast = useUiStore((s) => s.notifyToast);
+
+  const rightGraphOpen = activeRightTool === 'graph';
+
+  const panelWidths = useMemo(
+    () =>
+      computeIdePanelWidths({
+        screenWidth,
+        leftOpen: workspace.sidebarOpen,
+        rightOpen: rightGraphOpen,
+        leftFraction: leftPanelFraction,
+        rightFraction: rightPanelFraction,
+      }),
+    [screenWidth, workspace.sidebarOpen, rightGraphOpen, leftPanelFraction, rightPanelFraction]
+  );
+
+  const frozenRightWidthRef = useRef(panelWidths.rightWidth);
+  const frozenLeftWidthRef = useRef(panelWidths.leftWidth);
+
+  const handleResizeLeftPanel = useCallback(
+    (desiredLeftWidth: number) => {
+      const clamped = clampLeftPanelResize({
+        screenWidth,
+        desiredLeftWidth,
+        rightOpen: rightGraphOpen,
+        frozenRightWidth: frozenRightWidthRef.current,
+      });
+      setPanelFractions({
+        leftFraction: clamped.leftFraction,
+        ...(clamped.rightFraction !== undefined
+          ? { rightFraction: clamped.rightFraction }
+          : {}),
+      });
+      resizeSidebar(clamped.leftWidth);
+    },
+    [resizeSidebar, rightGraphOpen, screenWidth, setPanelFractions]
+  );
+
+  const handleResizeRightPanel = useCallback(
+    (desiredRightWidth: number) => {
+      const clamped = clampRightPanelResize({
+        screenWidth,
+        desiredRightWidth,
+        leftOpen: workspace.sidebarOpen,
+        frozenLeftWidth: frozenLeftWidthRef.current,
+      });
+      setPanelFractions({
+        rightFraction: clamped.rightFraction,
+        ...(clamped.leftFraction !== undefined ? { leftFraction: clamped.leftFraction } : {}),
+      });
+    },
+    [screenWidth, setPanelFractions, workspace.sidebarOpen]
+  );
 
   const activeEntry = useMemo(
     () => findFileWithProject(workspace, workspace.activeFileId),
@@ -178,6 +243,30 @@ export function App() {
     }
     return counts;
   }, [connectedAgents]);
+
+  const leftActivityItems: ActivityBarItem<LeftToolId>[] = useMemo(
+    () => [
+      {
+        id: 'explorer',
+        label: 'Explorer',
+        shortcutHint: 'Ctrl+B',
+        icon: <Files size={18} />,
+        hasLiveIndicator: connectedAgents.length > 0,
+      },
+    ],
+    [connectedAgents.length]
+  );
+
+  const rightActivityItems: ActivityBarItem<RightToolId>[] = useMemo(
+    () => [
+      {
+        id: 'graph',
+        label: 'Graph',
+        icon: <Workflow size={18} />,
+      },
+    ],
+    []
+  );
 
   const flows = useMemo(() => resolveGuideFlows(activeGuide), [activeGuide]);
   const currentFlow = useMemo(
@@ -255,43 +344,6 @@ export function App() {
     return fallbackHops;
   }, [activeFile, projectHierarchy, ancestorChain]);
 
-  const childBranches: ParentComponentBranch[] = useMemo(() => {
-    if (!activeFile || !activeProject) return [];
-    const list: ParentComponentBranch[] = [];
-    const seenIds = new Set<string>();
-
-    if (activeGuide?.nodes) {
-      for (const [nodeId, detail] of Object.entries(activeGuide.nodes)) {
-        if (!detail.childPath) continue;
-        try {
-          const norm = normalizeRelativeGraphPath(detail.childPath);
-          const childFile = activeProject.files.find((f) => f.path === norm);
-          if (childFile && childFile.id !== activeFile.id && !seenIds.has(childFile.id)) {
-            seenIds.add(childFile.id);
-            const componentLabel =
-              detail.label?.trim() || extractNodeLabelFromMermaid(code, nodeId);
-            list.push({ nodeId, componentLabel, childFile });
-          }
-        } catch {
-          // ignore invalid childPath
-        }
-      }
-    }
-
-    for (const childFile of projectHierarchy?.childrenByFileId.get(activeFile.id) ?? []) {
-      if (!seenIds.has(childFile.id)) {
-        seenIds.add(childFile.id);
-        list.push({
-          nodeId: childFile.id,
-          componentLabel: childFile.title,
-          childFile,
-        });
-      }
-    }
-
-    return list;
-  }, [activeFile, activeGuide, activeProject, code, projectHierarchy]);
-
   const handleJumpToAncestor = useCallback(
     (ancestorFileId: string) => {
       popDrillToAncestor(ancestorFileId);
@@ -326,17 +378,13 @@ export function App() {
     prevFileIdRef.current = activeFileId;
   }, [activeFileId, ancestorChain, projectHierarchy]);
 
-  const hasStoryContent = Boolean(
-    activeFile && (activeGuide?.gist || flows.length > 0 || childBranches.length > 0)
-  );
-  const showStoryPanel = Boolean(activeFile && hasStoryContent && !storyCollapsed);
-
-  // Fit diagram into the available canvas height & width on initial render AND keep fitted
-  // smoothly across window/sidebar/story resizes until the user manually zooms or pans!
+  // Fit diagram into the available Graph panel canvas on initial render / reopen AND keep fitted
+  // smoothly across window/panel resizes until the user manually zooms or pans!
   useLayoutEffect(() => {
     if (
       isMobile ||
       page !== 'studio' ||
+      !rightGraphOpen ||
       !activeFile ||
       !renderedSvg ||
       renderedKey !== expectedRenderedKey
@@ -347,7 +395,7 @@ export function App() {
     const vp = viewportRef.current;
     if (!vp) return undefined;
 
-    if (needsViewportFit) {
+    if (needsViewportFit || !userCameraAdjusted) {
       const fit = computeViewportFitZoom(vp, dimensions);
       if (fit !== null) {
         markViewportFitted(fit);
@@ -370,6 +418,7 @@ export function App() {
   }, [
     isMobile,
     page,
+    rightGraphOpen,
     activeFile,
     renderedSvg,
     renderedKey,
@@ -377,7 +426,6 @@ export function App() {
     dimensions,
     needsViewportFit,
     userCameraAdjusted,
-    showStoryPanel,
     workspace.sidebarOpen,
     markViewportFitted,
   ]);
@@ -460,11 +508,8 @@ export function App() {
         isMobile={isMobile}
         page={page}
         onChangePage={setPage}
-        sidebarOpen={workspace.sidebarOpen}
-        onToggleSidebar={toggleSidebar}
         appearanceMode={appearanceMode}
         onToggleAppearance={toggleAppearanceMode}
-        connectedAgentCount={connectedAgents.length}
         activeBreadcrumb={activeBreadcrumb}
         onBrandClick={() => {
           if (page === 'docs') setPage('studio');
@@ -478,16 +523,27 @@ export function App() {
         <MobileInfoPage repoUrl={serverStatus?.repoUrl} />
       ) : page === 'studio' ? (
         <div className="workspace-body">
+          <ActivityBar
+            side="left"
+            items={leftActivityItems}
+            activeId={workspace.sidebarOpen ? 'explorer' : null}
+            onToggle={() => toggleSidebar()}
+          />
+
           {workspace.sidebarOpen && (
             <ExplorerSidebar
-              width={workspace.sidebarWidth}
+              width={panelWidths.leftWidth}
+              minWidth={panelWidths.minPanelWidth}
               projects={workspace.projects}
               activeFileId={workspace.activeFileId}
               activeProjectKey={activeProject?.projectKey ?? null}
               workspaceId={workspace.workspaceId}
               connectedAgents={connectedAgents}
               liveProjectCounts={liveProjectCounts}
-              onResizeWidth={resizeSidebar}
+              onResizeStart={() => {
+                frozenRightWidthRef.current = panelWidths.rightWidth;
+              }}
+              onResizeWidth={handleResizeLeftPanel}
               onToggleProjectExpanded={toggleProjectExpanded}
               onOpenFile={(fileId) => {
                 clearDrillStack();
@@ -502,54 +558,61 @@ export function App() {
             />
           )}
 
-          <main className="learning-stage">
-            {showStoryPanel && activeFile && (
-              <StoryPanel
-                chartKey={chartKey}
-                activeFile={activeFile}
-                guide={activeGuide}
-                flows={flows}
-                currentFlow={currentFlow}
-                activeStepIndex={activeStepIndex}
-                breadcrumbHops={breadcrumbHops}
-                childBranches={childBranches}
-                width={storyWidth}
-                onResizeWidth={resizeStory}
-                onCollapse={toggleStoryCollapsed}
-                onChangeFlowId={setActiveFlowId}
-                onChangeStepIndex={(next) => setActiveStepIndex(next)}
-                onJumpToAncestor={handleJumpToAncestor}
-                onDrillToPath={handleDrillToPath}
-              />
-            )}
+          <StoryPanel
+            chartKey={chartKey}
+            activeFile={activeFile}
+            minWidth={panelWidths.minPanelWidth}
+            guide={activeGuide}
+            flows={flows}
+            currentFlow={currentFlow}
+            activeStepIndex={activeStepIndex}
+            breadcrumbHops={breadcrumbHops}
+            graphPanelOpen={rightGraphOpen}
+            onOpenGraphPanel={() => {
+              if (!rightGraphOpen) toggleRightTool('graph');
+            }}
+            onChangeFlowId={setActiveFlowId}
+            onChangeStepIndex={(next) => setActiveStepIndex(next)}
+            onJumpToAncestor={handleJumpToAncestor}
+          />
 
-            <PreviewCanvas
-              viewportRef={viewportRef}
-              chartKey={chartKey}
-              renderedSvg={renderedSvg}
-              hasActiveFile={Boolean(activeFile)}
-              activeProject={activeProject}
-              parseError={parseError}
-              guide={activeGuide}
-              activeFlowId={activeFlowId}
-              activeStepIndex={activeStepIndex}
-              selectedNodeId={selectedNodeId}
-              nodeAnchorPoint={nodeAnchorPoint}
-              onSelectNode={selectNode}
-              breadcrumbHops={breadcrumbHops}
-              showInlineBreadcrumb={!showStoryPanel}
-              canReopenStory={Boolean(activeFile && hasStoryContent && storyCollapsed)}
-              onReopenStory={toggleStoryCollapsed}
-              transitionKind={transitionKind}
-              onJumpToAncestor={handleJumpToAncestor}
-              onDrillToPath={handleDrillToPath}
-              onFitCanvas={handleFitCanvas}
-              onCopyRef={(fp) => {
-                navigator.clipboard.writeText(fp);
-                notifyToast(`Copied ${fp}`);
+          {rightGraphOpen && (
+            <GraphPanel
+              width={panelWidths.rightWidth}
+              minWidth={panelWidths.minPanelWidth}
+              onResizeStart={() => {
+                frozenLeftWidthRef.current = panelWidths.leftWidth;
               }}
-            />
-          </main>
+              onResizeWidth={handleResizeRightPanel}
+            >
+              <PreviewCanvas
+                viewportRef={viewportRef}
+                chartKey={chartKey}
+                renderedSvg={renderedSvg}
+                hasActiveFile={Boolean(activeFile)}
+                parseError={parseError}
+                guide={activeGuide}
+                activeFlowId={activeFlowId}
+                activeStepIndex={activeStepIndex}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={selectNode}
+                transitionKind={transitionKind}
+                onDrillToPath={handleDrillToPath}
+                onFitCanvas={handleFitCanvas}
+                onCopyRef={(fp) => {
+                  navigator.clipboard.writeText(fp);
+                  notifyToast(`Copied ${fp}`);
+                }}
+              />
+            </GraphPanel>
+          )}
+
+          <ActivityBar
+            side="right"
+            items={rightActivityItems}
+            activeId={activeRightTool}
+            onToggle={toggleRightTool}
+          />
         </div>
       ) : (
         <Suspense fallback={null}>

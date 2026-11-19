@@ -24,12 +24,18 @@ export function useDragResize(
 
     const startX = e.clientX;
     const startY = e.clientY;
+    const prevCursor = document.body.style.cursor;
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
 
     const onMove = (ev: MouseEvent) => {
       callbackRef.current(ev.clientX - startX, ev.clientY - startY);
     };
 
     const onUp = () => {
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevUserSelect;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       cleanupRef.current = null;

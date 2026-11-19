@@ -1,24 +1,7 @@
-import {
-  AlertCircle,
-  ArrowLeft,
-  ChevronRight,
-  Maximize2,
-  Minus,
-  PanelLeftOpen,
-  Plus,
-} from 'lucide-react';
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type RefObject,
-} from 'react';
+import { AlertCircle, Maximize2, Minus, Plus } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { resolveGuideFlows } from '../../src/shared/comprehension';
 import type { DiagramComprehensionGuide, ParseErrorDetail } from '../../src/shared/types';
-import type { GraphBreadcrumbHop, VfsProjectRoot } from '../../src/shared/vfs';
-import { graphTitleFromPath, normalizeRelativeGraphPath } from '../../src/shared/vfsPath';
 import { useCanvasViewport } from '../hooks/useCanvasViewport';
 import { useUiStore, type AnchorPoint, type CanvasTransitionKind } from '../store/uiStore';
 import { applySvgComprehensionState } from '../utils/svgComprehension';
@@ -29,20 +12,13 @@ interface PreviewCanvasProps {
   chartKey: string;
   renderedSvg: string;
   hasActiveFile: boolean;
-  activeProject: VfsProjectRoot | null;
   parseError: ParseErrorDetail | null;
   guide?: DiagramComprehensionGuide;
   activeFlowId: string | null;
   activeStepIndex: number | null;
   selectedNodeId: string | null;
-  nodeAnchorPoint: AnchorPoint | null;
   onSelectNode: (nodeId: string | null, anchorPoint?: AnchorPoint | null) => void;
-  breadcrumbHops: GraphBreadcrumbHop[];
-  showInlineBreadcrumb: boolean;
-  canReopenStory: boolean;
-  onReopenStory: () => void;
   transitionKind: CanvasTransitionKind;
-  onJumpToAncestor: (fileId: string) => void;
   onDrillToPath: (targetPath: string) => void;
   onFitCanvas: () => void;
   onCopyRef: (refText: string) => void;
@@ -63,20 +39,13 @@ export function PreviewCanvas({
   chartKey,
   renderedSvg,
   hasActiveFile,
-  activeProject,
   parseError,
   guide,
   activeFlowId,
   activeStepIndex,
   selectedNodeId,
-  nodeAnchorPoint,
   onSelectNode,
-  breadcrumbHops,
-  showInlineBreadcrumb,
-  canReopenStory,
-  onReopenStory,
   transitionKind,
-  onJumpToAncestor,
   onDrillToPath,
   onFitCanvas,
   onCopyRef,
@@ -186,26 +155,6 @@ export function PreviewCanvas({
     return nodeLabels.get(nodeId) || nodeId;
   };
 
-  const resolveChildTitle = (rawChildPath?: string): string | null => {
-    if (!rawChildPath || !activeProject) return null;
-    try {
-      const norm = normalizeRelativeGraphPath(rawChildPath);
-      const found = activeProject.files.find((f) => f.path === norm);
-      return found?.title?.trim() || graphTitleFromPath(norm);
-    } catch {
-      return null;
-    }
-  };
-
-  const handleNudgePan = useCallback(
-    (delta: { dx: number; dy: number }) => {
-      setCameraGlide(true);
-      const curPan = useUiStore.getState().pan;
-      setPan({ x: curPan.x + delta.dx, y: curPan.y + delta.dy });
-    },
-    [setPan]
-  );
-
   const stepZoom = (factor: number) => {
     markUserCameraAdjusted();
     setCameraGlide(true);
@@ -252,70 +201,6 @@ export function PreviewCanvas({
           }
         }}
       >
-        {(canReopenStory || (showInlineBreadcrumb && breadcrumbHops.length > 0)) && (
-          <div
-            className="canvas-top-overlay"
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            {canReopenStory && (
-              <button
-                type="button"
-                className="canvas-overlay-pill"
-                onClick={onReopenStory}
-                title="Show reading guide"
-              >
-                <PanelLeftOpen size={14} />
-                <span>Guide</span>
-              </button>
-            )}
-
-            {showInlineBreadcrumb && breadcrumbHops.length > 0 && (
-              <nav
-                className="canvas-inline-breadcrumb"
-                data-testid="canvas-breadcrumb"
-                aria-label="Diagram breadcrumb"
-              >
-                <button
-                  type="button"
-                  className="crumb-back-btn"
-                  onClick={() =>
-                    onJumpToAncestor(breadcrumbHops[breadcrumbHops.length - 1]!.parentFile.id)
-                  }
-                  aria-label="Back to parent view"
-                >
-                  <ArrowLeft size={13} />
-                </button>
-                {breadcrumbHops.map((hop) => {
-                  const parentName =
-                    hop.parentFile.title?.trim() || graphTitleFromPath(hop.parentFile.path);
-                  return (
-                    <span
-                      key={`${hop.parentFile.id}-${hop.childFile.id}`}
-                      className="crumb-hop-group"
-                    >
-                      <button
-                        type="button"
-                        className="crumb-link"
-                        onClick={() => onJumpToAncestor(hop.parentFile.id)}
-                      >
-                        {parentName}
-                      </button>
-                      <ChevronRight size={13} className="crumb-sep" />
-                    </span>
-                  );
-                })}
-                <span className="crumb-current">
-                  {breadcrumbHops[breadcrumbHops.length - 1]!.childFile.title?.trim() ||
-                    graphTitleFromPath(
-                      breadcrumbHops[breadcrumbHops.length - 1]!.childFile.path
-                    )}
-                </span>
-              </nav>
-            )}
-          </div>
-        )}
-
         {outgoingLayer && (
           <div
             className={`canvas-stage canvas-layer-out mode-${outgoingLayer.mode}`}
@@ -340,9 +225,7 @@ export function PreviewCanvas({
           />
         ) : !hasActiveFile ? (
           <div className="empty-agent-stage">
-            <div className="empty-stage-watermark">
-              Ask your AI agent to explain a concept, paper, codebase, bug, or design tradeoff
-            </div>
+            <div className="empty-stage-watermark">No diagram open</div>
           </div>
         ) : null}
 
@@ -363,16 +246,9 @@ export function PreviewCanvas({
 
         {selectedNodeId && selectedDetail && (
           <NodePopover
-            viewportRef={viewportRef}
-            stageRef={activeStageRef}
             selectedNodeId={selectedNodeId}
             detail={selectedDetail}
             displayLabel={resolveDisplayLabel(selectedNodeId)}
-            childTitle={resolveChildTitle(selectedDetail.childPath)}
-            anchorPoint={nodeAnchorPoint}
-            zoom={zoom}
-            pan={pan}
-            onNudgePan={handleNudgePan}
             onClose={() => onSelectNode(null)}
             onDrillToPath={onDrillToPath}
             onCopyRef={onCopyRef}

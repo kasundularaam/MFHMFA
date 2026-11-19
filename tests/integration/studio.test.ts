@@ -786,6 +786,117 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         await wsPage.click('.brand-lockup');
         await wsPage.waitForSelector('.explorer-sidebar');
 
+        // 8. Verify 5-zone VS Code / IntelliJ IDE layout, 1/8th screen min-width clamping & hidden scrollbars
+        const ideAudit = await wsPage.evaluate(() => {
+          const vw = window.innerWidth;
+          const minEighth = Math.floor(vw / 8);
+          const leftBar = document
+            .querySelector('[data-testid="left-activity-bar"]')!
+            .getBoundingClientRect();
+          const explorer = document.querySelector('.explorer-sidebar')!.getBoundingClientRect();
+          const story = document.querySelector('.story-panel')!.getBoundingClientRect();
+          const graph = document
+            .querySelector('[data-testid="graph-panel"]')!
+            .getBoundingClientRect();
+          const rightBar = document
+            .querySelector('[data-testid="right-activity-bar"]')!
+            .getBoundingClientRect();
+          const treeScrollbar = getComputedStyle(
+            document.querySelector('.explorer-tree')!
+          ).scrollbarWidth;
+          const storyScrollbar = getComputedStyle(
+            document.querySelector('.story-scroll-container')!
+          ).scrollbarWidth;
+
+          return {
+            topbarLeftButtonsOnStudio: document.querySelectorAll('.topbar-left button').length,
+            storyCollapseButtons: document.querySelectorAll('.story-collapse-btn').length,
+            leftBarFixed: Math.round(leftBar.width) === 42,
+            rightBarFixed: Math.round(rightBar.width) === 42,
+            orderedLeftToRight:
+              leftBar.right <= explorer.left + 1 &&
+              explorer.right <= story.left + 1 &&
+              story.right <= graph.left + 1 &&
+              graph.right <= rightBar.left + 1,
+            allPanelsMeetMinEighth:
+              Math.round(explorer.width) >= minEighth &&
+              Math.round(story.width) >= minEighth &&
+              Math.round(graph.width) >= minEighth,
+            scrollbarsHidden: treeScrollbar === 'none' && storyScrollbar === 'none',
+          };
+        });
+        expect(ideAudit).toEqual({
+          topbarLeftButtonsOnStudio: 1,
+          storyCollapseButtons: 0,
+          leftBarFixed: true,
+          rightBarFixed: true,
+          orderedLeftToRight: true,
+          allPanelsMeetMinEighth: true,
+          scrollbarsHidden: true,
+        });
+
+        // Collapse & reopen Left Explorer and Right Graph panels while Center Story stays open
+        await wsPage.click('button[aria-label="Toggle Explorer"]');
+        await wsPage.waitForFunction(
+          () => document.querySelector('.explorer-sidebar') === null,
+          {
+            timeout: 3_000,
+          }
+        );
+        expect(await wsPage.$('.story-panel')).not.toBeNull();
+
+        await wsPage.click('button[aria-label="Toggle Graph"]');
+        await wsPage.waitForFunction(
+          () => document.querySelector('[data-testid="graph-panel"]') === null,
+          { timeout: 3_000 }
+        );
+        expect(await wsPage.$('.story-panel')).not.toBeNull();
+
+        await wsPage.click('button[aria-label="Toggle Explorer"]');
+        await wsPage.click('button[aria-label="Toggle Graph"]');
+        await wsPage.waitForSelector('.explorer-sidebar');
+        await wsPage.waitForSelector('[data-testid="graph-panel"]');
+
+        // Drag Left resizer toward 0px and Right resizer across screen -> verify 1/8th min-width clamp!
+        const clampAudit = await wsPage.evaluate(async () => {
+          const minEighth = Math.floor(window.innerWidth / 8);
+
+          const leftSash = document.querySelector('.sidebar-resizer')!;
+          const leftRect = leftSash.getBoundingClientRect();
+          leftSash.dispatchEvent(
+            new MouseEvent('mousedown', { clientX: leftRect.left, bubbles: true })
+          );
+          window.dispatchEvent(new MouseEvent('mousemove', { clientX: 5, bubbles: true }));
+          window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          await new Promise((r) => setTimeout(r, 40));
+
+          const explorerMinW = Math.round(
+            document.querySelector('.explorer-sidebar')!.getBoundingClientRect().width
+          );
+
+          const rightSash = document.querySelector('.graph-panel-resizer')!;
+          const rightRect = rightSash.getBoundingClientRect();
+          rightSash.dispatchEvent(
+            new MouseEvent('mousedown', { clientX: rightRect.left, bubbles: true })
+          );
+          window.dispatchEvent(new MouseEvent('mousemove', { clientX: 5, bubbles: true }));
+          window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          await new Promise((r) => setTimeout(r, 40));
+
+          const centerMinW = Math.round(
+            document.querySelector('.story-panel')!.getBoundingClientRect().width
+          );
+
+          return {
+            explorerClampedAtEighth: explorerMinW === minEighth,
+            centerProtectedAtEighth: centerMinW === minEighth,
+          };
+        });
+        expect(clampAudit).toEqual({
+          explorerClampedAtEighth: true,
+          centerProtectedAtEighth: true,
+        });
+
         expect(started.service.getRelayStats().storedDiagrams).toBe(0);
       } finally {
         await Promise.all([
@@ -923,8 +1034,20 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 10_000 }
         );
 
-        // 3. Spotlight Step 1 -> verify SVG spotlighting & dimming!
-        await wsPage.click('[data-testid="story-start-btn"]');
+        // 3. Click Step 1 card -> verify SVG spotlighting, dimming, and removed step-count / explore-deeper chrome!
+        await wsPage.click('.story-step-card');
+        const storyChromeAudit = await wsPage.evaluate(() => ({
+          sectionBars: document.querySelectorAll('.story-section-bar').length,
+          startBtns: document.querySelectorAll('[data-testid="story-start-btn"]').length,
+          deeperSections: document.querySelectorAll('.story-deeper-section').length,
+          hasTitleBar: Boolean(document.querySelector('[data-testid="story-title-bar"]')),
+        }));
+        expect(storyChromeAudit).toEqual({
+          sectionBars: 0,
+          startBtns: 0,
+          deeperSections: 0,
+          hasTitleBar: true,
+        });
         await wsPage.waitForFunction(
           () => {
             const svg = document.querySelector('.canvas-stage svg');
@@ -963,19 +1086,33 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 5_000 }
         );
 
-        // 4. Click `Browser` SVG node -> opens in-place anchored Node Popover with Example, What-If & Explore button!
+        // 4. Click `Browser` SVG node -> opens top-docked Node Detail pane (scrollable, non-prevented wheel) with Dive deeper link!
         await wsPage.click('.canvas-stage svg [data-mfhmfa-node="Browser"]');
 
         await wsPage.waitForFunction(
           () => {
             const card = document.querySelector('[data-testid="node-inspector-card"]');
-            const txt = card?.textContent || '';
+            const vp = document.querySelector('.canvas-viewport');
+            if (!card || !vp) return false;
+            const cRect = card.getBoundingClientRect();
+            const vRect = vp.getBoundingClientRect();
+            const wheelEv = new WheelEvent('wheel', {
+              deltaY: 40,
+              bubbles: true,
+              cancelable: true,
+            });
+            card.dispatchEvent(wheelEv);
+            const txt = card.textContent || '';
             return (
-              Boolean(card?.closest('.canvas-viewport')) &&
+              Boolean(card.closest('.canvas-viewport')) &&
+              !wheelEv.defaultPrevented &&
+              Math.abs(cRect.top - vRect.top) <= 1 &&
+              Math.abs(cRect.left - vRect.left) <= 1 &&
+              Math.abs(cRect.right - vRect.right) <= 1 &&
               txt.includes('Browser Local Storage') &&
               txt.includes('mfhmfa-workspace-v4') &&
               txt.includes('2.5s') &&
-              txt.includes('Explore Browser Storage Internals')
+              txt.includes('Dive deeper')
             );
           },
           { timeout: 5_000 }
@@ -993,6 +1130,8 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
               ?.classList.contains('active');
             return (
               Boolean(rootActive) &&
+              crumbEl?.querySelector('.crumb-back-btn') === null &&
+              crumbEl?.querySelector('.crumb-current-menu-btn') === null &&
               crumbText.includes('System Memory Overview') &&
               crumbText.includes('Browser Storage Internals') &&
               Boolean(
@@ -1097,8 +1236,38 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           { timeout: 5_000 }
         );
 
-        // Start walkthrough -> verify scenario pills, step trace, and prediction check toggle!
-        await wsPage.click('[data-testid="story-start-btn"]');
+        // Click Step 1 card -> verify sticky title bar -> overview gist -> VS Code flow tabs -> step cards order!
+        await wsPage.click('.story-step-card');
+        const flowOrderAudit = await wsPage.evaluate(() => {
+          const titleBar = document
+            .querySelector('[data-testid="story-title-bar"]')!
+            .getBoundingClientRect();
+          const scrollArea = document
+            .querySelector('.story-scroll-container')!
+            .getBoundingClientRect();
+          const gist = document.querySelector('.story-gist')!.getBoundingClientRect();
+          const flowTabsEl = document.querySelector(
+            '[data-testid="flow-selector"]'
+          ) as HTMLElement;
+          const flowTabs = flowTabsEl.getBoundingClientRect();
+          const stepsList = document
+            .querySelector('.story-steps-list')!
+            .getBoundingClientRect();
+          return {
+            titlePinnedAboveScroll: titleBar.bottom <= scrollArea.top + 1,
+            gistAboveFlowTabs: gist.bottom <= flowTabs.top + 1,
+            flowTabsAboveSteps: flowTabs.bottom <= stepsList.top + 1,
+            flowTabCount: document.querySelectorAll('.story-flow-tab').length,
+            tabsFitWithoutOverflow: flowTabsEl.scrollWidth <= flowTabsEl.clientWidth,
+          };
+        });
+        expect(flowOrderAudit).toEqual({
+          titlePinnedAboveScroll: true,
+          gistAboveFlowTabs: true,
+          flowTabsAboveSteps: true,
+          flowTabCount: 2,
+          tabsFitWithoutOverflow: true,
+        });
         await wsPage.waitForFunction(
           () =>
             document.querySelectorAll('[data-testid="flow-selector"] button').length === 2 &&
@@ -1141,18 +1310,39 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
 
+        // References section is last and collapsed by default until clicked!
         await wsPage.waitForFunction(
           () => {
             const termTxt =
               document.querySelector('[data-testid="node-inspector-term"]')?.textContent || '';
-            const cardTxt =
-              document.querySelector('[data-testid="node-inspector-card"]')?.textContent || '';
+            const card = document.querySelector('[data-testid="node-inspector-card"]');
+            const cardTxt = card?.textContent || '';
+            const bodyChildren = Array.from(
+              document.querySelector('.node-inspector-body')?.children || []
+            );
+            const lastChildIsRefs =
+              bodyChildren[bodyChildren.length - 1]?.classList.contains(
+                'node-refs-disclosure'
+              ) ?? false;
             return (
               termTxt.includes('Write-Ahead Log (WAL') &&
-              cardTxt.includes('ARIES Paper §3') &&
-              cardTxt.includes('References')
+              cardTxt.includes('References') &&
+              !cardTxt.includes('ARIES Paper §3') &&
+              lastChildIsRefs &&
+              document.querySelector('[data-testid="node-refs-list"]') === null
             );
           },
+          { timeout: 5_000 }
+        );
+
+        await wsPage.click('[data-testid="node-refs-toggle"]');
+        await wsPage.waitForFunction(
+          () =>
+            Boolean(
+              document
+                .querySelector('[data-testid="node-refs-list"]')
+                ?.textContent?.includes('ARIES Paper §3')
+            ),
           { timeout: 5_000 }
         );
 

@@ -116,34 +116,6 @@
   }
 }
 
-.live-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 11px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 530;
-  cursor: pointer;
-  border: 1px solid var(--live-border);
-  background: var(--live-bg);
-  color: var(--live-fg);
-  transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out),
-    color 150ms var(--ease-out), transform 110ms var(--ease-out);
-  flex-shrink: 0;
-  max-width: 240px;
-}
-
-.live-pill:hover {
-  background: var(--live-bg-hover);
-  border-color: var(--live-fg);
-}
-
-.live-pill:active {
-  transform: scale(0.96);
-}
-
 .live-dot {
   width: 7px;
   height: 7px;
@@ -210,17 +182,97 @@
 }
 
 /* ============================================================================
-   Main Two-Column Learning Stage (Story Sheet + Full-Height Canvas)
+   Fixed Left & Right IDE Activity / Tool Window Bars
    ============================================================================ */
-.learning-stage {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
+.activity-bar {
+  width: 42px;
+  min-width: 42px;
+  max-width: 42px;
+  height: 100%;
+  flex-shrink: 0;
+  background: var(--bg-bar);
   display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  overflow: hidden;
-  background: var(--bg-canvas);
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  user-select: none;
+  z-index: 25;
+  transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out);
+}
+
+.activity-bar-left {
+  border-right: 1px solid var(--border-line);
+}
+
+.activity-bar-right {
+  border-left: 1px solid var(--border-line);
+}
+
+.activity-bar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.activity-bar-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out);
+}
+
+.activity-bar-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.activity-bar-btn.active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.activity-bar-left .activity-bar-btn.active::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--tab-accent);
+}
+
+.activity-bar-right .activity-bar-btn.active::before {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px 0 0 2px;
+  background: var(--tab-accent);
+}
+
+.activity-live-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--live-dot);
+  box-shadow: 0 0 0 2px var(--bg-bar);
+  animation: livePulse 2.2s ease-in-out infinite;
 }
 
 /* ============================================================================

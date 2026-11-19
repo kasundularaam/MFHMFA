@@ -1,4 +1,4 @@
-import { BookOpen, Download, FileCode2, Moon, PanelLeft, Sun } from 'lucide-react';
+import { BookOpen, Download, FileCode2, Moon, Sun } from 'lucide-react';
 import type { StudioPage } from '../store/uiStore';
 import type { AppearanceMode } from '../theme/comfortTheme';
 import { BrandLogo } from './BrandLogo';
@@ -10,11 +10,8 @@ interface TopBarProps {
   isMobile?: boolean;
   page: StudioPage;
   onChangePage: (page: StudioPage) => void;
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
   appearanceMode: AppearanceMode;
   onToggleAppearance: () => void;
-  connectedAgentCount: number;
   activeBreadcrumb: string | null;
   onBrandClick: () => void;
   repoUrl?: string;
@@ -26,11 +23,8 @@ export function TopBar({
   isMobile = false,
   page,
   onChangePage,
-  sidebarOpen,
-  onToggleSidebar,
   appearanceMode,
   onToggleAppearance,
-  connectedAgentCount,
   activeBreadcrumb,
   onBrandClick,
   repoUrl,
@@ -40,18 +34,6 @@ export function TopBar({
   return (
     <header className="topbar">
       <div className="topbar-left">
-        {!isMobile && page === 'studio' && (
-          <button
-            type="button"
-            className={`icon-btn ${sidebarOpen ? 'active' : ''}`}
-            onClick={onToggleSidebar}
-            title="Toggle sidebar (Ctrl+B)"
-            aria-label="Toggle sidebar"
-          >
-            <PanelLeft size={18} />
-          </button>
-        )}
-
         <button
           type="button"
           className={`brand-lockup ${!isMobile && page === 'docs' ? 'clickable' : ''}`.trim()}
@@ -60,18 +42,6 @@ export function TopBar({
         >
           <BrandLogo height={isMobile ? 19 : 21} className="brand-logo" />
         </button>
-
-        {!isMobile && page === 'studio' && !sidebarOpen && connectedAgentCount > 0 && (
-          <button
-            type="button"
-            className="live-pill active"
-            onClick={onToggleSidebar}
-            title="Show connected agents"
-          >
-            <span className="live-dot online" />
-            <span>{connectedAgentCount} connected</span>
-          </button>
-        )}
       </div>
 
       <div className="topbar-center">

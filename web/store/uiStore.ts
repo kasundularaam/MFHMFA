@@ -2,8 +2,11 @@ import { create } from 'zustand';
 import type { ParseErrorDetail } from '../../src/shared/types';
 import type { ServerStatus } from '../services/studioClient';
 import type { AppearanceMode } from '../theme/comfortTheme';
+import { DEFAULT_LEFT_FRACTION, DEFAULT_RIGHT_FRACTION } from '../utils/ideLayout';
 
 export type StudioPage = 'studio' | 'docs';
+export type LeftToolId = 'explorer';
+export type RightToolId = 'graph';
 export type CanvasTransitionKind = 'crossfade' | 'dive-in' | 'zoom-out';
 
 export interface ToastAction {
@@ -17,10 +20,9 @@ export interface AnchorPoint {
 }
 
 const APPEARANCE_STORAGE_KEY = 'mermaid-studio-mode';
-const STORY_WIDTH_STORAGE_KEY = 'mfhmfa-story-width';
-const DEFAULT_STORY_WIDTH = 404;
-export const MIN_STORY_WIDTH = 320;
-export const MAX_STORY_WIDTH = 560;
+const RIGHT_TOOL_STORAGE_KEY = 'mfhmfa-right-tool';
+const LEFT_FRACTION_STORAGE_KEY = 'mfhmfa-left-panel-fraction';
+const RIGHT_FRACTION_STORAGE_KEY = 'mfhmfa-right-panel-fraction';
 
 function readInitialAppearance(): AppearanceMode {
   try {
@@ -31,17 +33,28 @@ function readInitialAppearance(): AppearanceMode {
   }
 }
 
-function readInitialStoryWidth(): number {
+function readInitialRightTool(): RightToolId | null {
   try {
-    const raw = localStorage.getItem(STORY_WIDTH_STORAGE_KEY);
-    const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
-    if (Number.isFinite(parsed)) {
-      return Math.min(MAX_STORY_WIDTH, Math.max(MIN_STORY_WIDTH, parsed));
+    const saved = localStorage.getItem(RIGHT_TOOL_STORAGE_KEY);
+    if (saved === 'none') return null;
+    if (saved === 'graph') return 'graph';
+  } catch {
+    // ignore
+  }
+  return 'graph';
+}
+
+function readInitialFraction(key: string, fallback: number): number {
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? Number.parseFloat(raw) : Number.NaN;
+    if (Number.isFinite(parsed) && parsed > 0.05 && parsed < 0.9) {
+      return parsed;
     }
   } catch {
     // ignore
   }
-  return DEFAULT_STORY_WIDTH;
+  return fallback;
 }
 
 let toastHideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -52,8 +65,9 @@ export interface UiStoreState {
   page: StudioPage;
   serverStatus: ServerStatus | null;
 
-  storyWidth: number;
-  storyCollapsed: boolean;
+  activeRightTool: RightToolId | null;
+  leftPanelFraction: number;
+  rightPanelFraction: number;
 
   activeFlowId: string | null;
   activeStepIndex: number | null;
@@ -81,8 +95,8 @@ export interface UiStoreState {
   setPage: (page: StudioPage) => void;
   setServerStatus: (status: ServerStatus | null) => void;
 
-  resizeStory: (nextWidth: number) => void;
-  toggleStoryCollapsed: () => void;
+  toggleRightTool: (tool: RightToolId) => void;
+  setPanelFractions: (next: { leftFraction?: number; rightFraction?: number }) => void;
 
   setActiveFlowId: (flowId: string | null) => void;
   setActiveStepIndex: (
@@ -121,8 +135,9 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
   page: 'studio',
   serverStatus: null,
 
-  storyWidth: readInitialStoryWidth(),
-  storyCollapsed: false,
+  activeRightTool: readInitialRightTool(),
+  leftPanelFraction: readInitialFraction(LEFT_FRACTION_STORAGE_KEY, DEFAULT_LEFT_FRACTION),
+  rightPanelFraction: readInitialFraction(RIGHT_FRACTION_STORAGE_KEY, DEFAULT_RIGHT_FRACTION),
 
   activeFlowId: null,
   activeStepIndex: null,
@@ -162,17 +177,38 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
 
   setServerStatus: (serverStatus) => set({ serverStatus }),
 
-  resizeStory: (nextWidth) => {
-    const clamped = Math.min(MAX_STORY_WIDTH, Math.max(MIN_STORY_WIDTH, Math.round(nextWidth)));
+  toggleRightTool: (tool) => {
+    const next = get().activeRightTool === tool ? null : tool;
     try {
-      localStorage.setItem(STORY_WIDTH_STORAGE_KEY, String(clamped));
+      localStorage.setItem(RIGHT_TOOL_STORAGE_KEY, next ?? 'none');
     } catch {
       // ignore
     }
-    set({ storyWidth: clamped });
+    set({ activeRightTool: next });
   },
 
-  toggleStoryCollapsed: () => set((s) => ({ storyCollapsed: !s.storyCollapsed })),
+  setPanelFractions: ({ leftFraction, rightFraction }) => {
+    const updates: Partial<UiStoreState> = {};
+    if (typeof leftFraction === 'number' && Number.isFinite(leftFraction)) {
+      updates.leftPanelFraction = leftFraction;
+      try {
+        localStorage.setItem(LEFT_FRACTION_STORAGE_KEY, leftFraction.toFixed(4));
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof rightFraction === 'number' && Number.isFinite(rightFraction)) {
+      updates.rightPanelFraction = rightFraction;
+      try {
+        localStorage.setItem(RIGHT_FRACTION_STORAGE_KEY, rightFraction.toFixed(4));
+      } catch {
+        // ignore
+      }
+    }
+    if (Object.keys(updates).length > 0) {
+      set(updates);
+    }
+  },
 
   setActiveFlowId: (activeFlowId) =>
     set((s) => ({

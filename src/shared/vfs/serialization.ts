@@ -84,7 +84,7 @@ export function hydrateWorkspaceFromPersistedV4(
     version: 4,
     workspaceId,
     sidebarOpen: data.sidebarOpen,
-    sidebarWidth: Math.min(480, Math.max(210, data.sidebarWidth)),
+    sidebarWidth: Math.max(80, Math.round(data.sidebarWidth)),
     openTabIds: data.openTabIds,
     activeFileId: data.activeFileId,
     projects,

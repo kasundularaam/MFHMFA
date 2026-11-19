@@ -25,12 +25,14 @@ import { ActionMenu, DropdownItem, DropdownSeparator } from './DropdownMenu';
 
 interface ExplorerSidebarProps {
   width: number;
+  minWidth: number;
   projects: VfsProjectRoot[];
   activeFileId: string | null;
   activeProjectKey: string | null;
   workspaceId: string;
   connectedAgents: AgentSessionInfo[];
   liveProjectCounts: Map<string, number>;
+  onResizeStart?: () => void;
   onResizeWidth: (width: number) => void;
   onToggleProjectExpanded: (projectKey: string) => void;
   onOpenFile: (fileId: string) => void;
@@ -171,12 +173,14 @@ function buildRootGraphSidebarTree(project: VfsProjectRoot): {
 
 export function ExplorerSidebar({
   width,
+  minWidth,
   projects,
   activeFileId,
   activeProjectKey,
   workspaceId,
   connectedAgents,
   liveProjectCounts,
+  onResizeStart,
   onResizeWidth,
   onToggleProjectExpanded,
   onOpenFile,
@@ -272,7 +276,10 @@ export function ExplorerSidebar({
   );
 
   return (
-    <aside className="explorer-sidebar" style={{ width: `${width}px` }}>
+    <aside
+      className="explorer-sidebar"
+      style={{ width: `${width}px`, minWidth: `${minWidth}px` }}
+    >
       <div className="sidebar-section-header explorer-top-header">
         <span className="sidebar-section-title">EXPLORER</span>
         <div className="sidebar-header-actions">
@@ -367,6 +374,7 @@ export function ExplorerSidebar({
         className="sidebar-resizer"
         onMouseDown={(e) => {
           dragOriginWidthRef.current = width;
+          onResizeStart?.();
           startResizeDrag(e);
         }}
       />

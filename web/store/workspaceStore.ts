@@ -141,7 +141,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
   },
 
   resizeSidebar: (nextWidth) => {
-    const clamped = Math.min(480, Math.max(210, Math.round(nextWidth)));
+    const clamped = Math.max(80, Math.round(nextWidth));
     const next = produce(get().workspace, (draft) => {
       draft.sidebarWidth = clamped;
     });

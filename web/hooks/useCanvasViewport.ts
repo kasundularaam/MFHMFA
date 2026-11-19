@@ -49,6 +49,10 @@ export function useCanvasViewport({
     if (!el) return undefined;
 
     const onWheel = (e: WheelEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest('[data-testid="node-inspector-card"]')) {
+        return;
+      }
       e.preventDefault();
       const {
         zoom: curZoom,

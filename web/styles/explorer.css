@@ -21,8 +21,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  min-width: 210px;
-  max-width: 480px;
+  min-width: 12.5vw;
+  max-width: none;
   height: 100%;
   background: var(--bg-bar);
   border-right: 1px solid var(--border-line);
@@ -79,6 +79,9 @@
 }
 
 .sidebar-section-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11.5px;
   font-weight: 620;
   letter-spacing: 0.055em;
@@ -321,7 +324,9 @@
 .sidebar-copy-mcp-btn {
   width: 100%;
   height: 32px;
-  padding: 0 11px;
+  padding: 0 10px;
+  overflow: hidden;
+  white-space: nowrap;
   border-radius: 6px;
   border: 1px solid var(--border-line);
   background: var(--bg-elevated);

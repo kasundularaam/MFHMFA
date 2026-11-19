@@ -376,7 +376,8 @@ docker compose up -d --build
               Click the top-left <strong>MFHMFA</strong> logo: Return from Docs to the studio
             </li>
             <li>
-              <code>Ctrl/Cmd + B</code>: Show or hide Explorer sidebar
+              Left / Right edge bar icons (or <code>Ctrl/Cmd + B</code> for Explorer): Toggle
+              Explorer and Graph panels
             </li>
             <li>
               <code>&uarr;</code> / <code>&darr;</code> or <code>&larr;</code> /{' '}
