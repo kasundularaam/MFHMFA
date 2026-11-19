@@ -1,4 +1,12 @@
-import { ChevronRight, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  ChevronRight,
+  Code2,
+  FileCode2,
+  Terminal,
+  X,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { resolveNodeRefs } from '../../src/shared/comprehension';
 import type { DiagramNodeDetail } from '../../src/shared/types';
@@ -23,7 +31,6 @@ export function NodePopover({
   const [refsOpen, setRefsOpen] = useState(false);
   const refsListRef = useRef<HTMLDivElement | null>(null);
 
-  // Always collapse References by default whenever switching to a different node
   useEffect(() => {
     setRefsOpen(false);
   }, [selectedNodeId]);
@@ -56,7 +63,8 @@ export function NodePopover({
               className="node-drilldown-link node-drilldown-btn"
               onClick={() => onDrillToPath(detail.childPath!)}
             >
-              Dive deeper →
+              <span>Dive deeper</span>
+              <ArrowUpRight size={13} />
             </button>
           )}
 
@@ -75,7 +83,8 @@ export function NodePopover({
       <div className="node-inspector-body">
         {detail.term && (
           <div className="node-inspector-term" data-testid="node-inspector-term">
-            {detail.term}
+            <Code2 size={12} className="node-term-icon" />
+            <span>{detail.term}</span>
           </div>
         )}
 
@@ -83,14 +92,20 @@ export function NodePopover({
 
         {detail.example && (
           <div className="node-inspector-section">
-            <div className="node-inspector-label">Example</div>
+            <div className="node-inspector-label">
+              <Terminal size={12} />
+              <span>Example</span>
+            </div>
             <div className="node-inspector-example">{detail.example}</div>
           </div>
         )}
 
         {detail.whatIf && (
           <div className="node-inspector-section">
-            <div className="node-inspector-label hint">What breaks if…</div>
+            <div className="node-inspector-label hint">
+              <AlertTriangle size={12} />
+              <span>What breaks if…</span>
+            </div>
             <div className="node-inspector-whatif">{detail.whatIf}</div>
           </div>
         )}
@@ -105,6 +120,7 @@ export function NodePopover({
               onClick={() => setRefsOpen((prev) => !prev)}
             >
               <ChevronRight size={13} className="node-refs-caret" />
+              <FileCode2 size={13} className="node-refs-icon" />
               <span>
                 {refsLabel} ({refs.length})
               </span>
@@ -124,7 +140,8 @@ export function NodePopover({
                     onClick={() => onCopyRef(refItem)}
                     title="Copy reference"
                   >
-                    {refItem}
+                    <FileCode2 size={12} className="node-ref-item-icon" />
+                    <span>{refItem}</span>
                   </button>
                 ))}
               </div>

@@ -1,4 +1,11 @@
-import { ChevronRight } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronRight,
+  GitBranch,
+  HelpCircle,
+  Terminal,
+  Workflow,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { DiagramComprehensionGuide, DiagramWalkthroughFlow } from '../../src/shared/types';
 import type { GraphBreadcrumbHop, VfsGraphFile } from '../../src/shared/vfs';
@@ -80,6 +87,7 @@ export function StoryPanel({
         aria-label="Reading guide"
       >
         <div className="story-empty-stage">
+          <Workflow size={20} className="empty-stage-icon" />
           <div className="empty-stage-watermark">
             Ask your AI agent to explain a concept, paper, codebase, bug, or design tradeoff
           </div>
@@ -162,7 +170,8 @@ export function StoryPanel({
             </p>
             {!graphPanelOpen && (
               <button type="button" className="btn" onClick={onOpenGraphPanel}>
-                Open Graph panel
+                <Workflow size={14} />
+                <span>Open Graph panel</span>
               </button>
             )}
           </div>
@@ -190,6 +199,7 @@ export function StoryPanel({
                       className={`story-flow-tab ${isSelected ? 'active' : ''}`}
                       onClick={() => onChangeFlowId(flow.id)}
                     >
+                      <GitBranch size={13} className="story-flow-tab-icon" />
                       <span>{flow.label}</span>
                     </button>
                   );
@@ -233,7 +243,8 @@ export function StoryPanel({
 
                           {step.trace && (
                             <div className="story-step-trace" data-testid="story-step-trace">
-                              {step.trace}
+                              <Terminal size={12} className="story-trace-icon" />
+                              <span>{step.trace}</span>
                             </div>
                           )}
 
@@ -260,6 +271,7 @@ export function StoryPanel({
                                 }}
                               >
                                 <ChevronRight size={13} className="story-check-caret" />
+                                <HelpCircle size={13} className="story-check-icon" />
                                 <span className="story-check-question">
                                   {step.check.question}
                                 </span>
@@ -270,7 +282,8 @@ export function StoryPanel({
                                   className="story-check-answer"
                                   data-testid="story-check-answer"
                                 >
-                                  {step.check.answer}
+                                  <CheckCircle2 size={13} className="story-answer-icon" />
+                                  <span>{step.check.answer}</span>
                                 </div>
                               )}
                             </div>

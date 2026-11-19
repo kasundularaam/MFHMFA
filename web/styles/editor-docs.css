@@ -128,19 +128,23 @@
 }
 
 .plain-link-btn {
-  background: none;
+  background: transparent;
   border: none;
+  border-radius: 0;
   padding: 0;
-  margin-left: 4px;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--text-secondary);
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  transition: color 120ms var(--ease-out);
 }
 
 .plain-link-btn:hover {
+  background: transparent;
   color: var(--text-primary);
 }
 
@@ -154,7 +158,7 @@
   padding: 13px 15px;
   background: var(--bg-bar);
   border: 1px solid var(--border-line);
-  border-radius: 6px;
+  border-radius: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.55;
@@ -167,17 +171,22 @@
   position: absolute;
   top: 8px;
   right: 10px;
-  background: var(--bg-elevated);
+  background: var(--bg-bar);
   border: 1px solid var(--border-line);
-  border-radius: 5px;
+  border-radius: 0;
   padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   cursor: pointer;
+  transition: color 120ms var(--ease-out), border-color 120ms var(--ease-out);
 }
 
 .plain-copy-btn:hover {
-  background: var(--bg-hover);
+  background: var(--bg-bar);
+  border-color: var(--border-strong);
   color: var(--text-primary);
 }
 

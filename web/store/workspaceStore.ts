@@ -39,7 +39,11 @@ import { useUiStore } from './uiStore';
 function reportPersistenceError(): void {
   useUiStore
     .getState()
-    .notifyToast('Browser storage is full or unavailable. Export important diagrams.');
+    .notifyToast('Browser storage is full or unavailable. Export important diagrams.', {
+      id: 'storage-quota',
+      kind: 'warning',
+      source: 'Storage',
+    });
 }
 
 function snapshotCameraIntoState(state: WorkspaceState): WorkspaceState {
@@ -204,7 +208,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
     } catch (err: unknown) {
       useUiStore
         .getState()
-        .notifyToast(err instanceof Error ? err.message : 'Invalid folder name');
+        .notifyToast(err instanceof Error ? err.message : 'Invalid folder name', {
+          kind: 'error',
+          source: 'Explorer',
+        });
     }
   },
 
@@ -221,7 +228,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
       set({ workspace: moved.nextState });
       void saveWorkspaceImmediate(moved.nextState, reportPersistenceError);
     } catch (err: unknown) {
-      useUiStore.getState().notifyToast(err instanceof Error ? err.message : 'Rename failed');
+      useUiStore.getState().notifyToast(err instanceof Error ? err.message : 'Rename failed', {
+        kind: 'error',
+        source: 'Explorer',
+      });
     }
   },
 
@@ -232,13 +242,17 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
     syncCameraForActiveFile(nextState);
     void saveWorkspaceImmediate(nextState, reportPersistenceError);
 
-    useUiStore.getState().notifyToast('Graph deleted', {
-      label: 'Undo',
-      onClick: () => {
-        set({ workspace: prevSnapshot });
-        syncCameraForActiveFile(prevSnapshot);
-        void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
-        useUiStore.getState().dismissToast();
+    const notifId = useUiStore.getState().notifyToast('Graph deleted', {
+      kind: 'info',
+      source: 'Explorer',
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          set({ workspace: prevSnapshot });
+          syncCameraForActiveFile(prevSnapshot);
+          void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
+          useUiStore.getState().dismissToast(notifId);
+        },
       },
     });
   },
@@ -250,13 +264,17 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
     syncCameraForActiveFile(nextState);
     void saveWorkspaceImmediate(nextState, reportPersistenceError);
 
-    useUiStore.getState().notifyToast('Folder deleted', {
-      label: 'Undo',
-      onClick: () => {
-        set({ workspace: prevSnapshot });
-        syncCameraForActiveFile(prevSnapshot);
-        void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
-        useUiStore.getState().dismissToast();
+    const notifId = useUiStore.getState().notifyToast('Folder deleted', {
+      kind: 'info',
+      source: 'Explorer',
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          set({ workspace: prevSnapshot });
+          syncCameraForActiveFile(prevSnapshot);
+          void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
+          useUiStore.getState().dismissToast(notifId);
+        },
       },
     });
   },
@@ -268,13 +286,17 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
     syncCameraForActiveFile(nextState);
     void saveWorkspaceImmediate(nextState, reportPersistenceError);
 
-    useUiStore.getState().notifyToast('Project deleted', {
-      label: 'Undo',
-      onClick: () => {
-        set({ workspace: prevSnapshot });
-        syncCameraForActiveFile(prevSnapshot);
-        void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
-        useUiStore.getState().dismissToast();
+    const notifId = useUiStore.getState().notifyToast('Project deleted', {
+      kind: 'info',
+      source: 'Explorer',
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          set({ workspace: prevSnapshot });
+          syncCameraForActiveFile(prevSnapshot);
+          void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
+          useUiStore.getState().dismissToast(notifId);
+        },
       },
     });
   },
@@ -289,7 +311,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
       sessionProjectMap: {},
     });
     void saveWorkspaceImmediate(next, reportPersistenceError);
-    useUiStore.getState().notifyToast('Workspace key updated');
+    useUiStore.getState().notifyToast('Workspace key updated', {
+      kind: 'success',
+      source: 'Workspace',
+    });
   },
 
   applyAgentStatus: (agent, { silent, shouldAnnounce }) => {
@@ -306,7 +331,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
         };
       });
       if (!silent) {
-        useUiStore.getState().notifyToast(`${agent.agentLabel} disconnected`);
+        useUiStore.getState().notifyToast(`${agent.agentLabel} disconnected`, {
+          kind: 'info',
+          source: 'MCP Relay',
+        });
       }
       return;
     }
@@ -333,7 +361,10 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
 
     if (!silent && shouldAnnounce) {
       const projNote = agent.project ? ` (${agent.project})` : '';
-      useUiStore.getState().notifyToast(`${agent.agentLabel} connected${projNote}`);
+      useUiStore.getState().notifyToast(`${agent.agentLabel} connected${projNote}`, {
+        kind: 'success',
+        source: 'MCP Relay',
+      });
     }
   },
 
@@ -425,11 +456,15 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
 
     if (switchedToDifferentTree) {
       const targetId = incomingRoot.id;
-      useUiStore.getState().notifyToast(`New view: ${incomingRoot.title}`, {
-        label: 'Open',
-        onClick: () => {
-          get().openFile(targetId);
-          useUiStore.getState().dismissToast();
+      const notifId = useUiStore.getState().notifyToast(`New view: ${incomingRoot.title}`, {
+        kind: 'info',
+        source: 'MCP Relay',
+        action: {
+          label: 'Open',
+          onClick: () => {
+            get().openFile(targetId);
+            useUiStore.getState().dismissToast(notifId);
+          },
         },
       });
     } else if (finalState.activeFileId !== prevActiveId) {

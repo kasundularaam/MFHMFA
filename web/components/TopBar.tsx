@@ -1,4 +1,4 @@
-import { BookOpen, Download, FileCode2, Moon, Sun } from 'lucide-react';
+import { BookOpen, Download, FileCode2, Image, Moon, Sun } from 'lucide-react';
 import type { StudioPage } from '../store/uiStore';
 import type { AppearanceMode } from '../theme/comfortTheme';
 import { BrandLogo } from './BrandLogo';
@@ -12,7 +12,8 @@ interface TopBarProps {
   onChangePage: (page: StudioPage) => void;
   appearanceMode: AppearanceMode;
   onToggleAppearance: () => void;
-  activeBreadcrumb: string | null;
+  activeProjectLabel: string | null;
+  activeTopicTitle: string | null;
   onBrandClick: () => void;
   repoUrl?: string;
   onExportPng: () => void;
@@ -25,7 +26,8 @@ export function TopBar({
   onChangePage,
   appearanceMode,
   onToggleAppearance,
-  activeBreadcrumb,
+  activeProjectLabel,
+  activeTopicTitle,
   onBrandClick,
   repoUrl,
   onExportPng,
@@ -47,7 +49,12 @@ export function TopBar({
       <div className="topbar-center">
         {!isMobile &&
           (page === 'studio' ? (
-            activeBreadcrumb && <span className="topbar-breadcrumb">{activeBreadcrumb}</span>
+            activeProjectLabel &&
+            activeTopicTitle && (
+              <span className="topbar-breadcrumb">
+                {activeProjectLabel} / {activeTopicTitle}
+              </span>
+            )
           ) : (
             <span className="topbar-page-title">Documentation</span>
           ))}
@@ -64,7 +71,7 @@ export function TopBar({
             }
           >
             <DropdownItem onSelect={onExportPng}>
-              <Download size={15} /> Export PNG
+              <Image size={15} /> Export PNG
             </DropdownItem>
             <DropdownItem onSelect={onExportSvg}>
               <FileCode2 size={15} /> Export SVG

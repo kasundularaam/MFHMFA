@@ -748,7 +748,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         );
         expect(graphMenuItems).toEqual(['Delete graph']);
 
-        // Delete graph -> verify Undo toast restores it cleanly!
+        // Delete graph -> verify VS Code bottom-right notification with sharp corners & Source label, then Undo!
         await wsPage.evaluate(() => {
           const delItem = document.querySelector(
             '.explorer-context-menu .dropdown-item.danger'
@@ -762,6 +762,24 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
             ) === null && Boolean(document.querySelector('.toast-action-btn')),
           { timeout: 5_000 }
         );
+        const notifAudit = await wsPage.evaluate(() => {
+          const stack = document.querySelector('[data-testid="vscode-notifications"]');
+          const card = stack?.querySelector('.vscode-notification') as HTMLElement | null;
+          if (!card) return null;
+          const style = getComputedStyle(card);
+          const rect = card.getBoundingClientRect();
+          return {
+            borderRadius: style.borderRadius,
+            inBottomRight:
+              rect.right > window.innerWidth * 0.6 && rect.bottom > window.innerHeight * 0.6,
+            hasSource: (card.textContent || '').includes('Source: Explorer'),
+          };
+        });
+        expect(notifAudit).toEqual({
+          borderRadius: '0px',
+          inBottomRight: true,
+          hasSource: true,
+        });
         await wsPage.click('.toast-action-btn');
         await wsPage.waitForSelector(
           '[data-explorer-path="project-a/database/session-er.mmd"]',
@@ -769,6 +787,26 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
             timeout: 5_000,
           }
         );
+
+        // Verify sharp 0px corners & transparent hover backgrounds (text/icon highlight only)
+        await wsPage.hover('.activity-bar-btn');
+        const sharpHoverAudit = await wsPage.evaluate(() => {
+          const actBtn = document.querySelector('.activity-bar-btn')!;
+          const iconBtn = document.querySelector('.topbar-right .icon-btn')!;
+          const copyBtn = document.querySelector('.sidebar-copy-mcp-btn')!;
+          return {
+            actRadius: getComputedStyle(actBtn).borderRadius,
+            iconRadius: getComputedStyle(iconBtn).borderRadius,
+            copyRadius: getComputedStyle(copyBtn).borderRadius,
+            actHoverBg: getComputedStyle(actBtn).backgroundColor,
+          };
+        });
+        expect(sharpHoverAudit).toEqual({
+          actRadius: '0px',
+          iconRadius: '0px',
+          copyRadius: '0px',
+          actHoverBg: 'rgba(0, 0, 0, 0)',
+        });
 
         // Toggle Light theme and navigate to Documentation, verifying no separate back button
         await wsPage.click('button[aria-label="Light theme"]');

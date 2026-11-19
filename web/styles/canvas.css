@@ -152,8 +152,10 @@
 .empty-agent-stage {
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   padding: 24px;
 }
 
@@ -164,7 +166,7 @@
   max-width: 420px;
 }
 
-/* Quiet Bottom-Right Zoom & Fit HUD */
+/* Sharp Bottom-Right Zoom & Fit HUD */
 .canvas-zoom-hud {
   position: absolute;
   right: 14px;
@@ -172,14 +174,13 @@
   z-index: 20;
   height: 30px;
   padding: 0 4px;
-  border-radius: 7px;
+  border-radius: 0;
   border: 1px solid var(--border-line);
-  background: color-mix(in srgb, var(--bg-popover) 88%, transparent);
-  backdrop-filter: blur(6px);
+  background: var(--bg-bar);
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  opacity: 0.78;
+  opacity: 0.84;
   transition: opacity 150ms var(--ease-out), border-color 150ms var(--ease-out);
 }
 
@@ -192,18 +193,18 @@
   width: 24px;
   height: 22px;
   border: none;
-  border-radius: 5px;
+  border-radius: 0;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+  transition: color 120ms var(--ease-out);
 }
 
 .hud-btn:hover {
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--text-primary);
 }
 
@@ -253,8 +254,7 @@
 .canvas-stage svg rect.mfhmfa-node-interactive {
   stroke: var(--node-interactive-border) !important;
   stroke-width: 1.65px !important;
-  transition: stroke 150ms var(--ease-out), fill 150ms var(--ease-out),
-    stroke-width 150ms var(--ease-out);
+  transition: stroke 150ms var(--ease-out), stroke-width 150ms var(--ease-out);
 }
 
 .canvas-stage svg .mfhmfa-node-interactive:hover > rect,
@@ -263,7 +263,6 @@
 .canvas-stage svg .mfhmfa-node-interactive:hover > circle,
 .canvas-stage svg rect.mfhmfa-node-interactive:hover {
   stroke: var(--focus-accent) !important;
-  fill: var(--node-hover-fill) !important;
   stroke-width: 2.1px !important;
 }
 
@@ -388,19 +387,23 @@
 
 .node-drilldown-link {
   border: none;
-  background: none;
+  border-radius: 0;
+  background: transparent;
   padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12.75px;
   font-weight: 540;
   color: var(--focus-accent);
   white-space: nowrap;
   cursor: pointer;
+  transition: color 120ms var(--ease-out);
 }
 
 .node-drilldown-link:hover {
+  background: transparent;
   color: var(--text-primary);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .node-popover-close {
@@ -420,11 +423,19 @@
 
 .node-inspector-term {
   margin-bottom: -6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-muted);
   word-break: break-word;
+}
+
+.node-term-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 .node-inspector-summary {
@@ -441,6 +452,9 @@
 }
 
 .node-inspector-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -480,6 +494,7 @@
 .node-refs-trigger {
   padding: 2px 0;
   border: none;
+  border-radius: 0;
   background: transparent;
   color: var(--text-secondary);
   font-size: 12.5px;
@@ -492,8 +507,16 @@
   transition: color 120ms var(--ease-out);
 }
 
+.node-refs-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: color 120ms var(--ease-out);
+}
+
 .node-refs-trigger:hover,
-.node-refs-disclosure.open .node-refs-trigger {
+.node-refs-disclosure.open .node-refs-trigger,
+.node-refs-trigger:hover .node-refs-icon,
+.node-refs-disclosure.open .node-refs-icon {
   color: var(--text-primary);
 }
 
@@ -517,22 +540,36 @@
 
 .node-ref-item {
   border: none;
-  background: none;
+  border-radius: 0;
+  background: transparent;
   padding: 1px 0;
   max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
   text-align: left;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: pointer;
+  transition: color 120ms var(--ease-out);
 }
 
-.node-ref-item:hover {
+.node-ref-item-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: color 120ms var(--ease-out);
+}
+
+.node-ref-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-ref-item:hover,
+.node-ref-item:hover .node-ref-item-icon {
   color: var(--text-primary);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }

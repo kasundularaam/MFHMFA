@@ -1,14 +1,18 @@
 import {
+  Bot,
   ChevronDown,
   ChevronRight,
   Copy,
   FileCode,
+  Files,
   Folder,
+  FolderKanban,
   FolderOpen,
   FolderPlus,
   Layers,
   MoreHorizontal,
   Pencil,
+  Plug,
   Trash2,
 } from 'lucide-react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
@@ -281,7 +285,10 @@ export function ExplorerSidebar({
       style={{ width: `${width}px`, minWidth: `${minWidth}px` }}
     >
       <div className="sidebar-section-header explorer-top-header">
-        <span className="sidebar-section-title">EXPLORER</span>
+        <div className="sidebar-section-left">
+          <Files size={13} className="sidebar-header-icon" />
+          <span className="sidebar-section-title">EXPLORER</span>
+        </div>
         <div className="sidebar-header-actions">
           <button
             type="button"
@@ -333,6 +340,7 @@ export function ExplorerSidebar({
             ) : (
               <ChevronRight size={14} className="tree-chevron" />
             )}
+            <Plug size={13} className="sidebar-header-icon" />
             <span className="sidebar-section-title">CONNECTED AGENTS</span>
             <span className={`agents-count-pill ${connectedAgents.length > 0 ? 'online' : ''}`}>
               {connectedAgents.length}
@@ -347,6 +355,7 @@ export function ExplorerSidebar({
                 {connectedAgents.map((ag) => (
                   <li key={ag.sessionId} className="sidebar-agent-item">
                     <span className="live-dot online" />
+                    <Bot size={13} className="sidebar-agent-icon" />
                     <span className="sidebar-agent-name">{ag.agentLabel}</span>
                     <span className="sidebar-agent-proj">{ag.project || 'General'}</span>
                   </li>
@@ -591,6 +600,7 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
         {liveCount > 0 && (
           <span className="live-dot online project-live-dot" title="Agent connected" />
         )}
+        <FolderKanban size={14} className="tree-project-icon" />
         <span className="tree-project-label">{project.projectLabel}</span>
 
         <div className="tree-row-actions" onClick={(e) => e.stopPropagation()}>

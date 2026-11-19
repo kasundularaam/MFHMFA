@@ -1,7 +1,7 @@
-import { AlertCircle, Maximize2, Minus, Plus } from 'lucide-react';
+import { Maximize2, Minus, Plus, Workflow } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { resolveGuideFlows } from '../../src/shared/comprehension';
-import type { DiagramComprehensionGuide, ParseErrorDetail } from '../../src/shared/types';
+import type { DiagramComprehensionGuide } from '../../src/shared/types';
 import { useCanvasViewport } from '../hooks/useCanvasViewport';
 import { useUiStore, type AnchorPoint, type CanvasTransitionKind } from '../store/uiStore';
 import { applySvgComprehensionState } from '../utils/svgComprehension';
@@ -12,7 +12,6 @@ interface PreviewCanvasProps {
   chartKey: string;
   renderedSvg: string;
   hasActiveFile: boolean;
-  parseError: ParseErrorDetail | null;
   guide?: DiagramComprehensionGuide;
   activeFlowId: string | null;
   activeStepIndex: number | null;
@@ -39,7 +38,6 @@ export function PreviewCanvas({
   chartKey,
   renderedSvg,
   hasActiveFile,
-  parseError,
   guide,
   activeFlowId,
   activeStepIndex,
@@ -225,24 +223,10 @@ export function PreviewCanvas({
           />
         ) : !hasActiveFile ? (
           <div className="empty-agent-stage">
+            <Workflow size={18} className="empty-stage-icon" />
             <div className="empty-stage-watermark">No diagram open</div>
           </div>
         ) : null}
-
-        {parseError && (
-          <div
-            className="floating-error-pill"
-            onClick={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <AlertCircle size={16} />
-            <span>
-              {parseError.line
-                ? `Diagram render error on line ${parseError.line}: ${parseError.message}`
-                : parseError.message}
-            </span>
-          </div>
-        )}
 
         {selectedNodeId && selectedDetail && (
           <NodePopover

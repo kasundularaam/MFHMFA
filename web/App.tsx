@@ -25,6 +25,7 @@ import { ActivityBar, type ActivityBarItem } from './components/ActivityBar';
 import { ExplorerSidebar } from './components/ExplorerSidebar';
 import { GraphPanel } from './components/GraphPanel';
 import { MobileInfoPage } from './components/MobileInfoPage';
+import { NotificationStack } from './components/NotificationStack';
 import { PreviewCanvas } from './components/PreviewCanvas';
 import { StoryPanel } from './components/StoryPanel';
 import { TopBar } from './components/TopBar';
@@ -131,13 +132,10 @@ export function App() {
   const drillStack = useUiStore((s) => s.drillStack);
   const renderedSvg = useUiStore((s) => s.renderedSvg);
   const renderedKey = useUiStore((s) => s.renderedKey);
-  const parseError = useUiStore((s) => s.parseError);
   const dimensions = useUiStore((s) => s.dimensions);
   const needsViewportFit = useUiStore((s) => s.needsViewportFit);
   const userCameraAdjusted = useUiStore((s) => s.userCameraAdjusted);
-  const toast = useUiStore((s) => s.toast);
-  const toastAction = useUiStore((s) => s.toastAction);
-  const toastVisible = useUiStore((s) => s.toastVisible);
+  const notifications = useUiStore((s) => s.notifications);
 
   const toggleAppearanceMode = useUiStore((s) => s.toggleAppearanceMode);
   const setPage = useUiStore((s) => s.setPage);
@@ -152,6 +150,7 @@ export function App() {
   const markViewportFitted = useUiStore((s) => s.markViewportFitted);
   const triggerFitCanvas = useUiStore((s) => s.triggerFitCanvas);
   const notifyToast = useUiStore((s) => s.notifyToast);
+  const dismissToast = useUiStore((s) => s.dismissToast);
 
   const rightGraphOpen = activeRightTool === 'graph';
 
@@ -442,7 +441,10 @@ export function App() {
         const targetRel = normalizeRelativeGraphPath(rawTargetPath);
         const targetFile = activeProject.files.find((f) => f.path === targetRel);
         if (!targetFile) {
-          notifyToast(`Sub-diagram "${targetRel}" not found`);
+          notifyToast(`Sub-diagram "${targetRel}" not found`, {
+            kind: 'warning',
+            source: 'Navigation',
+          });
           return;
         }
         if (activeFile && activeFile.id !== targetFile.id) {
@@ -450,7 +452,10 @@ export function App() {
         }
         openFile(targetFile.id);
       } catch (err: unknown) {
-        notifyToast(err instanceof Error ? err.message : 'Invalid file path');
+        notifyToast(err instanceof Error ? err.message : 'Invalid file path', {
+          kind: 'error',
+          source: 'Navigation',
+        });
       }
     },
     [activeFile, activeProject, notifyToast, openFile, pushDrillOrigin]
@@ -477,7 +482,10 @@ export function App() {
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      notifyToast(`Export failed: ${message}`);
+      notifyToast(`Export failed: ${message}`, {
+        kind: 'error',
+        source: 'Export',
+      });
     }
   }, [appearanceMode, code, notifyToast, title]);
 
@@ -497,10 +505,8 @@ export function App() {
       ? (projectHierarchy.getRootForFile(activeFile.id) ?? activeFile)
       : activeFile;
 
-  const activeBreadcrumb =
-    activeProject && rootTopicFile
-      ? `${activeProject.projectLabel} / ${rootTopicFile.title || rootTopicFile.path}`
-      : null;
+  const activeProjectLabel = activeProject?.projectLabel ?? null;
+  const activeTopicTitle = rootTopicFile ? rootTopicFile.title || rootTopicFile.path : null;
 
   return (
     <div className="studio-shell">
@@ -510,7 +516,8 @@ export function App() {
         onChangePage={setPage}
         appearanceMode={appearanceMode}
         onToggleAppearance={toggleAppearanceMode}
-        activeBreadcrumb={activeBreadcrumb}
+        activeProjectLabel={activeProjectLabel}
+        activeTopicTitle={activeTopicTitle}
         onBrandClick={() => {
           if (page === 'docs') setPage('studio');
         }}
@@ -554,7 +561,9 @@ export function App() {
               onDeleteGraph={deleteGraph}
               onDeleteFolder={deleteFolder}
               onDeleteProject={deleteProject}
-              onNotifyToast={(msg) => notifyToast(msg)}
+              onNotifyToast={(msg) =>
+                notifyToast(msg, { id: 'clipboard-copy', kind: 'info', source: 'Clipboard' })
+              }
             />
           )}
 
@@ -590,7 +599,6 @@ export function App() {
                 chartKey={chartKey}
                 renderedSvg={renderedSvg}
                 hasActiveFile={Boolean(activeFile)}
-                parseError={parseError}
                 guide={activeGuide}
                 activeFlowId={activeFlowId}
                 activeStepIndex={activeStepIndex}
@@ -601,7 +609,11 @@ export function App() {
                 onFitCanvas={handleFitCanvas}
                 onCopyRef={(fp) => {
                   navigator.clipboard.writeText(fp);
-                  notifyToast(`Copied ${fp}`);
+                  notifyToast(`Copied ${fp}`, {
+                    id: 'clipboard-copy',
+                    kind: 'info',
+                    source: 'Clipboard',
+                  });
                 }}
               />
             </GraphPanel>
@@ -623,18 +635,7 @@ export function App() {
         </Suspense>
       )}
 
-      {toast && (
-        <div
-          className={`toast-banner ${toastVisible ? 'visible' : ''} ${toastAction ? 'has-action' : ''}`}
-        >
-          <span>{toast}</span>
-          {toastAction && (
-            <button type="button" className="toast-action-btn" onClick={toastAction.onClick}>
-              {toastAction.label}
-            </button>
-          )}
-        </div>
-      )}
+      <NotificationStack notifications={notifications} onDismiss={dismissToast} />
     </div>
   );
 }

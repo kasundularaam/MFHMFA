@@ -1,3 +1,4 @@
+import { Workflow } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
 import { useDragResize } from '../hooks/useDragResize';
 
@@ -39,7 +40,10 @@ export function GraphPanel({
       />
 
       <div className="sidebar-section-header graph-top-header">
-        <span className="sidebar-section-title">GRAPH</span>
+        <div className="sidebar-section-left">
+          <Workflow size={13} className="sidebar-header-icon" />
+          <span className="sidebar-section-title">GRAPH</span>
+        </div>
       </div>
 
       {children}

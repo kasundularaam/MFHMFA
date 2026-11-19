@@ -8,10 +8,30 @@ export type StudioPage = 'studio' | 'docs';
 export type LeftToolId = 'explorer';
 export type RightToolId = 'graph';
 export type CanvasTransitionKind = 'crossfade' | 'dive-in' | 'zoom-out';
+export type NotificationKind = 'info' | 'success' | 'warning' | 'error';
 
 export interface ToastAction {
   label: string;
   onClick: () => void;
+}
+
+export interface NotificationOptions {
+  id?: string;
+  kind?: NotificationKind;
+  source?: string;
+  action?: ToastAction | null;
+  sticky?: boolean;
+  durationMs?: number;
+}
+
+export interface StudioNotification {
+  id: string;
+  kind: NotificationKind;
+  message: string;
+  source?: string;
+  action: ToastAction | null;
+  sticky: boolean;
+  createdAt: number;
 }
 
 export interface AnchorPoint {
@@ -23,6 +43,8 @@ const APPEARANCE_STORAGE_KEY = 'mermaid-studio-mode';
 const RIGHT_TOOL_STORAGE_KEY = 'mfhmfa-right-tool';
 const LEFT_FRACTION_STORAGE_KEY = 'mfhmfa-left-panel-fraction';
 const RIGHT_FRACTION_STORAGE_KEY = 'mfhmfa-right-panel-fraction';
+const PARSE_ERROR_NOTIFICATION_ID = 'mermaid-parse-error';
+const MAX_VISIBLE_NOTIFICATIONS = 4;
 
 function readInitialAppearance(): AppearanceMode {
   try {
@@ -57,8 +79,20 @@ function readInitialFraction(key: string, fallback: number): number {
   return fallback;
 }
 
-let toastHideTimer: ReturnType<typeof setTimeout> | null = null;
-let toastClearTimer: ReturnType<typeof setTimeout> | null = null;
+function isToastAction(val: ToastAction | NotificationOptions): val is ToastAction {
+  return 'label' in val && typeof val.onClick === 'function';
+}
+
+let notificationSeq = 0;
+const notificationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearNotificationTimer(id: string): void {
+  const existing = notificationTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    notificationTimers.delete(id);
+  }
+}
 
 export interface UiStoreState {
   appearanceMode: AppearanceMode;
@@ -87,9 +121,7 @@ export interface UiStoreState {
   needsViewportFit: boolean;
   userCameraAdjusted: boolean;
 
-  toast: string | null;
-  toastAction: ToastAction | null;
-  toastVisible: boolean;
+  notifications: StudioNotification[];
 
   toggleAppearanceMode: () => void;
   setPage: (page: StudioPage) => void;
@@ -126,8 +158,11 @@ export interface UiStoreState {
   markViewportFitted: (fitZoom: number) => void;
   triggerFitCanvas: (fitZoom: number) => void;
 
-  notifyToast: (message: string, action?: ToastAction | null) => void;
-  dismissToast: () => void;
+  notifyToast: (
+    message: string,
+    actionOrOptions?: ToastAction | NotificationOptions | null
+  ) => string;
+  dismissToast: (id?: string) => void;
 }
 
 export const useUiStore = create<UiStoreState>((set, get) => ({
@@ -157,9 +192,7 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
   needsViewportFit: true,
   userCameraAdjusted: false,
 
-  toast: null,
-  toastAction: null,
-  toastVisible: false,
+  notifications: [],
 
   toggleAppearanceMode: () => {
     const next: AppearanceMode = get().appearanceMode === 'dark' ? 'light' : 'dark';
@@ -258,7 +291,8 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
       return { drillStack: idx >= 0 ? s.drillStack.slice(0, idx) : s.drillStack };
     }),
 
-  setRenderSuccess: ({ svg, renderedKey, diagramType, dimensions, requestFit }) =>
+  setRenderSuccess: ({ svg, renderedKey, diagramType, dimensions, requestFit }) => {
+    get().dismissToast(PARSE_ERROR_NOTIFICATION_ID);
     set({
       renderedSvg: svg,
       renderedKey,
@@ -266,22 +300,35 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
       dimensions,
       parseError: null,
       ...(requestFit ? { needsViewportFit: true, userCameraAdjusted: false } : {}),
-    }),
+    });
+  },
 
-  setRenderError: (parseError) =>
+  setRenderError: (parseError) => {
     set({
       renderedSvg: '',
       renderedKey: '',
       parseError,
-    }),
+    });
+    const formatted = parseError.line
+      ? `Diagram render error on line ${parseError.line}: ${parseError.message}`
+      : parseError.message;
+    get().notifyToast(formatted, {
+      id: PARSE_ERROR_NOTIFICATION_ID,
+      kind: 'error',
+      source: 'Mermaid Renderer',
+      sticky: true,
+    });
+  },
 
-  clearRenderStage: () =>
+  clearRenderStage: () => {
+    get().dismissToast(PARSE_ERROR_NOTIFICATION_ID);
     set({
       renderedSvg: '',
       renderedKey: '',
       parseError: null,
       dimensions: null,
-    }),
+    });
+  },
 
   setZoom: (updater) =>
     set((s) => ({
@@ -321,31 +368,71 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
       userCameraAdjusted: false,
     })),
 
-  notifyToast: (message, action = null) => {
-    if (toastHideTimer) clearTimeout(toastHideTimer);
-    if (toastClearTimer) clearTimeout(toastClearTimer);
+  notifyToast: (message, actionOrOptions = null) => {
+    const opts: NotificationOptions =
+      actionOrOptions && isToastAction(actionOrOptions)
+        ? { action: actionOrOptions }
+        : (actionOrOptions ?? {});
 
-    const holdMs = action ? 5200 : 2400;
+    const id = opts.id || `notif-${++notificationSeq}`;
+    const kind: NotificationKind = opts.kind || 'info';
+    const action = opts.action ?? null;
+    const sticky = Boolean(opts.sticky);
 
-    set({ toast: message, toastAction: action, toastVisible: false });
-    requestAnimationFrame(() => {
-      set({ toastVisible: true });
+    clearNotificationTimer(id);
+
+    const entry: StudioNotification = {
+      id,
+      kind,
+      message,
+      ...(opts.source ? { source: opts.source } : {}),
+      action,
+      sticky,
+      createdAt: Date.now(),
+    };
+
+    set((s) => {
+      const withoutId = s.notifications.filter((n) => n.id !== id);
+      const next = [entry, ...withoutId];
+      if (next.length > MAX_VISIBLE_NOTIFICATIONS) {
+        const overflow = next.slice(MAX_VISIBLE_NOTIFICATIONS);
+        for (const evicted of overflow) {
+          clearNotificationTimer(evicted.id);
+        }
+        return { notifications: next.slice(0, MAX_VISIBLE_NOTIFICATIONS) };
+      }
+      return { notifications: next };
     });
 
-    toastHideTimer = setTimeout(() => {
-      set({ toastVisible: false });
-      toastClearTimer = setTimeout(() => {
-        set({ toast: null, toastAction: null });
-      }, 200);
-    }, holdMs);
+    if (!sticky) {
+      const holdMs =
+        opts.durationMs ??
+        (action ? 6000 : kind === 'error' || kind === 'warning' ? 4800 : 3000);
+      const timer = setTimeout(() => {
+        notificationTimers.delete(id);
+        set((s) => ({
+          notifications: s.notifications.filter((n) => n.id !== id),
+        }));
+      }, holdMs);
+      notificationTimers.set(id, timer);
+    }
+
+    return id;
   },
 
-  dismissToast: () => {
-    if (toastHideTimer) clearTimeout(toastHideTimer);
-    if (toastClearTimer) clearTimeout(toastClearTimer);
-    set({ toastVisible: false });
-    toastClearTimer = setTimeout(() => {
-      set({ toast: null, toastAction: null });
-    }, 180);
+  dismissToast: (id) => {
+    if (id) {
+      clearNotificationTimer(id);
+      set((s) => ({
+        notifications: s.notifications.filter((n) => n.id !== id),
+      }));
+      return;
+    }
+    const newest = get().notifications[0];
+    if (!newest) return;
+    clearNotificationTimer(newest.id);
+    set((s) => ({
+      notifications: s.notifications.filter((n) => n.id !== newest.id),
+    }));
   },
 }));

@@ -43,22 +43,21 @@
 .icon-btn {
   width: 34px;
   height: 34px;
-  border-radius: 7px;
-  border: 1px solid transparent;
+  border-radius: 0;
+  border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out),
-    transform 120ms var(--ease-out), border-color 150ms var(--ease-out);
+  transition: color 140ms var(--ease-out), transform 120ms var(--ease-out);
   flex-shrink: 0;
 }
 
 .icon-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--text-primary);
 }
 
@@ -72,9 +71,8 @@
 }
 
 .icon-btn.active {
-  background: var(--bg-elevated);
-  border-color: var(--border-line);
-  color: var(--text-primary);
+  background: transparent;
+  color: var(--focus-accent);
 }
 
 /* Top-Left Brand Lockup */
@@ -84,11 +82,11 @@
   background: transparent;
   border: none;
   padding: 6px 7px;
-  border-radius: 6px;
+  border-radius: 0;
   color: var(--text-primary);
   cursor: default;
   user-select: none;
-  transition: background-color 140ms var(--ease-out), opacity 140ms var(--ease-out);
+  transition: color 140ms var(--ease-out), opacity 140ms var(--ease-out);
 }
 
 .brand-lockup.clickable {
@@ -96,12 +94,13 @@
 }
 
 .brand-lockup.clickable:hover {
-  background: var(--bg-elevated);
+  background: transparent;
+  color: var(--focus-accent);
 }
 
 .brand-logo {
   flex-shrink: 0;
-  color: var(--text-primary);
+  color: currentColor;
 }
 
 @keyframes livePulse {
@@ -134,7 +133,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 480px;
+  max-width: 520px;
   user-select: none;
 }
 
@@ -144,33 +143,34 @@
   }
 }
 
-/* Tactile Restrained Buttons */
+/* Sharp Minimal Buttons (Icon/Text Highlight on Hover, No BG Fill) */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  height: 34px;
-  padding: 0 13px;
-  border-radius: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 0;
   border: 1px solid var(--border-line);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  background: transparent;
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 150ms var(--ease-out), border-color 150ms var(--ease-out),
-    color 150ms var(--ease-out), transform 110ms var(--ease-out);
+  transition: border-color 140ms var(--ease-out), color 140ms var(--ease-out),
+    transform 110ms var(--ease-out);
   white-space: nowrap;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: transparent;
   border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .tab-unread-dot {
@@ -220,24 +220,24 @@
   position: relative;
   width: 32px;
   height: 32px;
-  border-radius: 7px;
-  border: 1px solid transparent;
+  border-radius: 0;
+  border: none;
   background: transparent;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 140ms var(--ease-out), color 140ms var(--ease-out);
+  transition: color 140ms var(--ease-out);
 }
 
 .activity-bar-btn:hover {
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--text-primary);
 }
 
 .activity-bar-btn.active {
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--text-primary);
 }
 
@@ -245,10 +245,10 @@
   content: '';
   position: absolute;
   left: -5px;
-  top: 6px;
-  bottom: 6px;
+  top: 4px;
+  bottom: 4px;
   width: 2px;
-  border-radius: 0 2px 2px 0;
+  border-radius: 0;
   background: var(--tab-accent);
 }
 
@@ -256,10 +256,10 @@
   content: '';
   position: absolute;
   right: -5px;
-  top: 6px;
-  bottom: 6px;
+  top: 4px;
+  bottom: 4px;
   width: 2px;
-  border-radius: 2px 0 0 2px;
+  border-radius: 0;
   background: var(--tab-accent);
 }
 
@@ -276,25 +276,24 @@
 }
 
 /* ============================================================================
-   Popover Dropdown & Explorer Context Menus
+   Sharp Dropdown & Explorer Context Menus (Text/Icon Hover Only)
    ============================================================================ */
 .dropdown-menu {
-  min-width: 192px;
+  min-width: 184px;
   background: var(--bg-popover);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  padding: 5px;
+  border-radius: 0;
+  padding: 4px 0;
   box-shadow: var(--shadow-menu);
   z-index: 160;
   display: flex;
   flex-direction: column;
-  gap: 2px;
   transform-origin: top right;
-  animation: popoverIn 150ms var(--ease-snappy);
+  animation: popoverIn 140ms var(--ease-snappy);
 }
 
 .explorer-context-menu {
-  min-width: 172px;
+  min-width: 168px;
   z-index: 120;
   transform-origin: top left;
 }
@@ -302,86 +301,165 @@
 .dropdown-divider {
   height: 1px;
   background: var(--border-line);
-  margin: 4px 2px;
+  margin: 4px 0;
 }
 
 .dropdown-item {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 11px;
-  border-radius: 6px;
+  padding: 7px 12px;
+  border-radius: 0;
   border: none;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+  transition: color 120ms var(--ease-out);
 }
 
 .dropdown-item:hover,
-.dropdown-item.selected {
-  background: var(--bg-menu-hover);
+.dropdown-item.selected,
+.dropdown-item[data-highlighted] {
+  background: transparent;
+  color: var(--text-primary);
+  outline: none;
 }
 
 .dropdown-item.danger {
-  color: var(--danger-fg);
+  color: color-mix(in srgb, var(--danger-fg) 78%, var(--text-muted));
 }
 
-.dropdown-item.danger:hover {
-  background: var(--danger-bg);
+.dropdown-item.danger:hover,
+.dropdown-item.danger[data-highlighted] {
+  background: transparent;
   color: var(--danger-fg);
+  outline: none;
+}
+
+.radix-dropdown-content {
+  position: relative;
+  right: auto;
+  top: auto;
+  z-index: 160;
 }
 
 /* ============================================================================
-   Toast Banner (with Optional Undo / Open Action)
+   Unified VS Code Bottom-Right Notification Stack
    ============================================================================ */
-.toast-banner {
+.vscode-notification-stack {
   position: fixed;
-  top: 58px;
-  left: 50%;
-  transform: translate(-50%, -6px) scale(0.97);
-  opacity: 0;
+  right: 52px;
+  bottom: 14px;
+  width: min(360px, calc(100vw - 68px));
+  z-index: 220;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.vscode-notification {
+  pointer-events: auto;
   background: var(--bg-popover);
   border: 1px solid var(--border-strong);
-  color: var(--text-primary);
-  padding: 7px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 0;
   box-shadow: var(--shadow-menu);
-  z-index: 200;
-  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  animation: drawerSlideUp 150ms var(--ease-out);
+}
+
+.vscode-notification-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 8px 10px 12px;
+}
+
+.vscode-notification-icon {
+  margin-top: 2px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  color: var(--focus-accent);
+}
+
+.vscode-notification-icon.kind-success {
+  color: var(--live-fg);
+}
+
+.vscode-notification-icon.kind-warning {
+  color: var(--hint-fg);
+}
+
+.vscode-notification-icon.kind-error {
+  color: var(--danger-fg);
+}
+
+.vscode-notification-message {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.vscode-notification-close {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 120ms var(--ease-out);
+}
+
+.vscode-notification-close:hover {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.vscode-notification-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  transition: opacity 180ms var(--ease-out), transform 200ms var(--ease-out);
+  padding: 0 12px 10px 36px;
 }
 
-.toast-banner.visible {
-  opacity: 1;
-  transform: translate(-50%, 0) scale(1);
+.vscode-notification-source {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.toast-banner.visible.has-action {
-  pointer-events: auto;
-}
-
-.toast-action-btn {
+.vscode-notification-action {
   height: 24px;
-  padding: 0 9px;
-  border-radius: 5px;
+  padding: 0 10px;
+  border-radius: 0;
   border: 1px solid var(--focus-border);
-  background: var(--focus-bg);
+  background: transparent;
   color: var(--focus-accent);
   font-size: 12px;
-  font-weight: 560;
+  font-weight: 550;
   cursor: pointer;
-  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
-    border-color 120ms var(--ease-out);
+  flex-shrink: 0;
+  transition: color 120ms var(--ease-out), border-color 120ms var(--ease-out);
 }
 
-.toast-action-btn:hover {
+.vscode-notification-action:hover {
+  background: transparent;
   border-color: var(--focus-accent);
   color: var(--text-primary);
 }
@@ -393,21 +471,4 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
-}
-
-.radix-dropdown-content {
-  position: relative;
-  right: auto;
-  top: auto;
-  z-index: 160;
-}
-
-.dropdown-item[data-highlighted] {
-  background: var(--bg-menu-hover);
-  outline: none;
-}
-
-.dropdown-item.danger[data-highlighted] {
-  background: var(--danger-bg);
-  color: var(--danger-fg);
 }

@@ -46,7 +46,7 @@
 .story-breadcrumb {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -105,9 +105,16 @@
   flex: 1;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   padding: 20px;
+}
+
+.empty-stage-icon {
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .story-empty-guide {
@@ -128,7 +135,6 @@
 /* Overview Lead Text (Clean Padding, Above Full-Width Scenario Tabs) */
 .story-overview {
   padding: 18px 20px 20px;
-  transition: background-color 140ms var(--ease-out);
 }
 
 .story-overview.has-divider {
@@ -139,8 +145,8 @@
   cursor: pointer;
 }
 
-.story-overview.can-reset:hover {
-  background: color-mix(in srgb, var(--bg-elevated) 38%, transparent);
+.story-overview.can-reset:hover .story-gist {
+  color: var(--text-primary);
 }
 
 .story-gist {
@@ -148,6 +154,7 @@
   font-size: 14.25px;
   line-height: 1.72;
   color: var(--text-reading);
+  transition: color 130ms var(--ease-out);
 }
 
 /* Full-Width Edge-to-Edge VS Code Scenario Tab Strip */
@@ -180,6 +187,7 @@
   min-width: 0;
   flex: 0 1 auto;
   border: none;
+  border-radius: 0;
   border-right: 1px solid var(--border-line);
   border-bottom: 1px solid var(--border-line);
   background: var(--bg-bar);
@@ -190,9 +198,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   overflow: hidden;
   cursor: pointer;
-  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+  transition: color 120ms var(--ease-out);
+}
+
+.story-flow-tab-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color 120ms var(--ease-out);
 }
 
 .story-flow-tab > span {
@@ -203,7 +218,11 @@
 }
 
 .story-flow-tab:hover {
-  background: var(--bg-elevated);
+  background: var(--bg-bar);
+  color: var(--text-primary);
+}
+
+.story-flow-tab:hover .story-flow-tab-icon {
   color: var(--text-primary);
 }
 
@@ -216,7 +235,11 @@
   z-index: 1;
 }
 
-/* Breathable Flat Typography-Only Step Rows (No Card Borders, Circles, or Nested Boxes) */
+.story-flow-tab.active .story-flow-tab-icon {
+  color: var(--tab-accent);
+}
+
+/* Breathable Flat Typography-Only Step Rows (Text/Icon Hover Only, Zero BG Fill) */
 .story-steps-list {
   list-style: none;
   margin: 0;
@@ -235,16 +258,21 @@
   position: relative;
   padding: 16px 20px 18px;
   background: transparent;
+  border-radius: 0;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 7px;
-  transition: background-color 130ms var(--ease-out), opacity 150ms var(--ease-out),
-    box-shadow 130ms var(--ease-out);
+  transition: opacity 150ms var(--ease-out), box-shadow 130ms var(--ease-out);
 }
 
 .story-step-card:hover {
-  background: color-mix(in srgb, var(--bg-elevated) 38%, transparent);
+  background: transparent;
+}
+
+.story-step-card:hover .story-step-num,
+.story-step-card:hover .story-step-title {
+  color: var(--focus-accent);
 }
 
 .story-step-card.softened {
@@ -252,12 +280,12 @@
 }
 
 .story-step-card.softened:hover {
-  opacity: 0.9;
+  opacity: 0.92;
 }
 
 .story-step-card.active {
   opacity: 1;
-  background: color-mix(in srgb, var(--focus-bg) 42%, transparent);
+  background: transparent;
   box-shadow: inset 2px 0 0 var(--focus-accent);
 }
 
@@ -286,6 +314,7 @@
   font-weight: 600;
   line-height: 1.42;
   color: var(--text-primary);
+  transition: color 130ms var(--ease-out);
 }
 
 .story-step-body {
@@ -305,6 +334,9 @@
 .story-step-trace {
   padding: 2px 0 2px 11px;
   border-left: 2px solid var(--border-strong);
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12.25px;
   line-height: 1.56;
@@ -312,7 +344,13 @@
   word-break: break-word;
 }
 
-/* Minimal Inline Expandable Check Question (Zero Box Chrome) */
+.story-trace-icon {
+  margin-top: 3px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Minimal Inline Expandable Check Question */
 .story-check-inline {
   margin-top: 2px;
   display: flex;
@@ -323,6 +361,7 @@
 .story-check-trigger {
   padding: 2px 0;
   border: none;
+  border-radius: 0;
   background: transparent;
   color: var(--text-secondary);
   text-align: left;
@@ -340,6 +379,13 @@
   transition: transform 140ms var(--ease-out);
 }
 
+.story-check-icon {
+  margin-top: 4px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color 120ms var(--ease-out);
+}
+
 .story-check-inline.open .story-check-caret {
   transform: rotate(90deg);
 }
@@ -353,32 +399,23 @@
 }
 
 .story-check-trigger:hover .story-check-question,
+.story-check-trigger:hover .story-check-icon,
 .story-check-inline.open .story-check-question {
   color: var(--text-primary);
 }
 
 .story-check-answer {
   padding-left: 19px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   font-size: 13.5px;
   line-height: 1.66;
   color: var(--text-reading);
 }
 
-/* Floating Error Pill on Canvas */
-.floating-error-pill {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--bg-popover);
-  border: 1px solid var(--danger-border);
-  color: var(--danger-fg);
-  padding: 7px 15px;
-  border-radius: 7px;
-  font-size: 13px;
-  box-shadow: var(--shadow-menu);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  animation: pillDropIn 200ms var(--ease-out);
+.story-answer-icon {
+  margin-top: 4px;
+  flex-shrink: 0;
+  color: var(--live-fg);
 }

@@ -1,4 +1,6 @@
+import { Check, Copy, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
+import { useUiStore } from '../store/uiStore';
 
 const DEFAULT_PUBLIC_BASE_URL = 'https://mfhmfa.kasun.si';
 
@@ -122,7 +124,8 @@ docker compose up -d --build
               onClick={onRotateWorkspaceId}
               title="Generate new workspace key"
             >
-              [Generate new key]
+              <RefreshCw size={12} />
+              <span>Generate new key</span>
             </button>
             . Add <code>?workspace={workspaceId}</code> to your MCP client and keep this tab
             open while working so new views stream straight into your browser.
@@ -411,10 +414,16 @@ function PlainPre({ code }: { code: string }) {
         onClick={() => {
           navigator.clipboard.writeText(code);
           setCopied(true);
+          useUiStore.getState().notifyToast('Code snippet copied', {
+            id: 'clipboard-copy',
+            kind: 'info',
+            source: 'Clipboard',
+          });
           setTimeout(() => setCopied(false), 1400);
         }}
       >
-        {copied ? 'Copied' : 'Copy'}
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+        <span>{copied ? 'Copied' : 'Copy'}</span>
       </button>
       <pre className="plain-pre">{code}</pre>
     </div>
