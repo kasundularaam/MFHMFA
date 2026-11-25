@@ -4,4 +4,5 @@ export * from './mermaidLabels.js';
 export * from './hierarchy.js';
 export * from './operations.js';
 export * from './serialization.js';
+export * from './bundle.js';
 export * from './rpc.js';

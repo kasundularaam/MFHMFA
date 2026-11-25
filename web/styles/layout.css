@@ -338,6 +338,12 @@
   outline: none;
 }
 
+.dropdown-item[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
 .radix-dropdown-content {
   position: relative;
   right: auto;

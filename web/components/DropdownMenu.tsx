@@ -77,17 +77,22 @@ export function DropdownItem({
   children,
   onSelect,
   danger = false,
+  disabled = false,
   className = '',
 }: {
   children: ReactNode;
   onSelect: () => void;
   danger?: boolean;
+  disabled?: boolean;
   className?: string;
 }) {
   return (
     <RadixDropdown.Item
+      disabled={disabled}
       className={`dropdown-item ${danger ? 'danger' : ''} ${className}`.trim()}
-      onSelect={() => onSelect()}
+      onSelect={() => {
+        if (!disabled) onSelect();
+      }}
     >
       {children}
     </RadixDropdown.Item>

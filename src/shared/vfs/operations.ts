@@ -12,7 +12,7 @@ import {
   normalizeRelativeDirPath,
   normalizeRelativeGraphPath,
 } from '../vfsPath.js';
-import { resolveProjectGraphHierarchy } from './hierarchy.js';
+import { collectGraphTreeFiles, resolveProjectGraphHierarchy } from './hierarchy.js';
 import {
   AGENT_ITERATION_COALESCE_MS,
   GENERAL_PROJECT_KEY,
@@ -675,42 +675,8 @@ export function deleteGraphFromProject(
     const proj = draft.projects.find((p) => p.projectKey === projectKey);
     if (!proj) return;
 
-    const hierarchy = resolveProjectGraphHierarchy(proj);
-    const rootFile = hierarchy.getRootForFile(fileId);
-    const startId = rootFile?.id ?? fileId;
-
-    const removedIds = new Set<string>([startId]);
-    const removedPaths = new Set<string>();
-    const queue: string[] = [startId];
-
-    while (queue.length > 0) {
-      const curId = queue.shift()!;
-      const curFile = proj.files.find((f) => f.id === curId);
-      if (curFile) {
-        removedPaths.add(curFile.path);
-      }
-      for (const child of hierarchy.childrenByFileId.get(curId) ?? []) {
-        if (!removedIds.has(child.id)) {
-          removedIds.add(child.id);
-          queue.push(child.id);
-        }
-      }
-    }
-
-    // Also sweep any pending sub-graphs declaring `guide.parentPath` into the deleted tree
-    let addedPending = true;
-    while (addedPending) {
-      addedPending = false;
-      for (const f of proj.files) {
-        if (removedIds.has(f.id)) continue;
-        const parentPath = getHeadVersion(f).guide?.parentPath;
-        if (parentPath && removedPaths.has(parentPath)) {
-          removedIds.add(f.id);
-          removedPaths.add(f.path);
-          addedPending = true;
-        }
-      }
-    }
+    const tree = collectGraphTreeFiles(proj, fileId);
+    const removedIds = new Set<string>(tree ? tree.files.map((f) => f.id) : [fileId]);
 
     proj.updatedAt = Date.now();
     proj.files = proj.files.filter((f) => !removedIds.has(f.id));

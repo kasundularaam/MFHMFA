@@ -202,6 +202,12 @@ docker compose up -d --build
               move views inside their project, while only you can delete graphs, folders, or
               projects from the Explorer menu.
             </li>
+            <li>
+              <strong>Shareable MFHMFA Files:</strong> Use <em>Export MFHMFA</em> on any graph
+              in the Explorer to save a portable <code>.mfhmfa.json</code> file (including all
+              linked sub-diagrams, walkthroughs, and clickable box cards), and{' '}
+              <em>Import MFHMFA</em> on any project or folder to load it back.
+            </li>
           </ul>
 
           <h2 id="doc-tools">5. MCP Tools</h2>

@@ -167,6 +167,62 @@ export function resolveProjectGraphHierarchy(project: VfsProjectRoot): ProjectGr
   };
 }
 
+/**
+ * Collects the full graph tree (root overview + all linked child/descendant sub-diagrams,
+ * plus any pending sub-diagrams declaring `guide.parentPath` into the tree) for any file ID.
+ */
+export function collectGraphTreeFiles(
+  project: VfsProjectRoot,
+  fileId: string
+): { rootFile: VfsGraphFile; files: VfsGraphFile[] } | null {
+  const byId = new Map<string, VfsGraphFile>();
+  for (const f of project.files) {
+    byId.set(f.id, f);
+  }
+  if (!byId.has(fileId)) return null;
+
+  const hierarchy = resolveProjectGraphHierarchy(project);
+  const rootFile = hierarchy.getRootForFile(fileId) ?? byId.get(fileId)!;
+
+  const collected: VfsGraphFile[] = [];
+  const collectedIds = new Set<string>([rootFile.id]);
+  const collectedPaths = new Set<string>();
+  const queue: string[] = [rootFile.id];
+
+  while (queue.length > 0) {
+    const curId = queue.shift()!;
+    const curFile = byId.get(curId);
+    if (!curFile) continue;
+    collected.push(curFile);
+    collectedPaths.add(curFile.path);
+
+    for (const child of hierarchy.childrenByFileId.get(curId) ?? []) {
+      if (!collectedIds.has(child.id)) {
+        collectedIds.add(child.id);
+        queue.push(child.id);
+      }
+    }
+  }
+
+  // Sweep any pending sub-diagrams whose `guide.parentPath` points into this tree
+  let addedPending = true;
+  while (addedPending) {
+    addedPending = false;
+    for (const f of project.files) {
+      if (collectedIds.has(f.id)) continue;
+      const parentPath = getHeadVersion(f).guide?.parentPath;
+      if (parentPath && collectedPaths.has(parentPath)) {
+        collectedIds.add(f.id);
+        collectedPaths.add(f.path);
+        collected.push(f);
+        addedPending = true;
+      }
+    }
+  }
+
+  return { rootFile, files: collected };
+}
+
 export function buildExplorerSubtree(
   project: VfsProjectRoot,
   baseDir = ''

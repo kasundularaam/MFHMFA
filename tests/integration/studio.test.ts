@@ -733,7 +733,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         expect(uiAudit.dotBeforeProjectLabel).toBe(true);
         expect(uiAudit.agentsHeaderButtons).toBe(0);
 
-        // Open graph context menu -> verify ONLY "Delete graph" is available (no Rename on graphs!)
+        // Open graph context menu -> verify "Export JSON" and "Delete graph" are available (no Rename on graphs!)
         await wsPage.evaluate(() => {
           const trigger = document.querySelector(
             '[data-explorer-path="project-a/database/session-er.mmd"] .tree-menu-trigger'
@@ -746,7 +746,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
             (el) => el.textContent?.trim()
           )
         );
-        expect(graphMenuItems).toEqual(['Delete graph']);
+        expect(graphMenuItems).toEqual(['Export MFHMFA', 'Delete graph']);
 
         // Delete graph -> verify VS Code bottom-right notification with sharp corners & Source label, then Undo!
         await wsPage.evaluate(() => {
@@ -1506,6 +1506,234 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
         });
       } finally {
         await lightCtx.close().catch(() => {});
+      }
+
+      // Verify graph-level JSON import (from Project menu) -> sub-diagram drilldown -> JSON export (from Graph menu)
+      const shareCtx = await browser.createBrowserContext();
+      const sharePage = await shareCtx.newPage();
+      try {
+        await sharePage.setViewport({ width: 1280, height: 800 });
+        await sharePage.goto(`${started.baseUrl}/?workspace=ws_json_share_e2e`, {
+          waitUntil: 'networkidle2',
+        });
+        await sharePage.waitForSelector('.canvas-stage svg');
+
+        // Confirm no TopBar import/export/PNG/SVG icons and no Explorer header import icon
+        const chromeAudit = await sharePage.evaluate(() => ({
+          topbarExportBtns: document.querySelectorAll('.topbar button[aria-label="Export"]')
+            .length,
+          topbarImportBtns: document.querySelectorAll('.topbar button[aria-label*="Import"]')
+            .length,
+          explorerHeaderButtons: document.querySelectorAll(
+            '.explorer-top-header .sidebar-header-actions button'
+          ).length,
+        }));
+        expect(chromeAudit).toEqual({
+          topbarExportBtns: 0,
+          topbarImportBtns: 0,
+          explorerHeaderButtons: 1,
+        });
+
+        const bundlePath = path.join(tempDir, 'shared-checkout.mfhmfa.json');
+        const sampleBundle = {
+          format: 'mfhmfa-graph',
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          title: 'Shared Checkout',
+          rootPath: 'overview.mmd',
+          files: [
+            {
+              path: 'overview.mmd',
+              title: 'Shared Checkout',
+              diagramType: 'flowchart-v2',
+              code: 'flowchart LR\n  Cart["Cart"] --> Pay["Charge Card"] --> Fulfill["Ship"]',
+              guide: {
+                gist: 'Imported full graph with linked child view.',
+                steps: [
+                  {
+                    title: '1. Charge customer',
+                    caption: 'Cart sends totals to Charge Card.',
+                    focusNodes: ['Cart', 'Pay'],
+                    trace: 'order=ord_99 | $42.00',
+                  },
+                ],
+                nodes: {
+                  Pay: {
+                    label: 'Charge Card',
+                    term: 'PaymentGateway.charge()',
+                    summary: 'Authorizes the card before shipping.',
+                    childPath: 'card-retry.mmd',
+                  },
+                },
+              },
+            },
+            {
+              path: 'card-retry.mmd',
+              title: 'Card Retry Logic',
+              diagramType: 'flowchart-v2',
+              code: 'flowchart TD\n  Try1["Attempt 1"] --> Try2["Backoff Retry"]',
+              guide: {
+                gist: 'Retries transient gateway errors safely.',
+                parentPath: 'overview.mmd',
+              },
+            },
+          ],
+        };
+        fs.writeFileSync(bundlePath, JSON.stringify(sampleBundle, null, 2), 'utf8');
+
+        // Reject plain `.json` files that do not end with `.mfhmfa.json`
+        const plainJsonPath = path.join(tempDir, 'plain.json');
+        fs.writeFileSync(plainJsonPath, JSON.stringify(sampleBundle, null, 2), 'utf8');
+
+        const acceptAttr = await sharePage.evaluate(
+          () =>
+            document
+              .querySelector('input[data-testid="graph-json-file-input"]')
+              ?.getAttribute('accept') ?? ''
+        );
+        expect(acceptAttr).toBe('.mfhmfa.json');
+
+        await sharePage.evaluate(() => {
+          const trigger = document.querySelector(
+            '[data-project-key="scratchpad"] .tree-project-row .tree-menu-trigger'
+          ) as HTMLElement | null;
+          trigger?.click();
+        });
+        await sharePage.waitForSelector('.explorer-context-menu .dropdown-item');
+        const [rejectChooser] = await Promise.all([
+          sharePage.waitForFileChooser(),
+          sharePage.evaluate(() => {
+            const items = Array.from(
+              document.querySelectorAll('.explorer-context-menu .dropdown-item')
+            );
+            const impItem = items.find((el) => el.textContent?.trim() === 'Import MFHMFA');
+            (impItem as HTMLElement | undefined)?.click();
+          }),
+        ]);
+        await rejectChooser.accept([plainJsonPath]);
+        await sharePage.waitForFunction(
+          () =>
+            (
+              document.querySelector('[data-testid="vscode-notifications"]')?.textContent || ''
+            ).includes('Only .mfhmfa.json files can be imported.'),
+          { timeout: 5_000 }
+        );
+
+        // Open Project `...` menu -> click "Import MFHMFA" -> supply valid .mfhmfa.json via FileChooser
+        await sharePage.evaluate(() => {
+          const trigger = document.querySelector(
+            '[data-project-key="scratchpad"] .tree-project-row .tree-menu-trigger'
+          ) as HTMLElement | null;
+          trigger?.click();
+        });
+        await sharePage.waitForSelector('.explorer-context-menu .dropdown-item');
+        const [fileChooser] = await Promise.all([
+          sharePage.waitForFileChooser(),
+          sharePage.evaluate(() => {
+            const items = Array.from(
+              document.querySelectorAll('.explorer-context-menu .dropdown-item')
+            );
+            const impItem = items.find((el) => el.textContent?.trim() === 'Import MFHMFA');
+            (impItem as HTMLElement | undefined)?.click();
+          }),
+        ]);
+        await fileChooser.accept([bundlePath]);
+
+        // Wait for imported root title & success notification
+        await sharePage.waitForFunction(
+          () =>
+            document.querySelector('.story-doc-title')?.textContent?.trim() ===
+            'Shared Checkout',
+          { timeout: 6_000 }
+        );
+        const importToast = await sharePage.evaluate(
+          () =>
+            document.querySelector('[data-testid="vscode-notifications"]')?.textContent || ''
+        );
+        expect(importToast).toContain('Imported "Shared Checkout" (2 views)');
+
+        // Click the drillable box and dive into the bundled child sub-diagram
+        await sharePage.waitForSelector('[data-mfhmfa-node="Pay"].mfhmfa-node-drillable');
+        await sharePage.click('[data-mfhmfa-node="Pay"]');
+        await sharePage.waitForSelector('[data-testid="node-inspector-card"]');
+        await sharePage.click('.node-drilldown-btn');
+
+        await sharePage.waitForFunction(
+          () =>
+            document.querySelector('.story-doc-title')?.textContent?.trim() ===
+            'Card Retry Logic',
+          { timeout: 6_000 }
+        );
+
+        // Intercept Blob JSON export via Graph `...` menu -> must export graph-level 2-view JSON (no project/folders!)
+        await sharePage.evaluate(() => {
+          const w = window as unknown as {
+            __capturedExport?: { filename: string; text: string };
+          };
+          const origCreateObjUrl = URL.createObjectURL.bind(URL);
+          const blobs = new Map<string, Blob>();
+          URL.createObjectURL = (obj: Blob | MediaSource) => {
+            const url = origCreateObjUrl(obj);
+            if (obj instanceof Blob) blobs.set(url, obj);
+            return url;
+          };
+          const origClick = HTMLAnchorElement.prototype.click;
+          HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+            const blob = blobs.get(this.href);
+            if (blob && this.download.endsWith('.mfhmfa.json')) {
+              const dl = this.download;
+              void blob.text().then((text) => {
+                w.__capturedExport = { filename: dl, text };
+              });
+              return;
+            }
+            origClick.call(this);
+          };
+        });
+
+        await sharePage.evaluate(() => {
+          const trigger = document.querySelector(
+            '[data-explorer-path="scratchpad/overview.mmd"] .tree-menu-trigger'
+          ) as HTMLElement | null;
+          trigger?.click();
+        });
+        await sharePage.waitForSelector('.explorer-context-menu .dropdown-item');
+        await sharePage.evaluate(() => {
+          const items = Array.from(
+            document.querySelectorAll('.explorer-context-menu .dropdown-item')
+          );
+          const jsonItem = items.find((el) => el.textContent?.trim() === 'Export MFHMFA');
+          (jsonItem as HTMLElement | undefined)?.click();
+        });
+
+        await sharePage.waitForFunction(
+          () =>
+            Boolean(
+              (window as unknown as { __capturedExport?: { filename: string; text: string } })
+                .__capturedExport
+            ),
+          { timeout: 5_000 }
+        );
+
+        const captured = await sharePage.evaluate(
+          () =>
+            (window as unknown as { __capturedExport: { filename: string; text: string } })
+              .__capturedExport
+        );
+        expect(captured.filename).toBe('shared-checkout.mfhmfa.json');
+        const reExported = JSON.parse(captured.text) as Record<string, unknown> & {
+          format: string;
+          version: number;
+          rootPath: string;
+          files: Array<{ path: string }>;
+        };
+        expect(reExported.format).toBe('mfhmfa-graph');
+        expect(reExported.version).toBe(1);
+        expect('project' in reExported).toBe(false);
+        expect(reExported.rootPath).toBe('overview.mmd');
+        expect(reExported.files.map((f) => f.path)).toEqual(['overview.mmd', 'card-retry.mmd']);
+      } finally {
+        await shareCtx.close().catch(() => {});
       }
     } finally {
       await browser.close().catch(() => {});

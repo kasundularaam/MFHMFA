@@ -28,11 +28,18 @@ import { BoundedIdSet, slugify } from '../../src/shared/strings.js';
 import { extractSvgDimensions, normalizeSvgIntrinsicDimensions } from '../../src/shared/svg.js';
 import {
   buildExplorerSubtree,
+  buildGraphExportBundle,
+  createFreshWorkspaceState,
   deleteGraphFromProject,
   evaluateVfsLs,
   evaluateVfsRead,
   findFileWithProject,
+  GRAPH_BUNDLE_FORMAT,
+  GRAPH_BUNDLE_VERSION,
+  getHeadVersion,
+  importGraphBundleIntoWorkspace,
   movePathInProject,
+  parseGraphExportBundle,
   resolveProjectGraphHierarchy,
   restoreGraphVersion,
   upsertGraphInVfs,
@@ -747,5 +754,195 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
       stepCount: 2,
       documentedNodeCount: 1,
     });
+  });
+
+  it('exports full multi-level graph trees as .mfhmfa.json and imports them collision-safely', () => {
+    let ws = createFreshWorkspaceState('ws_bundle_src', 1_000);
+
+    // Build a 3-file graph tree (root -> child -> grandchild)
+    const r1 = upsertGraphInVfs(ws, {
+      projectName: 'Order Service',
+      path: 'checkout/overview.mmd',
+      title: 'Checkout Pipeline',
+      code: 'flowchart LR\n  Cart["Cart"] --> Pay["Payment"] --> Ship["Ship"]',
+      guide: {
+        gist: 'Orders only ship after payment succeeds.',
+        steps: [
+          {
+            title: '1. Charge card',
+            caption: 'Cart hands totals to Payment.',
+            focusNodes: ['Cart', 'Pay'],
+            trace: 'amount=$48.00 -> authorized',
+          },
+        ],
+        nodes: {
+          Pay: {
+            label: 'Payment',
+            term: 'Stripe PaymentIntent',
+            summary: 'Charges the customer card.',
+            childPath: 'checkout/payment-detail.mmd',
+          },
+        },
+      },
+      diagramType: 'flowchart-v2',
+      agentSlug: 'claude-code',
+      agentLabel: 'Claude Code',
+      autoOpenTab: true,
+      autoFocus: true,
+      now: 1_100,
+    });
+    ws = r1.nextState;
+
+    const r2 = upsertGraphInVfs(ws, {
+      projectName: 'Order Service',
+      path: 'checkout/payment-detail.mmd',
+      title: 'Payment Internals',
+      code: 'flowchart TD\n  Intent["Intent"] --> Retry["Retry Queue"]',
+      guide: {
+        gist: 'Handles retries safely with idempotency keys.',
+        parentPath: 'checkout/overview.mmd',
+        nodes: {
+          Retry: {
+            summary: 'Retries failed gateway calls.',
+            childPath: 'checkout/deep/retry-backoff.mmd',
+          },
+        },
+      },
+      diagramType: 'flowchart-v2',
+      agentSlug: 'claude-code',
+      agentLabel: 'Claude Code',
+      autoOpenTab: false,
+      autoFocus: false,
+      now: 1_200,
+    });
+    ws = r2.nextState;
+
+    const r3 = upsertGraphInVfs(ws, {
+      projectName: 'Order Service',
+      path: 'checkout/deep/retry-backoff.mmd',
+      title: 'Retry Backoff',
+      code: 'flowchart LR\n  T1["1s"] --> T2["4s"] --> DLQ["DLQ"]',
+      guide: {
+        gist: 'Exponential backoff up to 3 tries.',
+        parentPath: 'checkout/payment-detail.mmd',
+      },
+      diagramType: 'flowchart-v2',
+      agentSlug: 'claude-code',
+      agentLabel: 'Claude Code',
+      autoOpenTab: false,
+      autoFocus: false,
+      now: 1_300,
+    });
+    ws = r3.nextState;
+
+    // Exporting from the nested grandchild still exports the ENTIRE full graph starting from root,
+    // strictly at graph level (no `project` field, no parent folder prefixes).
+    const exportedFromLeaf = buildGraphExportBundle(ws, r3.file.id, 2_000);
+    expect(exportedFromLeaf).not.toBeNull();
+    expect(exportedFromLeaf!.filename).toBe('checkout-pipeline.mfhmfa.json');
+    expect(exportedFromLeaf!.bundle.format).toBe(GRAPH_BUNDLE_FORMAT);
+    expect(exportedFromLeaf!.bundle.version).toBe(GRAPH_BUNDLE_VERSION);
+    expect('project' in exportedFromLeaf!.bundle).toBe(false);
+    expect(exportedFromLeaf!.bundle.rootPath).toBe('overview.mmd');
+    expect(exportedFromLeaf!.bundle.files.map((f) => f.path)).toEqual([
+      'overview.mmd',
+      'payment-detail.mmd',
+      'retry-backoff.mmd',
+    ]);
+    expect(exportedFromLeaf!.bundle.files[0]?.guide?.nodes?.Pay?.childPath).toBe(
+      'payment-detail.mmd'
+    );
+    expect(exportedFromLeaf!.bundle.files[1]?.guide?.parentPath).toBe('overview.mmd');
+    expect(exportedFromLeaf!.bundle.files[1]?.guide?.nodes?.Retry?.childPath).toBe(
+      'retry-backoff.mmd'
+    );
+    expect(exportedFromLeaf!.bundle.files[2]?.guide?.parentPath).toBe('payment-detail.mmd');
+
+    // Round-trip parse validates cleanly
+    const parsed = parseGraphExportBundle(exportedFromLeaf!.json);
+    expect(parsed.files.length).toBe(3);
+    expect(parsed.files[0]?.guide?.nodes?.Pay?.term).toBe('Stripe PaymentIntent');
+
+    // Import into a target project root -> lands directly in that project with flat graph filenames
+    const freshTarget = createFreshWorkspaceState('ws_bundle_dest', 3_000);
+    const imp1 = importGraphBundleIntoWorkspace(freshTarget, parsed, {
+      targetProjectKey: 'scratchpad',
+      now: 3_100,
+    });
+    expect(imp1.importedCount).toBe(3);
+    expect(imp1.projectKey).toBe('scratchpad');
+    expect(imp1.nextState.activeFileId).toBe(imp1.rootFile.id);
+    expect(imp1.rootFile.path).toBe('overview.mmd');
+
+    // Re-importing the exact same bundle into the SAME project collides cleanly without overwriting
+    const imp2 = importGraphBundleIntoWorkspace(imp1.nextState, parsed, {
+      targetProjectKey: imp1.projectKey,
+      now: 3_200,
+    });
+    const projAfterDup = imp2.nextState.projects.find((p) => p.projectKey === imp1.projectKey)!;
+    // 1 welcome file + 3 first import + 3 duplicate import = 7 files
+    expect(projAfterDup.files.length).toBe(7);
+    expect(imp2.rootFile.path).toBe('overview-2.mmd');
+
+    // Verify internal childPath / parentPath links on the duplicated tree point to the `-2` copies
+    const dupRootGuide = getHeadVersion(imp2.rootFile).guide;
+    expect(dupRootGuide?.nodes?.Pay?.childPath).toBe('payment-detail-2.mmd');
+
+    const dupChild = projAfterDup.files.find((f) => f.path === 'payment-detail-2.mmd')!;
+    expect(getHeadVersion(dupChild).guide?.parentPath).toBe('overview-2.mmd');
+    expect(getHeadVersion(dupChild).guide?.nodes?.Retry?.childPath).toBe('retry-backoff-2.mmd');
+
+    const dupGrand = projAfterDup.files.find((f) => f.path === 'retry-backoff-2.mmd')!;
+    expect(getHeadVersion(dupGrand).guide?.parentPath).toBe('payment-detail-2.mmd');
+
+    const hier = resolveProjectGraphHierarchy(projAfterDup);
+    expect(hier.getRootForFile(dupGrand.id)?.id).toBe(imp2.rootFile.id);
+
+    // Import into a specific folder places all graph files cleanly inside that folder
+    const impFolder = importGraphBundleIntoWorkspace(imp1.nextState, parsed, {
+      targetProjectKey: imp1.projectKey,
+      targetFolder: 'shared/team-docs',
+      now: 3_300,
+    });
+    expect(impFolder.rootFile.path).toBe('shared/team-docs/overview.mmd');
+    expect(getHeadVersion(impFolder.rootFile).guide?.nodes?.Pay?.childPath).toBe(
+      'shared/team-docs/payment-detail.mmd'
+    );
+    const folderProj = impFolder.nextState.projects.find(
+      (p) => p.projectKey === impFolder.projectKey
+    )!;
+    const rebasedGrand = folderProj.files.find(
+      (f) => f.path === 'shared/team-docs/retry-backoff.mmd'
+    );
+    expect(rebasedGrand).toBeDefined();
+    expect(getHeadVersion(rebasedGrand!).guide?.parentPath).toBe(
+      'shared/team-docs/payment-detail.mmd'
+    );
+
+    // Rejects invalid / unsafe JSON bundles
+    expect(() => parseGraphExportBundle('not-json')).toThrow(/Could not parse JSON/i);
+    expect(() => parseGraphExportBundle(JSON.stringify({ name: 'package.json' }))).toThrow(
+      /Not a valid MFHMFA graph file/i
+    );
+    expect(() =>
+      parseGraphExportBundle(
+        JSON.stringify({
+          format: GRAPH_BUNDLE_FORMAT,
+          version: 99,
+          rootPath: 'a.mmd',
+          files: [{ path: 'a.mmd', code: 'flowchart LR\nA-->B' }],
+        })
+      )
+    ).toThrow(/Unsupported MFHMFA graph bundle version/i);
+    expect(() =>
+      parseGraphExportBundle(
+        JSON.stringify({
+          format: GRAPH_BUNDLE_FORMAT,
+          version: 1,
+          rootPath: '../escape.mmd',
+          files: [{ path: '../escape.mmd', code: 'flowchart LR\nA-->B' }],
+        })
+      )
+    ).toThrow(/cannot traverse/i);
   });
 });

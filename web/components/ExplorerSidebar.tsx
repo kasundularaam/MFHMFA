@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Download,
   FileCode,
   Files,
   Folder,
@@ -14,6 +15,7 @@ import {
   Pencil,
   Plug,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentSessionInfo } from '../../src/shared/types';
@@ -45,6 +47,11 @@ interface ExplorerSidebarProps {
   onDeleteGraph: (projectKey: string, fileId: string) => void;
   onDeleteFolder: (projectKey: string, folderPath: string) => void;
   onDeleteProject: (projectKey: string) => void;
+  onExportGraphJson: (fileId: string) => void;
+  onImportGraphJson: (target: {
+    targetProjectKey: string;
+    targetFolder?: string | null;
+  }) => void;
   onNotifyToast: (msg: string) => void;
 }
 
@@ -193,6 +200,8 @@ export function ExplorerSidebar({
   onDeleteGraph,
   onDeleteFolder,
   onDeleteProject,
+  onExportGraphJson,
+  onImportGraphJson,
   onNotifyToast,
 }: ExplorerSidebarProps) {
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set());
@@ -324,6 +333,8 @@ export function ExplorerSidebar({
             onDeleteGraph={onDeleteGraph}
             onDeleteFolder={onDeleteFolder}
             onDeleteProject={onDeleteProject}
+            onExportGraphJson={onExportGraphJson}
+            onImportGraphJson={onImportGraphJson}
             renderInlineInput={renderInlineInput}
           />
         ))}
@@ -407,6 +418,11 @@ interface ExplorerProjectSectionProps {
   onDeleteGraph: (projectKey: string, fileId: string) => void;
   onDeleteFolder: (projectKey: string, folderPath: string) => void;
   onDeleteProject: (projectKey: string) => void;
+  onExportGraphJson: (fileId: string) => void;
+  onImportGraphJson: (target: {
+    targetProjectKey: string;
+    targetFolder?: string | null;
+  }) => void;
   renderInlineInput: (depth: number, placeholder: string) => React.ReactNode;
 }
 
@@ -426,6 +442,8 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
   onDeleteGraph,
   onDeleteFolder,
   onDeleteProject,
+  onExportGraphJson,
+  onImportGraphJson,
   renderInlineInput,
 }: ExplorerProjectSectionProps) {
   const { tree: treeRoot, activeRootResolver } = useMemo(
@@ -486,6 +504,11 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
               </button>
             }
           >
+            <DropdownItem onSelect={() => onExportGraphJson(file.id)}>
+              <Download size={15} />
+              <span>Export MFHMFA</span>
+            </DropdownItem>
+            <DropdownSeparator />
             <DropdownItem danger onSelect={() => onDeleteGraph(project.projectKey, file.id)}>
               <Trash2 size={15} />
               <span>Delete graph</span>
@@ -551,6 +574,17 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
                 <DropdownItem onSelect={() => onStartNewFolder(project.projectKey, node.path)}>
                   <FolderPlus size={15} />
                   <span>New folder</span>
+                </DropdownItem>
+                <DropdownItem
+                  onSelect={() =>
+                    onImportGraphJson({
+                      targetProjectKey: project.projectKey,
+                      targetFolder: node.path,
+                    })
+                  }
+                >
+                  <Upload size={15} />
+                  <span>Import MFHMFA</span>
                 </DropdownItem>
                 <DropdownItem
                   onSelect={() => onStartRenameFolder(project.projectKey, node.path, node.name)}
@@ -628,6 +662,16 @@ const ExplorerProjectSection = memo(function ExplorerProjectSection({
             >
               <FolderPlus size={15} />
               <span>New folder</span>
+            </DropdownItem>
+            <DropdownItem
+              onSelect={() =>
+                onImportGraphJson({
+                  targetProjectKey: project.projectKey,
+                })
+              }
+            >
+              <Upload size={15} />
+              <span>Import MFHMFA</span>
             </DropdownItem>
             <DropdownSeparator />
             <DropdownItem danger onSelect={() => onDeleteProject(project.projectKey)}>

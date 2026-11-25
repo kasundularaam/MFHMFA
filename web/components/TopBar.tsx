@@ -1,8 +1,7 @@
-import { BookOpen, Download, FileCode2, Image, Moon, Sun } from 'lucide-react';
+import { BookOpen, Moon, Sun } from 'lucide-react';
 import type { StudioPage } from '../store/uiStore';
 import type { AppearanceMode } from '../theme/comfortTheme';
 import { BrandLogo } from './BrandLogo';
-import { ActionMenu, DropdownItem } from './DropdownMenu';
 
 const DEFAULT_GITHUB_URL = 'https://github.com/kasundularaam/MFHMFA';
 
@@ -16,8 +15,6 @@ interface TopBarProps {
   activeTopicTitle: string | null;
   onBrandClick: () => void;
   repoUrl?: string;
-  onExportPng: () => void;
-  onExportSvg: () => void;
 }
 
 export function TopBar({
@@ -30,8 +27,6 @@ export function TopBar({
   activeTopicTitle,
   onBrandClick,
   repoUrl,
-  onExportPng,
-  onExportSvg,
 }: TopBarProps) {
   return (
     <header className="topbar">
@@ -61,24 +56,6 @@ export function TopBar({
       </div>
 
       <div className="topbar-right">
-        {!isMobile && page === 'studio' && (
-          <ActionMenu
-            align="end"
-            trigger={
-              <button type="button" className="icon-btn" title="Export" aria-label="Export">
-                <Download size={18} />
-              </button>
-            }
-          >
-            <DropdownItem onSelect={onExportPng}>
-              <Image size={15} /> Export PNG
-            </DropdownItem>
-            <DropdownItem onSelect={onExportSvg}>
-              <FileCode2 size={15} /> Export SVG
-            </DropdownItem>
-          </ActionMenu>
-        )}
-
         {!isMobile && (
           <button
             type="button"

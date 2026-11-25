@@ -8,13 +8,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
 } from 'react';
 import { resolveGuideFlows } from '../src/shared/comprehension';
-import { slugify } from '../src/shared/strings';
 import {
   findFileWithProject,
   GENERAL_PROJECT_KEY,
   getHeadVersion,
+  GRAPH_BUNDLE_EXTENSION,
   resolveProjectGraphHierarchy,
   toProjectKey,
   type GraphBreadcrumbHop,
@@ -34,7 +35,6 @@ import { useMermaidRenderSync } from './hooks/useMermaidRenderSync';
 import { useStudioShortcuts } from './hooks/useStudioShortcuts';
 import { useViewportWidth } from './hooks/useViewportWidth';
 import { useWorkspaceRelay } from './hooks/useWorkspaceRelay';
-import { studioApi } from './services/studioClient';
 import {
   useUiStore,
   type CanvasTransitionKind,
@@ -117,7 +117,15 @@ export function App() {
   const deleteGraph = useWorkspaceStore((s) => s.deleteGraph);
   const deleteFolder = useWorkspaceStore((s) => s.deleteFolder);
   const deleteProject = useWorkspaceStore((s) => s.deleteProject);
+  const exportGraphJson = useWorkspaceStore((s) => s.exportGraphJson);
+  const importGraphJson = useWorkspaceStore((s) => s.importGraphJson);
   const rotateWorkspaceId = useWorkspaceStore((s) => s.rotateWorkspaceId);
+
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingImportTargetRef = useRef<{
+    targetProjectKey: string;
+    targetFolder?: string | null;
+  } | null>(null);
 
   // UI store subscriptions (excluding zoom/pan so App never re-renders while panning!)
   const appearanceMode = useUiStore((s) => s.appearanceMode);
@@ -220,7 +228,6 @@ export function App() {
 
   const code = headVersionRecord?.code ?? '';
   const activeGuide = headVersionRecord?.guide;
-  const title = activeFile?.title ?? null;
   const activeVersionNumber = activeFile
     ? (headVersionRecord?.version ?? activeFile.currentVersion)
     : 1;
@@ -461,44 +468,80 @@ export function App() {
     [activeFile, activeProject, notifyToast, openFile, pushDrillOrigin]
   );
 
-  const handleExportPng = useCallback(async () => {
-    if (!code.trim()) return;
-    const serverTheme = appearanceMode === 'dark' ? 'dark' : 'neutral';
-    const serverBg = appearanceMode === 'dark' ? '#191918' : '#f5f1e9';
-    try {
-      const res = await studioApi.renderServer({
-        code,
-        title: title ?? undefined,
-        theme: serverTheme,
-        look: 'classic',
-        background: serverBg,
-        includePngBase64: true,
-      });
-      if (res.pngDataUrl) {
-        const a = document.createElement('a');
-        a.href = res.pngDataUrl;
-        a.download = `${slugify(title || res.title || 'diagram')}.png`;
-        a.click();
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      notifyToast(`Export failed: ${message}`, {
-        kind: 'error',
+  const handleExportJson = useCallback(
+    (fileId: string) => {
+      const exported = exportGraphJson(fileId);
+      if (!exported) return;
+
+      const blob = new Blob([exported.json], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exported.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      const count = exported.bundle.files.length;
+      const viewSuffix = count > 1 ? ` (${count} views)` : '';
+      notifyToast(`Exported "${exported.bundle.title}"${viewSuffix}`, {
+        kind: 'success',
         source: 'Export',
       });
-    }
-  }, [appearanceMode, code, notifyToast, title]);
+    },
+    [exportGraphJson, notifyToast]
+  );
 
-  const handleExportSvg = useCallback(() => {
-    if (!renderedSvg) return;
-    const blob = new Blob([renderedSvg], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${slugify(title || 'diagram')}.svg`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [renderedSvg, title]);
+  const handleImportJsonFile = useCallback(
+    async (file: File, target: { targetProjectKey: string; targetFolder?: string | null }) => {
+      if (!file.name.toLowerCase().endsWith(GRAPH_BUNDLE_EXTENSION)) {
+        notifyToast(`Only ${GRAPH_BUNDLE_EXTENSION} files can be imported.`, {
+          kind: 'error',
+          source: 'Import',
+        });
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        notifyToast('MFHMFA file is too large (max 10 MB).', {
+          kind: 'error',
+          source: 'Import',
+        });
+        return;
+      }
+      try {
+        const text = await file.text();
+        importGraphJson(text, target);
+      } catch (err: unknown) {
+        notifyToast(err instanceof Error ? err.message : 'Failed to read file.', {
+          kind: 'error',
+          source: 'Import',
+        });
+      }
+    },
+    [importGraphJson, notifyToast]
+  );
+
+  const requestImportJson = useCallback(
+    (target: { targetProjectKey: string; targetFolder?: string | null }) => {
+      pendingImportTargetRef.current = target;
+      const input = importInputRef.current;
+      if (!input) return;
+      input.value = '';
+      input.click();
+    },
+    []
+  );
+
+  const handleImportInputChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      const target = pendingImportTargetRef.current;
+      pendingImportTargetRef.current = null;
+      e.target.value = '';
+      if (!file || !target) return;
+      void handleImportJsonFile(file, target);
+    },
+    [handleImportJsonFile]
+  );
 
   const rootTopicFile =
     activeFile && projectHierarchy
@@ -510,6 +553,15 @@ export function App() {
 
   return (
     <div className="studio-shell">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept={GRAPH_BUNDLE_EXTENSION}
+        style={{ display: 'none' }}
+        data-testid="graph-json-file-input"
+        onChange={handleImportInputChange}
+      />
+
       <TopBar
         isMobile={isMobile}
         page={page}
@@ -522,8 +574,6 @@ export function App() {
           if (page === 'docs') setPage('studio');
         }}
         repoUrl={serverStatus?.repoUrl}
-        onExportPng={handleExportPng}
-        onExportSvg={handleExportSvg}
       />
 
       {isMobile ? (
@@ -561,6 +611,8 @@ export function App() {
               onDeleteGraph={deleteGraph}
               onDeleteFolder={deleteFolder}
               onDeleteProject={deleteProject}
+              onExportGraphJson={(fileId) => handleExportJson(fileId)}
+              onImportGraphJson={requestImportJson}
               onNotifyToast={(msg) =>
                 notifyToast(msg, { id: 'clipboard-copy', kind: 'info', source: 'Clipboard' })
               }

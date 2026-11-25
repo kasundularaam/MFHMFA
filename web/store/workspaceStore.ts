@@ -11,6 +11,7 @@ import type {
 } from '../../src/shared/types';
 import {
   allocateProjectSpace,
+  buildGraphExportBundle,
   createFreshWorkspaceState,
   deleteFolderFromProject,
   deleteGraphFromProject,
@@ -19,11 +20,14 @@ import {
   evaluateVfsRead,
   findFileWithProject,
   getHeadVersion,
+  importGraphBundleIntoWorkspace,
   movePathInProject,
   normalizeWorkspaceConsistency,
+  parseGraphExportBundle,
   resolveProjectGraphHierarchy,
   toProjectKey,
   upsertGraphInVfs,
+  type BuiltGraphExport,
   type WorkspaceState,
 } from '../../src/shared/vfs';
 import { normalizeRelativeDirPath } from '../../src/shared/vfsPath';
@@ -107,6 +111,12 @@ export interface WorkspaceStoreState {
   deleteGraph: (projectKey: string, fileId: string) => void;
   deleteFolder: (projectKey: string, folderPath: string) => void;
   deleteProject: (projectKey: string) => void;
+
+  exportGraphJson: (fileId: string) => BuiltGraphExport | null;
+  importGraphJson: (
+    rawJson: string,
+    target: { targetProjectKey: string; targetFolder?: string | null }
+  ) => { ok: true; title: string; importedCount: number } | { ok: false; error: string };
 
   rotateWorkspaceId: () => void;
 
@@ -299,6 +309,59 @@ export const useWorkspaceStore = create<WorkspaceStoreState>((set, get) => ({
         },
       },
     });
+  },
+
+  exportGraphJson: (fileId) => {
+    const { workspace } = get();
+    return buildGraphExportBundle(workspace, fileId);
+  },
+
+  importGraphJson: (rawJson, target) => {
+    try {
+      const bundle = parseGraphExportBundle(rawJson);
+      const prevSnapshot = snapshotCameraIntoState(get().workspace);
+
+      const imported = importGraphBundleIntoWorkspace(prevSnapshot, bundle, {
+        targetProjectKey: target.targetProjectKey,
+        targetFolder: target.targetFolder,
+      });
+
+      useUiStore.getState().clearDrillStack();
+      set({ workspace: imported.nextState });
+      syncCameraForActiveFile(imported.nextState);
+      void saveWorkspaceImmediate(imported.nextState, reportPersistenceError);
+
+      const viewSuffix = imported.importedCount > 1 ? ` (${imported.importedCount} views)` : '';
+      const notifId = useUiStore
+        .getState()
+        .notifyToast(`Imported "${imported.rootFile.title}"${viewSuffix}`, {
+          kind: 'success',
+          source: 'Import',
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              useUiStore.getState().clearDrillStack();
+              set({ workspace: prevSnapshot });
+              syncCameraForActiveFile(prevSnapshot);
+              void saveWorkspaceImmediate(prevSnapshot, reportPersistenceError);
+              useUiStore.getState().dismissToast(notifId);
+            },
+          },
+        });
+
+      return {
+        ok: true,
+        title: imported.rootFile.title,
+        importedCount: imported.importedCount,
+      };
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err.message : 'Failed to import graph JSON.';
+      useUiStore.getState().notifyToast(error, {
+        kind: 'error',
+        source: 'Import',
+      });
+      return { ok: false, error };
+    }
   },
 
   rotateWorkspaceId: () => {
