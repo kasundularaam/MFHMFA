@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveBaseUrl } from '../config/env.js';
 import { getSyntaxGuide, MERMAID_TEMPLATES } from '../domain/catalog.js';
+import { analyzeGuideWarnings } from '../domain/diagnostics.js';
 import { buildLearningPlaybookDocument } from '../domain/playbooks.js';
 import type {
   RenderEnginePort,
@@ -225,6 +226,9 @@ export class StudioService {
     const cleanGuide = sanitizeComprehensionGuide(options.guide);
 
     const res = await this.engine.render(code, options);
+    const guideWarnings = res.valid ? analyzeGuideWarnings(code, cleanGuide) : [];
+    const mergedWarnings =
+      guideWarnings.length > 0 ? [...res.warnings, ...guideWarnings] : res.warnings;
     const hash = crypto
       .createHash('sha1')
       .update(`${code}|${res.theme}|${res.look}|${res.background}`)
@@ -288,6 +292,7 @@ export class StudioService {
 
     return {
       ...res,
+      warnings: mergedWarnings,
       renderId,
       path: relPath,
       title,

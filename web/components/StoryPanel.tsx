@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   CheckCircle2,
   ChevronRight,
   GitBranch,
@@ -99,7 +100,7 @@ export function StoryPanel({
   const steps = currentFlow?.steps ?? [];
   const hasMultipleFlows = flows.length > 1;
   const docTitle = activeFile.title?.trim() || graphTitleFromPath(activeFile.path);
-  const hasGuideBody = Boolean(guide?.gist || steps.length > 0);
+  const hasGuideBody = Boolean(guide?.gist || guide?.scenario || steps.length > 0);
 
   return (
     <main
@@ -142,7 +143,7 @@ export function StoryPanel({
       </header>
 
       <div className="story-scroll-container">
-        {guide?.gist && (
+        {(guide?.gist || guide?.scenario) && (
           <div
             className={`story-overview ${
               !hasMultipleFlows && steps.length > 0 ? 'has-divider' : ''
@@ -158,7 +159,17 @@ export function StoryPanel({
                 : undefined
             }
           >
-            <p className="story-gist">{guide.gist}</p>
+            {guide.gist && <p className="story-gist">{guide.gist}</p>}
+
+            {guide.scenario && (
+              <div className="story-scenario" data-testid="story-scenario">
+                <div className="story-scenario-label">
+                  <BookOpen size={12} />
+                  <span>Example Scenario</span>
+                </div>
+                <p className="story-scenario-text">{guide.scenario}</p>
+              </div>
+            )}
           </div>
         )}
 

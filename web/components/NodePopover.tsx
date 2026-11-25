@@ -1,15 +1,45 @@
 import {
   AlertTriangle,
+  ArrowRightLeft,
   ArrowUpRight,
+  BookOpen,
+  Box,
   ChevronRight,
+  Clock,
   Code2,
+  Cog,
+  Database,
   FileCode2,
-  Terminal,
+  GitBranch,
+  Layers,
+  User,
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { resolveNodeRefs } from '../../src/shared/comprehension';
-import type { DiagramNodeDetail } from '../../src/shared/types';
+import { NODE_KIND_LABELS } from '../../src/shared/diagramLegend';
+import type { DiagramNodeDetail, DiagramNodeKind } from '../../src/shared/types';
+
+function NodeKindIcon({ kind }: { kind: DiagramNodeKind }) {
+  switch (kind) {
+    case 'actor':
+      return <User size={11} />;
+    case 'service':
+      return <Cog size={11} />;
+    case 'store':
+      return <Database size={11} />;
+    case 'queue':
+      return <ArrowRightLeft size={11} />;
+    case 'job':
+      return <Clock size={11} />;
+    case 'decision':
+      return <GitBranch size={11} />;
+    case 'subsystem':
+      return <Layers size={11} />;
+    case 'concept':
+      return <Box size={11} />;
+  }
+}
 
 interface NodePopoverProps {
   selectedNodeId: string;
@@ -54,7 +84,19 @@ export function NodePopover({
       onWheel={(e) => e.stopPropagation()}
     >
       <div className="node-inspector-header">
-        <h3 className="node-inspector-title">{displayLabel}</h3>
+        <div className="node-inspector-heading-group">
+          <h3 className="node-inspector-title">{displayLabel}</h3>
+          {detail.kind && (
+            <span
+              className="node-inspector-kind-badge"
+              data-testid="node-inspector-kind"
+              data-node-kind={detail.kind}
+            >
+              <NodeKindIcon kind={detail.kind} />
+              <span>{NODE_KIND_LABELS[detail.kind]}</span>
+            </span>
+          )}
+        </div>
 
         <div className="node-inspector-header-actions">
           {detail.childPath && (
@@ -93,10 +135,12 @@ export function NodePopover({
         {detail.example && (
           <div className="node-inspector-section">
             <div className="node-inspector-label">
-              <Terminal size={12} />
+              <BookOpen size={12} />
               <span>Example</span>
             </div>
-            <div className="node-inspector-example">{detail.example}</div>
+            <div className="node-inspector-example" data-testid="node-inspector-example">
+              {detail.example}
+            </div>
           </div>
         )}
 

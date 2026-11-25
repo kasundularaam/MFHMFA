@@ -35,12 +35,30 @@ export interface DiagramDimensions {
   scale: number;
 }
 
+export type DiagramNodeKind =
+  | 'actor'
+  | 'service'
+  | 'store'
+  | 'queue'
+  | 'job'
+  | 'decision'
+  | 'subsystem'
+  | 'concept';
+
+export type DiagramLegendSymbol = DiagramNodeKind | 'sync-edge' | 'async-edge' | 'drillable';
+
+export interface DiagramLegendItem {
+  symbol: DiagramLegendSymbol;
+  label: string;
+}
+
 /**
  * Progressive-disclosure inspector card attached to a Mermaid node ID
  * (Dual Coding + Counterfactual Reasoning + Sub-Graph Zoom).
  */
 export interface DiagramNodeDetail {
   label?: string;
+  kind?: DiagramNodeKind;
   term?: string;
   summary: string;
   example?: string;
@@ -84,6 +102,8 @@ export interface DiagramWalkthroughFlow {
  */
 export interface DiagramComprehensionGuide {
   gist?: string;
+  scenario?: string;
+  legend?: DiagramLegendItem[];
   steps?: DiagramWalkthroughStep[];
   flows?: DiagramWalkthroughFlow[];
   nodes?: Record<string, DiagramNodeDetail>;

@@ -2,14 +2,41 @@ import { z } from 'zod';
 import { slugify } from './strings.js';
 import type {
   DiagramComprehensionGuide,
+  DiagramLegendItem,
+  DiagramLegendSymbol,
   DiagramNodeDetail,
+  DiagramNodeKind,
   DiagramStepCheck,
   DiagramWalkthroughFlow,
   DiagramWalkthroughStep,
 } from './types.js';
 import { normalizeRelativeGraphPath } from './vfsPath.js';
 
+export const DIAGRAM_NODE_KINDS = [
+  'actor',
+  'service',
+  'store',
+  'queue',
+  'job',
+  'decision',
+  'subsystem',
+  'concept',
+] as const satisfies readonly DiagramNodeKind[];
+
+export const DIAGRAM_LEGEND_SYMBOLS = [
+  ...DIAGRAM_NODE_KINDS,
+  'sync-edge',
+  'async-edge',
+  'drillable',
+] as const satisfies readonly DiagramLegendSymbol[];
+
+const NODE_KIND_SET = new Set<string>(DIAGRAM_NODE_KINDS);
+const LEGEND_SYMBOL_SET = new Set<string>(DIAGRAM_LEGEND_SYMBOLS);
+
 const MAX_GIST_CHARS = 360;
+const MAX_SCENARIO_CHARS = 360;
+const MAX_LEGEND_ITEMS = 10;
+const MAX_LEGEND_LABEL_CHARS = 64;
 const MAX_FLOWS = 6;
 const MAX_FLOW_LABEL_CHARS = 64;
 const MAX_STEPS = 20;
@@ -96,9 +123,27 @@ const RawFlowSanitizer = z
   })
   .passthrough();
 
+const OptionalNodeKind = z.preprocess((val) => {
+  if (typeof val !== 'string') return undefined;
+  const clean = val.trim().toLowerCase();
+  return NODE_KIND_SET.has(clean) ? (clean as DiagramNodeKind) : undefined;
+}, z.enum(DIAGRAM_NODE_KINDS).optional());
+
+const RawLegendItemSanitizer = z
+  .object({
+    symbol: z.preprocess((val) => {
+      if (typeof val !== 'string') return undefined;
+      const clean = val.trim().toLowerCase();
+      return LEGEND_SYMBOL_SET.has(clean) ? (clean as DiagramLegendSymbol) : undefined;
+    }, z.enum(DIAGRAM_LEGEND_SYMBOLS).optional()),
+    label: OptionalShortString(MAX_LEGEND_LABEL_CHARS),
+  })
+  .passthrough();
+
 const RawNodeSanitizer = z
   .object({
     label: OptionalShortString(100),
+    kind: OptionalNodeKind,
     term: OptionalShortString(MAX_NODE_TERM_CHARS),
     summary: OptionalShortString(MAX_NODE_SUMMARY_CHARS),
     example: OptionalShortString(MAX_NODE_FIELD_CHARS),
@@ -112,6 +157,8 @@ const RawNodeSanitizer = z
 const RawGuideSanitizer = z
   .object({
     gist: OptionalShortString(MAX_GIST_CHARS),
+    scenario: OptionalShortString(MAX_SCENARIO_CHARS),
+    legend: z.unknown().optional(),
     parentPath: OptionalGraphLink,
     steps: z.unknown().optional(),
     flows: z.unknown().optional(),
@@ -160,6 +207,20 @@ export const StepCheckToolSchema = z.object({
   answer: z.string().describe('1–2 sentence answer revealed on click.'),
 });
 
+export const NodeKindToolSchema = z.enum(DIAGRAM_NODE_KINDS);
+export const LegendSymbolToolSchema = z.enum(DIAGRAM_LEGEND_SYMBOLS);
+
+export const LegendItemToolSchema = z.object({
+  symbol: LegendSymbolToolSchema.describe(
+    'Visual symbol in the diagram ("actor" | "service" | "store" | "queue" | "job" | "decision" | "subsystem" | "concept" | "sync-edge" | "async-edge" | "drillable").'
+  ),
+  label: z
+    .string()
+    .describe(
+      'Short plain-English meaning in this diagram (e.g. "MySQL table or Redis cache", "Async Kafka event or scheduled job").'
+    ),
+});
+
 export const WalkthroughStepToolSchema = z.object({
   title: z.string().describe('Short step headline (e.g. "1. Append to log").'),
   caption: z
@@ -174,7 +235,7 @@ export const WalkthroughStepToolSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Concrete data/payload/state value at this hop (e.g. "tokens: [15496, 995] -> shape (2, 768)" or "userId: undefined -> 0 rows").'
+      'Short, human-readable concrete state for this hop tied to `guide.scenario` (e.g. "Shopper Maya -> shown Banner B (saved as exposure)" or "3 nodes, 2 votes -> Node B leads"). Avoid raw column soup or unexplained codes.'
     ),
   check: StepCheckToolSchema.optional().describe(
     'Optional micro-prediction checkpoint on a pivotal step to verify understanding.'
@@ -198,11 +259,14 @@ export const WalkthroughFlowToolSchema = z.object({
 
 export const NodeDetailToolSchema = z.object({
   label: z.string().optional().describe('Optional card heading override.'),
+  kind: NodeKindToolSchema.optional().describe(
+    'What kind of thing this box is — must match its Mermaid shape: "actor" (stadium (["..."])), "service" (rectangle ["..."]), "store" (cylinder [("...")]), "queue" (parallelogram [/"..."/]), "job" (hexagon {{"..."}}), "decision" (diamond {"..."}), "subsystem" (subroutine [["..."]] with childPath), or "concept" (["..."]).'
+  ),
   term: z
     .string()
     .optional()
     .describe(
-      'Official technical term, class name, or equation bridged from the plain box label (e.g. "Write-Ahead Log (WAL)" or "Eq. 4: Softmax(QK^T / sqrt(d))V").'
+      'Official technical term, table name, class/function name, or equation bridged from the plain box label (e.g. "EdgeDecideService" or "content_slot_events table").'
     ),
   summary: z
     .string()
@@ -212,7 +276,9 @@ export const NodeDetailToolSchema = z.object({
   example: z
     .string()
     .optional()
-    .describe('Concrete input -> output example with real numbers, sizes, shapes, or timings.'),
+    .describe(
+      '1–2 plain, everyday sentences walking the `guide.scenario` through this box with real numbers or outcomes so a newcomer immediately gets it. NEVER write cryptic arrow shorthand or raw column dumps (e.g. write "Maya visits the homepage; in under 5ms this service reads her running-shoe history and picks Banner B." instead of "/decide -> exposure(arm=b)").'
+    ),
   whatIf: z
     .string()
     .optional()
@@ -238,6 +304,18 @@ export const ComprehensionGuideToolSchema = z
       .optional()
       .describe(
         '1–2 natural sentences stating what this handles and the main thing to know about how it works (direct human tone, no slogans or AI filler).'
+      ),
+    scenario: z
+      .string()
+      .optional()
+      .describe(
+        '1–2 plain sentences setting up ONE concrete real-world example (one person, order, or request) that stays consistent across every step, trace, and box example on this diagram.'
+      ),
+    legend: z
+      .array(LegendItemToolSchema)
+      .optional()
+      .describe(
+        'Optional overrides or additions to Studio’s auto-generated diagram legend when a shape or arrow has a specific domain meaning here.'
       ),
     parentPath: z
       .string()
@@ -308,6 +386,22 @@ export function sanitizeComprehensionGuide(
     }
   }
 
+  let legend: DiagramLegendItem[] | undefined;
+  if (Array.isArray(top.legend)) {
+    const parsedLegend: DiagramLegendItem[] = [];
+    const seenSymbols = new Set<DiagramLegendSymbol>();
+    for (const item of top.legend.slice(0, MAX_LEGEND_ITEMS)) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const parsed = RawLegendItemSanitizer.parse(item);
+      if (!parsed.symbol || !parsed.label || seenSymbols.has(parsed.symbol)) continue;
+      seenSymbols.add(parsed.symbol);
+      parsedLegend.push({ symbol: parsed.symbol, label: parsed.label });
+    }
+    if (parsedLegend.length > 0) {
+      legend = parsedLegend;
+    }
+  }
+
   let nodes: Record<string, DiagramNodeDetail> | undefined;
   if (top.nodes && typeof top.nodes === 'object' && !Array.isArray(top.nodes)) {
     const entries = Object.entries(top.nodes as Record<string, unknown>).slice(
@@ -341,6 +435,7 @@ export function sanitizeComprehensionGuide(
       }
       parsedNodes[nodeId] = {
         ...(parsed.label ? { label: parsed.label } : {}),
+        ...(parsed.kind ? { kind: parsed.kind } : {}),
         ...(parsed.term ? { term: parsed.term } : {}),
         summary:
           parsed.summary ||
@@ -358,12 +453,14 @@ export function sanitizeComprehensionGuide(
     }
   }
 
-  if (!top.gist && !top.parentPath && !steps && !flows && !nodes) {
+  if (!top.gist && !top.scenario && !legend && !top.parentPath && !steps && !flows && !nodes) {
     return undefined;
   }
 
   return {
     ...(top.gist ? { gist: top.gist } : {}),
+    ...(top.scenario ? { scenario: top.scenario } : {}),
+    ...(legend ? { legend } : {}),
     ...(top.parentPath ? { parentPath: top.parentPath } : {}),
     ...(steps ? { steps } : {}),
     ...(flows ? { flows } : {}),

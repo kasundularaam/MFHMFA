@@ -649,6 +649,7 @@ export function App() {
               <PreviewCanvas
                 viewportRef={viewportRef}
                 chartKey={chartKey}
+                code={code}
                 renderedSvg={renderedSvg}
                 hasActiveFile={Boolean(activeFile)}
                 guide={activeGuide}

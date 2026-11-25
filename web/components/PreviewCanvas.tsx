@@ -5,11 +5,13 @@ import type { DiagramComprehensionGuide } from '../../src/shared/types';
 import { useCanvasViewport } from '../hooks/useCanvasViewport';
 import { useUiStore, type AnchorPoint, type CanvasTransitionKind } from '../store/uiStore';
 import { applySvgComprehensionState } from '../utils/svgComprehension';
+import { CanvasLegend } from './CanvasLegend';
 import { NodePopover } from './NodePopover';
 
 interface PreviewCanvasProps {
   viewportRef: RefObject<HTMLDivElement | null>;
   chartKey: string;
+  code: string;
   renderedSvg: string;
   hasActiveFile: boolean;
   guide?: DiagramComprehensionGuide;
@@ -36,6 +38,7 @@ const MAX_ZOOM = 6;
 export function PreviewCanvas({
   viewportRef,
   chartKey,
+  code,
   renderedSvg,
   hasActiveFile,
   guide,
@@ -278,6 +281,8 @@ export function PreviewCanvas({
           </div>
         )}
       </div>
+
+      {renderedSvg && hasActiveFile && <CanvasLegend code={code} guide={guide} />}
     </div>
   );
 }

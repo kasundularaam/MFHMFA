@@ -108,6 +108,7 @@ export function applySvgComprehensionState(
         el.removeAttribute('data-mfhmfa-node');
         el.removeAttribute('data-mfhmfa-actor-text');
       }
+      el.removeAttribute('data-mfhmfa-kind');
     });
 
   const guideNodes = params.guide?.nodes ?? {};
@@ -156,6 +157,9 @@ export function applySvgComprehensionState(
     const detail = guideNodes[guideKey];
     if (detail) {
       el.classList.add('mfhmfa-node-interactive');
+      if (detail.kind) {
+        el.setAttribute('data-mfhmfa-kind', detail.kind);
+      }
       if (detail.childPath) {
         el.classList.add('mfhmfa-node-drillable');
       }

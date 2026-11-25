@@ -1,4 +1,5 @@
 import type {
+  DiagramComprehensionGuide,
   DiagramDimensions,
   DiagramMetrics,
   LintWarning,
@@ -194,9 +195,24 @@ export function parseMermaidError(code: string, rawErr: unknown): ParseErrorDeta
   };
 }
 
+function stripQuotedStrings(line: string): string {
+  return line.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+}
+
+function isFlowchartCode(code: string): boolean {
+  const firstMeaningful = code
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0 && !l.startsWith('%%') && !l.startsWith('---'));
+  return Boolean(firstMeaningful && /^(?:flowchart|graph)\b/.test(firstMeaningful));
+}
+
 export function analyzeStaticWarnings(code: string): LintWarning[] {
   const warnings: LintWarning[] = [];
   const lines = code.split(/\r?\n/);
+  const isFlowchart = isFlowchartCode(code);
+  const bidirectionalLines: number[] = [];
+  const unlabeledEdgeLines: number[] = [];
 
   lines.forEach((rawLine, idx) => {
     const lineNum = idx + 1;
@@ -237,6 +253,39 @@ export function analyzeStaticWarnings(code: string): LintWarning[] {
       }
     }
 
+    if (
+      isFlowchart &&
+      !line.startsWith('flowchart ') &&
+      !line.startsWith('graph ') &&
+      !line.startsWith('subgraph ') &&
+      !line.startsWith('classDef ') &&
+      !line.startsWith('style ') &&
+      !line.startsWith('linkStyle ')
+    ) {
+      const bare = stripQuotedStrings(line);
+      if (/<-->|<-+->|<-+\.+-+>|<=+=>/.test(bare)) {
+        bidirectionalLines.push(lineNum);
+      }
+
+      // Check every arrow token on this line; flag if any arrow has neither `|label|` nor inline `-- label -->` text
+      const edgeMatches = bare.matchAll(
+        /(?:<-->|<-+\.+-+>|<=+=>|-->|-\.->|==>)(?:\s*\|[^|]+\|)?/g
+      );
+      for (const em of edgeMatches) {
+        const token = em[0];
+        if (token.includes('|')) continue;
+        const startIdx = em.index ?? 0;
+        const before = bare.slice(0, startIdx);
+        const hasInlineLabel =
+          /(?:--|-\.|==)\s+[^-\s][^=>\n]*\s*$/.test(before) &&
+          /(?:-->|-\.->|==>)$/.test(token);
+        if (!hasInlineLabel) {
+          unlabeledEdgeLines.push(lineNum);
+          break;
+        }
+      }
+    }
+
     if (/<script|<iframe|<img/i.test(line)) {
       warnings.push({
         line: lineNum,
@@ -247,6 +296,26 @@ export function analyzeStaticWarnings(code: string): LintWarning[] {
     }
   });
 
+  if (bidirectionalLines.length > 0) {
+    warnings.push({
+      line: bidirectionalLines[0] ?? null,
+      code: 'BIDIRECTIONAL_EDGE',
+      message: `Bidirectional arrow on line${bidirectionalLines.length > 1 ? 's' : ''} ${bidirectionalLines.join(', ')}. Two-way arrows hide which action flows in which direction and whether both use the same mechanism.`,
+      suggestion:
+        'Split `<-->` into two separate one-way labeled arrows (e.g. `A -->|logs event| B` and `B -.->|pushes weights| A`).',
+    });
+  }
+
+  if (unlabeledEdgeLines.length > 0) {
+    warnings.push({
+      line: unlabeledEdgeLines[0] ?? null,
+      code: 'UNLABELED_EDGE',
+      message: `${unlabeledEdgeLines.length} arrow${unlabeledEdgeLines.length > 1 ? 's' : ''} without a verb label (line${unlabeledEdgeLines.length > 1 ? 's' : ''} ${unlabeledEdgeLines.join(', ')}). Readers cannot tell what passes across unlabeled connections.`,
+      suggestion:
+        'Add a short verb + noun label on every arrow (e.g. `-->|reads profile|` for sync/direct, `-.->|publishes click|` for async/scheduled).',
+    });
+  }
+
   if (lines.length > 140) {
     warnings.push({
       line: null,
@@ -254,6 +323,84 @@ export function analyzeStaticWarnings(code: string): LintWarning[] {
       message: `Diagram has ${lines.length} lines. Very dense diagrams can become difficult to read at standard zoom.`,
       suggestion:
         'Consider grouping related nodes with `subgraph` or splitting into high-level overview + detailed sub-charts.',
+    });
+  }
+
+  return warnings;
+}
+
+const NON_SERVICE_TERM_HINT_RE =
+  /\b(table|tables|mysql|postgres|sqlite|redis|cache|bucket|s3|ledger|store|storage|kafka|topic|queue|stream|cron|job|worker|consumer|browser|client|user|shopper|visitor|webhook)\b/i;
+
+const DISTINCT_SHAPE_SYNTAX_RE =
+  /[A-Za-z0-9_-]+\s*(?:\(\[|\[\(|\{\{|\[\[|\[\/|\{"|\{\s*[^}\s])/;
+
+/**
+ * Checks the comprehension `guide` paired with `code` for human readability traps:
+ * - Missing `kind` on nodes (reader cannot tell tables vs services vs jobs vs actors)
+ * - Every box drawn as a plain rectangle even when mixed entity kinds exist
+ * - Cryptic arrow/column shorthand inside `node.example` instead of plain English
+ */
+export function analyzeGuideWarnings(
+  code: string,
+  guide: DiagramComprehensionGuide | undefined
+): LintWarning[] {
+  if (!guide?.nodes) return [];
+
+  const warnings: LintWarning[] = [];
+  const entries = Object.entries(guide.nodes);
+  if (entries.length === 0) return warnings;
+
+  const isFlowchart = isFlowchartCode(code);
+
+  const missingKindIds = entries.filter(([, d]) => !d.kind).map(([id]) => id);
+  if (isFlowchart && entries.length >= 2 && missingKindIds.length > 0) {
+    warnings.push({
+      line: null,
+      code: 'MISSING_NODE_KIND',
+      message: `${missingKindIds.length} box${missingKindIds.length > 1 ? 'es' : ''} in \`guide.nodes\` (${missingKindIds.slice(0, 4).join(', ')}${missingKindIds.length > 4 ? ', …' : ''}) have no \`kind\`. Without \`kind\`, readers cannot tell whether a box is a table, service, job, actor, or subsystem.`,
+      suggestion:
+        'Set `kind` ("actor" | "service" | "store" | "queue" | "job" | "decision" | "subsystem" | "concept") on each node and match its Mermaid shape so Studio’s legend and node badges stay clear.',
+    });
+  }
+
+  if (isFlowchart && entries.length >= 4 && !DISTINCT_SHAPE_SYNTAX_RE.test(code)) {
+    const hasMixedKinds = entries.some(([, d]) => {
+      if (d.kind && d.kind !== 'service' && d.kind !== 'concept') return true;
+      if (d.childPath) return true;
+      const text = `${d.label || ''} ${d.term || ''} ${d.summary || ''}`;
+      return NON_SERVICE_TERM_HINT_RE.test(text);
+    });
+    if (hasMixedKinds) {
+      warnings.push({
+        line: null,
+        code: 'UNIFORM_NODE_SHAPES',
+        message:
+          'Every box uses a plain rectangle `["..."]` even though the diagram mixes different kinds of things (stores/tables, jobs, actors, queues, or subsystems).',
+        suggestion:
+          'Use matching Mermaid shapes (`[("Table")]` cylinder for stores, `(["User"])` stadium for actors, `{{"Job"}}` hexagon for workers, `[/"Queue"/]` for streams, `[["Area"]]` for drillable subsystems) so readers recognize types at a glance.',
+      });
+    }
+  }
+
+  const crypticExampleIds: string[] = [];
+  for (const [id, detail] of entries) {
+    const ex = detail.example?.trim();
+    if (!ex) continue;
+    const looksLikeArrowDump =
+      ex.includes('->') && !/[.!?]$/.test(ex) && (/[=();]/.test(ex) || ex.startsWith('/'));
+    if (looksLikeArrowDump) {
+      crypticExampleIds.push(id);
+    }
+  }
+
+  if (crypticExampleIds.length > 0) {
+    warnings.push({
+      line: null,
+      code: 'CRYPTIC_NODE_EXAMPLE',
+      message: `\`example\` on ${crypticExampleIds.slice(0, 4).join(', ')} reads like terse arrow/code shorthand instead of a plain human example.`,
+      suggestion:
+        'Set `guide.scenario` to one concrete real-world example and rewrite `node.example` as 1–2 plain English sentences showing what happens to that example here.',
     });
   }
 

@@ -157,6 +157,34 @@
   transition: color 130ms var(--ease-out);
 }
 
+.story-scenario {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--focus-border);
+  background: var(--bg-bar);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.story-scenario-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 620;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  color: var(--focus-accent);
+}
+
+.story-scenario-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.64;
+  color: var(--text-reading);
+}
+
 /* Full-Width Edge-to-Edge VS Code Scenario Tab Strip */
 .story-steps-section {
   display: flex;

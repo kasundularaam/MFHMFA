@@ -1212,9 +1212,11 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           arguments: {
             path: 'concepts/wal-durability.mmd',
             title: 'Write-Ahead Log Durability',
-            code: 'flowchart LR\n  Client(["Client"]) --> Log["Fast Append Log"] --> Table[("B-Tree Pages")]',
+            code: 'flowchart LR\n  Client(["Client"]) -->|sends write| Log["Fast Append Log"]\n  Log -.->|flushes later| Table[("B-Tree Pages")]',
             guide: {
               gist: 'Random page writes corrupt on crash unless an append-only log records intent first.',
+              scenario:
+                'A customer transfers $20 from Alice to Bob, and the server loses power 2ms later.',
               flows: [
                 {
                   id: 'normal-write',
@@ -1248,15 +1250,27 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
                 },
               ],
               nodes: {
+                Client: {
+                  kind: 'actor',
+                  label: 'Client',
+                  summary: 'Sends the $20 transfer request and waits for a commit reply.',
+                },
                 Log: {
+                  kind: 'store',
                   label: 'Fast Append Log',
                   term: 'Write-Ahead Log (WAL / ARIES Redo Log)',
                   summary:
                     'Sequential append-only file flushed to disk before acknowledging commits.',
-                  example: '128 B record -> 1 sequential fsync',
+                  example:
+                    'The $20 transfer is appended as a 128-byte record in one sequential disk flush before the client gets a success reply.',
                   whatIf:
                     'Without checkpoints, log grows unbounded and boot replay takes minutes.',
                   refs: ['ARIES Paper §3', 'storage/wal.rs'],
+                },
+                Table: {
+                  kind: 'store',
+                  label: 'B-Tree Pages',
+                  summary: 'Stores the main indexed account balance pages on disk.',
                 },
               },
             },
@@ -1348,11 +1362,30 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
           el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
 
+        // Verify scenario callout + auto-detected Legend footer + Node Kind badge!
+        const visualClarityAudit = await wsPage.evaluate(() => {
+          const scenarioTxt =
+            document.querySelector('[data-testid="story-scenario"]')?.textContent || '';
+          const legendSymbols = Array.from(
+            document.querySelectorAll('[data-testid="canvas-legend"] [data-legend-symbol]')
+          ).map((el) => el.getAttribute('data-legend-symbol'));
+          return { scenarioTxt, legendSymbols };
+        });
+        expect(visualClarityAudit.scenarioTxt).toContain('transfers $20 from Alice to Bob');
+        expect(visualClarityAudit.legendSymbols).toEqual([
+          'actor',
+          'store',
+          'sync-edge',
+          'async-edge',
+        ]);
+
         // References section is last and collapsed by default until clicked!
         await wsPage.waitForFunction(
           () => {
             const termTxt =
               document.querySelector('[data-testid="node-inspector-term"]')?.textContent || '';
+            const kindTxt =
+              document.querySelector('[data-testid="node-inspector-kind"]')?.textContent || '';
             const card = document.querySelector('[data-testid="node-inspector-card"]');
             const cardTxt = card?.textContent || '';
             const bodyChildren = Array.from(
@@ -1364,6 +1397,7 @@ describe('MFHMFA Zero-Storage VFS Engine & VS Code Explorer Suite', () => {
               ) ?? false;
             return (
               termTxt.includes('Write-Ahead Log (WAL') &&
+              kindTxt.includes('Table / Store') &&
               cardTxt.includes('References') &&
               !cardTxt.includes('ARIES Paper §3') &&
               lastChildIsRefs &&

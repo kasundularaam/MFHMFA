@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { StudioService } from '../../src/application/studioService.js';
 import { isLocalRequestHost, resolveRequestBaseUrl } from '../../src/config/env.js';
 import {
+  analyzeGuideWarnings,
   analyzeStaticWarnings,
   buildCodeSnippet,
   computeLayoutDiagnostics,
   inferSuggestion,
   parseMermaidError,
 } from '../../src/domain/diagnostics.js';
+import { deriveDiagramLegend } from '../../src/shared/diagramLegend.js';
 import { buildLearningPlaybookDocument, LEARNING_MODES } from '../../src/domain/playbooks.js';
 import type { RenderEnginePort } from '../../src/domain/ports.js';
 import { StatelessWorkspaceRelay } from '../../src/infrastructure/ephemeral/workspaceRelay.js';
@@ -944,5 +946,123 @@ describe('Domain Diagnostics, Jailed VFS Paths & Last-5 Immutable Storage', () =
         })
       )
     ).toThrow(/cannot traverse/i);
+  });
+
+  it('sanitizes node kinds, scenario, and legend, flags edge/shape/example issues, and derives a clean legend', () => {
+    const clean = sanitizeComprehensionGuide({
+      gist: 'Storefront slots evaluate rules from cache and log exposures asynchronously.',
+      scenario: 'Shopper Maya opens the homepage while Banner A and Banner B are being tested.',
+      legend: [
+        { symbol: 'store', label: 'MySQL table or Redis cache' },
+        { symbol: 'not-a-symbol', label: 'Should be dropped' },
+        { symbol: 'store', label: 'Duplicate ignored' },
+      ],
+      nodes: {
+        Shopper: {
+          kind: 'actor',
+          summary: 'Requests homepage content from the storefront.',
+          example: 'Maya loads the homepage in her browser and waits for the hero banner.',
+        },
+        SlotEvents: {
+          kind: 'STORE',
+          summary: 'Stores every served exposure and stitched click.',
+        },
+        UnknownKind: {
+          kind: 'made-up-kind',
+          summary: 'Still valid without a kind.',
+        },
+      },
+    });
+
+    expect(clean?.scenario).toContain('Shopper Maya');
+    expect(clean?.legend).toEqual([{ symbol: 'store', label: 'MySQL table or Redis cache' }]);
+    expect(clean?.nodes?.Shopper?.kind).toBe('actor');
+    expect(clean?.nodes?.SlotEvents?.kind).toBe('store');
+    expect(clean?.nodes?.UnknownKind?.kind).toBeUndefined();
+
+    // Static edge warnings: unlabeled edges and bidirectional arrows are flagged
+    const messyCode = [
+      'flowchart TB',
+      '  A["Setup"] --> B["Serving"]',
+      '  B <-->|events & weights| C["Bandit"]',
+      '  C -->|posteriors| D["Experiments"]',
+    ].join('\n');
+    const messyWarnings = analyzeStaticWarnings(messyCode);
+    expect(messyWarnings.some((w) => w.code === 'UNLABELED_EDGE')).toBe(true);
+    expect(messyWarnings.some((w) => w.code === 'BIDIRECTIONAL_EDGE')).toBe(true);
+
+    // Clean directed labeled edges produce zero edge warnings
+    const cleanCode = [
+      'flowchart TB',
+      '  User(["Shopper"]) -->|opens page| Decide["Edge Decide"]',
+      '  Decide -.->|logs exposure| Events[("Slot Events")]',
+      '  Events -.->|reads deltas| Refresh{{"Weight Refresh"}}',
+    ].join('\n');
+    const cleanEdgeWarnings = analyzeStaticWarnings(cleanCode);
+    expect(cleanEdgeWarnings.some((w) => w.code === 'UNLABELED_EDGE')).toBe(false);
+    expect(cleanEdgeWarnings.some((w) => w.code === 'BIDIRECTIONAL_EDGE')).toBe(false);
+
+    // Guide warnings: missing kinds, uniform rectangles for mixed entities, and cryptic arrow shorthand
+    const guideIssues = analyzeGuideWarnings(messyCode, {
+      nodes: {
+        A: { summary: 'Saves rules to MySQL tables' },
+        B: {
+          summary: 'Serves requests',
+          example: '/decide -> exposure(arm=b); click -> arm=b',
+        },
+        C: { summary: 'Runs scheduled cron job', childPath: 'bandit.mmd' },
+        D: { summary: 'Reads dashboard metrics' },
+      },
+    });
+    expect(guideIssues.some((w) => w.code === 'MISSING_NODE_KIND')).toBe(true);
+    expect(guideIssues.some((w) => w.code === 'UNIFORM_NODE_SHAPES')).toBe(true);
+    expect(guideIssues.some((w) => w.code === 'CRYPTIC_NODE_EXAMPLE')).toBe(true);
+
+    // Well-typed shapes + plain-English examples trigger zero guide warnings
+    const cleanGuideIssues = analyzeGuideWarnings(cleanCode, {
+      scenario: 'Maya visits the homepage while Banner A and Banner B are being tested.',
+      nodes: {
+        User: {
+          kind: 'actor',
+          summary: 'Opens the storefront page.',
+          example: 'Maya opens the homepage on her phone and waits for the hero banner.',
+        },
+        Decide: {
+          kind: 'service',
+          summary: 'Picks a banner from cached rules.',
+          example: 'In under 5ms, the service checks Maya’s running-shoe history and picks Banner B.',
+        },
+        Events: {
+          kind: 'store',
+          summary: 'Stores served exposures and clicks.',
+        },
+        Refresh: {
+          kind: 'job',
+          summary: 'Updates banner traffic shares on a schedule.',
+        },
+      },
+    });
+    expect(cleanGuideIssues).toEqual([]);
+
+    // Legend derivation detects only used symbols and honors custom label overrides
+    const legend = deriveDiagramLegend(cleanCode, {
+      legend: [{ symbol: 'store', label: 'MySQL Ledger Table' }],
+      nodes: {
+        User: { kind: 'actor', summary: 'Shopper' },
+        Decide: { kind: 'service', summary: 'Service', childPath: 'decide.mmd' },
+        Events: { kind: 'store', summary: 'Table' },
+        Refresh: { kind: 'job', summary: 'Cron job' },
+      },
+    });
+    expect(legend.map((i) => i.symbol)).toEqual([
+      'actor',
+      'service',
+      'store',
+      'job',
+      'drillable',
+      'sync-edge',
+      'async-edge',
+    ]);
+    expect(legend.find((i) => i.symbol === 'store')?.label).toBe('MySQL Ledger Table');
   });
 });
